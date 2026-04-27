@@ -40,10 +40,24 @@ static const OrtApi *g_ort_api = NULL;
 
 /* ========== 内部函数 ========== */
 static int create_session(kadd_model_handle_t *handle, const char *model_path) {
-    // 获取 API
+    // 获取 API - 支持版本回退以兼容不同版本的 ONNX Runtime
     if (!g_ort_api) {
-        g_ort_api = OrtGetApiBase()->GetApi(ORT_API_VERSION);
-        if (!g_ort_api) return -1;
+        const OrtApiBase *api_base = OrtGetApiBase();
+        if (!api_base) return -1;
+
+        // 尝试从当前版本开始，逐步回退到版本 15
+        for (int version = ORT_API_VERSION; version >= 15; version--) {
+            g_ort_api = api_base->GetApi(version);
+            if (g_ort_api) {
+                fprintf(stderr, "KADD ML: Using ONNX Runtime API version %d\n", version);
+                break;
+            }
+        }
+
+        if (!g_ort_api) {
+            fprintf(stderr, "KADD ML: Failed to get ONNX Runtime API (tried versions %d down to 15)\n", ORT_API_VERSION);
+            return -1;
+        }
     }
     handle->api = g_ort_api;
 

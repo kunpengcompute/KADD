@@ -71,10 +71,33 @@ int main(int argc, char *argv[])
 
     printf("模型路径: %s\n", model_path);
     printf("特征维度: %d\n", feature_dim);
+    printf("\n正在初始化 ONNX Runtime 并加载模型...\n");
+    fflush(stdout);
 
-    if (kadd_model_load(&model, model_path, feature_dim) != 0) {
-        printf("✗ 模型加载失败\n");
-        printf("请确保模型文件存在于: %s\n", model_path);
+    int load_result = kadd_model_load(&model, model_path, feature_dim);
+
+    if (load_result != 0) {
+        printf("\n✗ 模型加载失败 (错误代码: %d)\n", load_result);
+        printf("\n可能的原因:\n");
+        printf("  1. ONNX Runtime 版本不兼容 (当前库版本可能与头文件不匹配)\n");
+        printf("  2. 模型文件损坏或格式不正确\n");
+        printf("  3. 特征维度不匹配 (当前: %d)\n", feature_dim);
+        printf("  4. 内存分配失败\n");
+        printf("  5. 库文件未正确加载\n");
+
+        printf("\n调试建议:\n");
+#ifdef _WIN32
+        printf("  - 确保 onnxruntime.dll 在程序目录中\n");
+#else
+        printf("  - 检查 LD_LIBRARY_PATH: %s\n",
+               getenv("LD_LIBRARY_PATH") ? getenv("LD_LIBRARY_PATH") : "(未设置)");
+        printf("  - 尝试: export LD_LIBRARY_PATH=.:$LD_LIBRARY_PATH\n");
+        printf("  - 检查动态链接: ldd %s\n", argv[0]);
+#endif
+        printf("  - 验证模型文件: file %s\n", model_path);
+        printf("  - 检查磁盘空间: df -h\n");
+
+        printf("\n请确保模型文件存在于: %s\n", model_path);
         return 1;
     }
 
