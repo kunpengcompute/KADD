@@ -7,6 +7,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "kadd_feature_engine.h"
 #include "tools.h"
 
@@ -20,6 +21,11 @@ int main(int argc, char *argv[])
 {
     setbuf(stdout, NULL);
     setbuf(stderr, NULL);
+
+#ifdef _WIN32
+    // 设置控制台输出为 UTF-8 编码
+    SetConsoleOutputCP(CP_UTF8);
+#endif
 
     /* 默认配置 */
     const int window_size = 5;
@@ -134,8 +140,8 @@ int main(int argc, char *argv[])
         {"窗口大小>序列长度", seq1, seq_len, 100, 0},
     };
 
-    int *f = (int *)calloc(feature_dim, sizeof(int));
-    if (!f) {
+    int *f4 = (int *)calloc(feature_dim, sizeof(int));
+    if (!f4) {
         printf("✗ 内存分配失败\n");
     } else {
         int passed = 0;
@@ -147,7 +153,7 @@ int main(int argc, char *argv[])
                 boundary_tests[i].seq,
                 boundary_tests[i].len,
                 boundary_tests[i].window,
-                f, feature_dim
+                f4, feature_dim
             );
 
             if (result == boundary_tests[i].expected) {
@@ -160,12 +166,120 @@ int main(int argc, char *argv[])
             }
         }
         printf("\n边界测试通过: %d/4\n", passed);
-        free(f);
+        free(f4);
     }
 
     printf("\n╔════════════════════════════════════════════════════════════╗\n");
     printf("║                     演示完成                                ║\n");
     printf("╚════════════════════════════════════════════════════════════╝\n");
+
+    // ========== 交互式测试模式 ==========
+    printf("\n【交互式测试模式】\n");
+    printf("─────────────────────────────────────────────────────────────\n");
+    printf("输入格式说明:\n");
+    printf("  - 序列: 用逗号或空格分隔的整数，例如: 7,11,8,12,8,11,8\n");
+    printf("  - 窗口大小: 一个整数，例如: 5\n");
+    printf("  - 输入 'q' 或 'quit' 退出程序\n\n");
+
+    int *interactive_feature = (int *)calloc(feature_dim, sizeof(int));
+    if (!interactive_feature) {
+        printf("✗ 内存分配失败，无法进入交互模式\n");
+        /* 配置已内置，无需释放 */
+        return 0;
+    }
+
+    char input[1024];
+    while (1) {
+        printf(">> 请输入序列 (或 'q' 退出): ");
+        if (fgets(input, sizeof(input), stdin) == NULL) break;
+
+        // 去除换行符
+        input[strcspn(input, "\n")] = 0;
+
+        // 检查退出命令
+        if (strcmp(input, "q") == 0 || strcmp(input, "quit") == 0 ||
+            strcmp(input, "Q") == 0 || strcmp(input, "QUIT") == 0) {
+            printf("退出交互模式\n");
+            break;
+        }
+
+        // 检查空输入
+        if (strlen(input) == 0) {
+            continue;
+        }
+
+        // 解析序列
+        int *seq = NULL;
+        int seq_capacity = 32;
+        int seq_len = 0;
+
+        seq = (int *)malloc(seq_capacity * sizeof(int));
+        if (!seq) {
+            printf("✗ 内存分配失败\n");
+            continue;
+        }
+
+        char *token = strtok(input, ", ");
+        while (token != NULL) {
+            if (seq_len >= seq_capacity) {
+                seq_capacity *= 2;
+                int *new_seq = (int *)realloc(seq, seq_capacity * sizeof(int));
+                if (!new_seq) {
+                    printf("✗ 内存分配失败\n");
+                    free(seq);
+                    seq = NULL;
+                    break;
+                }
+                seq = new_seq;
+            }
+
+            if (sscanf(token, "%d", &seq[seq_len]) == 1) {
+                seq_len++;
+            }
+            token = strtok(NULL, ", ");
+        }
+
+        if (!seq) {
+            continue;
+        }
+
+        // 获取窗口大小
+        int user_window_size = window_size;
+        printf(">> 请输入窗口大小 (默认 %d): ", window_size);
+        if (fgets(input, sizeof(input), stdin) != NULL) {
+            input[strcspn(input, "\n")] = 0;
+            if (strlen(input) > 0 && sscanf(input, "%d", &user_window_size) == 1) {
+                if (user_window_size <= 0) {
+                    printf("警告: 窗口大小必须大于0，使用默认值 %d\n", window_size);
+                    user_window_size = window_size;
+                }
+            }
+        }
+
+        // 清空特征向量
+        memset(interactive_feature, 0, feature_dim * sizeof(int));
+
+        // 执行特征转换
+        printf("\n输入序列: ");
+        print_array(seq, seq_len);
+        printf(" (长度=%d)\n", seq_len);
+        printf("窗口大小: %d\n", user_window_size);
+
+        if (kadd_seq_to_feature(seq, seq_len, user_window_size, interactive_feature, feature_dim) == 0) {
+            printf("✓ 转换成功\n");
+            printf("特征向量: ");
+            print_array(interactive_feature, feature_dim);
+            printf("\n");
+        } else {
+            printf("✗ 转换失败\n");
+        }
+
+        printf("\n");
+
+        free(seq);
+    }
+
+    free(interactive_feature);
 
     /* 配置已内置，无需释放 */
 

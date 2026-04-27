@@ -16,6 +16,7 @@
 - 位置1（值2）：左边[1] + 右边[3,4] → 1*2 + 3*2 + 4*1 = 12
 - 位置2（值3）：左边[1,2] + 右边[4,5] → 1*1 + 2*2 + 4*2 + 5*1 = 18
 """
+from train_tokens import feature_vector_single, Config
 
 try:
     import numpy as np
@@ -27,11 +28,6 @@ except ImportError:
 # ============================================================================
 # 配置类
 # ============================================================================
-
-class Config:
-    """配置常量"""
-    FEATURE_DIM = 28  # 特征维度
-    WINDOW_SIZE = 5   # 默认窗口大小
 
 
 # ============================================================================
@@ -306,29 +302,7 @@ def benchmark():
                 print(f"  Naive:     {time_naive*1000:.2f} ms")
                 print(f"  Python移位: {time_py*1000:.2f} ms")
 
-def feature_vector_single(tokens, window_size: int = Config.WINDOW_SIZE):
-    """
-    将 tokens 序列转换为 28 维特征向量
-    对应 C 代码中的 feature_vector_single
 
-    Args:
-        tokens: token ID 数组
-        window_size: 窗口大小
-
-    Returns:
-        28 维特征向量
-    """
-    if len(tokens) == 0:
-        return np.zeros(Config.FEATURE_DIM, dtype=np.int32)
-
-    result = sliding_window_distance_shift(tokens, window_size)
-    final_result = np.zeros(Config.FEATURE_DIM, dtype=np.int32)
-
-    for i, token_id in enumerate(tokens):
-        if 0 <= token_id < Config.FEATURE_DIM:
-            final_result[token_id] += result[i]
-
-    return final_result
 # ============================================================================
 # 主函数
 # ============================================================================

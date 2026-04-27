@@ -7,6 +7,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include "kadd_ml_engine.h"
 #include "tools.h"
 
@@ -21,8 +22,39 @@ int main(int argc, char *argv[])
     setbuf(stdout, NULL);
     setbuf(stderr, NULL);
 
+#ifdef _WIN32
+    // 设置控制台输出为 UTF-8 编码
+    SetConsoleOutputCP(CP_UTF8);
+#endif
+
     /* 默认配置 */
-    const char *model_path = (argc > 1) ? argv[1] : "assets/model/model_tokens_rf.onnx";
+    const char *default_model_paths[] = {
+        "../../assets/model/model_tokens_rf.onnx",  // 从 build/demo 目录
+        "../assets/model/model_tokens_rf.onnx",     // 从 build 目录
+        "assets/model/model_tokens_rf.onnx",        // 从项目根目录
+        "/usr/local/share/kadd/model_tokens_rf.onnx", // Linux 安装路径
+        NULL
+    };
+
+    const char *model_path = NULL;
+    if (argc > 1) {
+        model_path = argv[1];
+    } else {
+        // 尝试找到存在的模型文件
+        for (int i = 0; default_model_paths[i] != NULL; i++) {
+            FILE *test_file = fopen(default_model_paths[i], "rb");
+            if (test_file) {
+                fclose(test_file);
+                model_path = default_model_paths[i];
+                break;
+            }
+        }
+        // 如果都找不到，使用第一个作为默认值（让后续代码报错）
+        if (!model_path) {
+            model_path = default_model_paths[0];
+        }
+    }
+
     const int feature_dim = 28;
     const int batch_size = 64;
     const int benchmark_iterations = 1000;
@@ -94,8 +126,6 @@ int main(int argc, char *argv[])
     // ========== 步骤 3: 批量推理 ==========
     printf("【步骤 3】批量推理\n");
     printf("─────────────────────────────────────────────────────────────\n");
-
-    int batch_size = batch_size;
     float temp_batch[5][28] = {
         {0.0f, 152.0f, 0.0f, 0.0f, 0.0f, 0.0f, 185.0f, 1717.0f, 4152.0f, 0.0f, 0.0f, 4494.0f, 190.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 129.0f, 0.0f, 0.0f, 0.0f, 0.0f, 173.0f, 0.0f, 0.0f, 0.0f},
         {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 1120.0f, 1456.0f, 0.0f, 0.0f, 2126.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 114.0f, 0.0f, 0.0f, 0.0f},
@@ -137,7 +167,7 @@ int main(int argc, char *argv[])
     printf("批量大小: %d\n", batch_size);
 
     timer = timer_start();
-    int count = kadd_model_predict_batch(model, (const float *)batch_features, batch_size, probabilities);
+    int count = kadd_model_predict_batch(model, (const float *)batch_features, samples_to_copy, probabilities, batch_size);
     double batch_elapsed = timer_end(timer);
 
     if (count > 0) {
@@ -191,6 +221,90 @@ int main(int argc, char *argv[])
     printf("\n╔════════════════════════════════════════════════════════════╗\n");
     printf("║                     演示完成                                ║\n");
     printf("╚════════════════════════════════════════════════════════════╝\n");
+
+    // ========== 交互式测试模式 ==========
+    printf("\n【交互式测试模式】\n");
+    printf("─────────────────────────────────────────────────────────────\n");
+    printf("输入格式说明:\n");
+    printf("  - 特征向量: 用逗号或空格分隔的浮点数，必须包含 %d 个值\n", feature_dim);
+    printf("  - 例如: 0.0,152.0,0.0,0.0,0.0,0.0,185.0,1717.0,4152.0,0.0,0.0,4494.0,190.0,0.0,0.0,0.0,0.0,0.0,0.0,129.0,0.0,0.0,0.0,0.0,173.0,0.0,0.0,0.0\n");
+    printf("  - 输入 'q' 或 'quit' 退出程序\n\n");
+
+    // 重新加载模型用于交互测试（因为之前已经释放了）
+    kadd_model_handle_t *interactive_model = NULL;
+    if (kadd_model_load(&interactive_model, model_path, feature_dim) != 0) {
+        printf("✗ 无法加载模型进行交互测试\n");
+        return 0;
+    }
+
+    float *interactive_features = (float *)calloc(feature_dim, sizeof(float));
+    if (!interactive_features) {
+        printf("✗ 内存分配失败，无法进入交互模式\n");
+        kadd_model_free(interactive_model);
+        return 0;
+    }
+
+    char input[2048];
+    while (1) {
+        printf(">> 请输入特征向量 (%d维，或 'q' 退出): ", feature_dim);
+        if (fgets(input, sizeof(input), stdin) == NULL) break;
+
+        // 去除换行符
+        input[strcspn(input, "\n")] = 0;
+
+        // 检查退出命令
+        if (strcmp(input, "q") == 0 || strcmp(input, "quit") == 0 ||
+            strcmp(input, "Q") == 0 || strcmp(input, "QUIT") == 0) {
+            printf("退出交互模式\n");
+            break;
+        }
+
+        // 检查空输入
+        if (strlen(input) == 0) {
+            continue;
+        }
+
+        // 解析特征向量
+        int parsed_count = 0;
+        char *token = strtok(input, ", ");
+        while (token != NULL && parsed_count < feature_dim) {
+            if (sscanf(token, "%f", &interactive_features[parsed_count]) == 1) {
+                parsed_count++;
+            }
+            token = strtok(NULL, ", ");
+        }
+
+        if (parsed_count != feature_dim) {
+            printf("✗ 特征维度不匹配，需要 %d 个值，实际解析到 %d 个\n", feature_dim, parsed_count);
+            continue;
+        }
+
+        // 执行推理
+        printf("\n输入特征: ");
+        for (int i = 0; i < feature_dim; i++) {
+            printf("%.0f", interactive_features[i]);
+            if (i < feature_dim - 1) printf(", ");
+        }
+        printf("\n");
+
+        float probability = 0.0f;
+        void *timer = timer_start();
+
+        if (kadd_model_predict(interactive_model, interactive_features, &probability) == 0) {
+            double elapsed = timer_end(timer);
+            printf("✓ 推理成功\n");
+            printf("预测概率 (Label=1): %.4f (%.2f%%)\n", probability, probability * 100);
+            printf("推理耗时: %.3f ms\n", elapsed);
+        } else {
+            printf("✗ 推理失败\n");
+        }
+
+        printf("\n");
+    }
+
+    free(interactive_features);
+    kadd_model_free(interactive_model);
+    printf("✓ 模型资源已释放\n");
 
     /* 配置已内置，无需释放 */
 
