@@ -45,8 +45,8 @@ static int create_session(kadd_model_handle_t *handle, const char *model_path) {
         const OrtApiBase *api_base = OrtGetApiBase();
         if (!api_base) return -1;
 
-        // 尝试从当前版本开始，逐步回退到版本 15
-        for (int version = ORT_API_VERSION; version >= 15; version--) {
+        // 尝试从当前版本开始，逐步回退到版本 10（覆盖 1.16 及更早版本）
+        for (int version = ORT_API_VERSION; version >= 10; version--) {
             g_ort_api = api_base->GetApi(version);
             if (g_ort_api) {
                 fprintf(stderr, "KADD ML: Using ONNX Runtime API version %d\n", version);
@@ -55,7 +55,8 @@ static int create_session(kadd_model_handle_t *handle, const char *model_path) {
         }
 
         if (!g_ort_api) {
-            fprintf(stderr, "KADD ML: Failed to get ONNX Runtime API (tried versions %d down to 15)\n", ORT_API_VERSION);
+            fprintf(stderr, "KADD ML: Failed to get ONNX Runtime API (tried versions %d down to 10)\n", ORT_API_VERSION);
+            fprintf(stderr, "KADD ML: Please ensure ONNX Runtime library is compatible\n");
             return -1;
         }
     }

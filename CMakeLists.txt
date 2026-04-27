@@ -135,6 +135,9 @@ add_subdirectory(src)
 # ========== Demo 程序 ==========
 add_subdirectory(demo)
 
+# ========== 测试程序 ==========
+add_subdirectory(tests)
+
 # ========== 简单测试程序 ==========
 # add_executable(test_dfa_basic tools/scripts/test_dfa_basic.c)
 # target_link_libraries(test_dfa_basic PRIVATE kadd_dfa_engine)
