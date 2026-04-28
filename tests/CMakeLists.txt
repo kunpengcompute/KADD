@@ -44,7 +44,7 @@ if(ENABLE_CODE_COVERAGE)
         COMMAND ${CMAKE_COMMAND} -E chdir ${CMAKE_BINARY_DIR}
             lcov --remove coverage.info '/usr/*' '${CMAKE_BINARY_DIR}/*' --output-file coverage.info
         COMMAND ${CMAKE_COMMAND} -E chdir ${CMAKE_BINARY_DIR}
-            lcov --genhtml coverage.info --output-directory coverage_html
+            genhtml coverage.info --output-directory coverage_html
         COMMENT "Run tests and generate code coverage report"
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
