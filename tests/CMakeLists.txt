@@ -30,6 +30,12 @@ function(add_kadd_gtest TEST_NAME SOURCE_FILE)
         endif()
     endif()
 
+    # 定义模型和数据路径（支持自定义 assets 目录）
+    target_compile_definitions(${TEST_NAME} PRIVATE
+        TEST_MODEL_PATH="${KADD_ASSETS_PATH}/model/model_tokens_rf.onnx"
+        TEST_DATA_PATH="${KADD_ASSETS_PATH}/data/parsed_results_fixed.json"
+    )
+
     add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
 endfunction()
 

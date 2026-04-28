@@ -127,6 +127,31 @@ int main() {
 | `-DBUILD_TESTS=ON` | ON | 构建测试程序 |
 | `-DUSE_SYSTEM_LIBS=OFF` | ON | 强制使用 third_party |
 
+### Assets 目录自动检测
+
+构建系统会自动检测 assets 目录位置：
+1. **优先**：项目根目录的 `assets/`（与 `CMakeLists.txt` 同级）
+2. **其次**：构建目录的 `assets/`（与 `build/` 同级）
+3. **默认**：相对路径 `assets`
+
+```bash
+# 标准目录结构（推荐）
+KADD/
+├── assets/          ← 模型文件在这里
+│   └── model/
+│       └── model_tokens_rf.onnx
+├── build/           ← 构建目录
+└── CMakeLists.txt
+
+# 替代结构
+KADD/
+├── build/
+│   └── assets/      ← 模型文件也可以在这里
+│       └── model/
+│           └── model_tokens_rf.onnx
+└── CMakeLists.txt
+```
+
 ## 🌍 平台支持
 
 | 平台 | 架构 | 状态 | 优化 |

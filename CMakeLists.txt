@@ -21,6 +21,15 @@ option(KADD_OPTIMIZE "Enable optimizations" OFF)
 option(ENABLE_ARM_SVE "Enable ARM SVE acceleration (ARMv9-A)" OFF)
 option(ENABLE_ARM_SVE2 "Enable ARM SVE2 acceleration (ARMv9.2-A+)" OFF)
 
+# 自动检测 assets 目录（优先级：项目根目录 > 构建目录 > 默认 assets）
+if(EXISTS "${CMAKE_SOURCE_DIR}/assets")
+    set(KADD_ASSETS_PATH "${CMAKE_SOURCE_DIR}/assets")
+elseif(EXISTS "${CMAKE_BINARY_DIR}/assets")
+    set(KADD_ASSETS_PATH "${CMAKE_BINARY_DIR}/assets")
+else()
+    set(KADD_ASSETS_PATH "assets")
+endif()
+
 # SVE 选项互斥
 if(ENABLE_ARM_SVE2)
     set(ENABLE_ARM_SVE ON)
@@ -69,6 +78,7 @@ message(STATUS "Use system libs: ${USE_SYSTEM_LIBS}")
 message(STATUS "Enable coverage: ${ENABLE_CODE_COVERAGE}")
 message(STATUS "Enable optimize: ${KADD_OPTIMIZE}")
 message(STATUS "Enable ARM SVE: ${ENABLE_ARM_SVE}")
+message(STATUS "Assets path: ${KADD_ASSETS_PATH} (auto-detected)")
 if(ENABLE_ARM_SVE)
     message(STATUS "  SVE version: ${ENABLE_ARM_SVE2}")
 endif()

@@ -27,6 +27,10 @@
 #define TEST_MODEL_PATH "assets/model/model_tokens_rf.onnx"
 #endif
 
+#ifndef TEST_DATA_PATH
+#define TEST_DATA_PATH "assets/data/parsed_results_fixed.json"
+#endif
+
 #ifndef TEST_FEATURE_DIM
 #define TEST_FEATURE_DIM 28
 #endif
@@ -718,7 +722,7 @@ static bool TokensToFeatures(const std::vector<int> &tokens, std::vector<float> 
 TEST_F(MLEngineTest, AccuracyOnParsedResultsDataset) {
     if (skip_test) GTEST_SKIP() << "模型文件不可用";
 
-    const char *json_path = "assets/data/parsed_results_fixed.json";
+    const char *json_path = TEST_DATA_PATH;
     std::vector<std::vector<int>> tokens_list;
     std::vector<int> labels;
 
@@ -814,7 +818,7 @@ TEST_F(MLEngineTest, AccuracyOnParsedResultsDataset) {
 TEST_F(MLEngineTest, BatchAccuracyOnParsedResultsDataset) {
     if (skip_test) GTEST_SKIP() << "模型文件不可用";
 
-    const char *json_path = "assets/data/parsed_results_fixed.json";
+    const char *json_path = TEST_DATA_PATH;
     std::vector<std::vector<int>> tokens_list;
     std::vector<int> labels;
 

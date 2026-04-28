@@ -71,6 +71,33 @@ cmake -DENABLE_ARM_SVE2=ON ..
 cmake -DKADD_OPTIMIZE=ON -DENABLE_ARM_SVE2=ON -DCMAKE_BUILD_TYPE=Release ..
 ```
 
+#### Assets 目录自动检测
+
+构建系统会自动检测 assets 目录位置，无需手动配置：
+
+| 优先级 | 位置 | 说明 |
+|--------|------|------|
+| 1 | `{PROJECT_ROOT}/assets/` | 项目根目录（推荐） |
+| 2 | `{BUILD_DIR}/assets/` | 构建目录同级 |
+| 3 | `assets/` | 相对路径（可能找不到） |
+
+**标准目录结构：**
+```
+KADD/                     ← 项目根目录
+├── assets/               ← 模型文件在这里（自动检测）
+│   └── model/
+│       └── model_tokens_rf.onnx
+├── build/                ← 构建目录
+├── CMakeLists.txt
+└── README.md
+```
+
+**验证检测的路径：**
+```bash
+cmake ..
+# 输出会显示: Assets path: /path/to/assets (auto-detected)
+```
+
 #### ARM SVE 加速
 
 **SVE（Scalable Vector Extension）** 是 ARMv9-A 架构引入的向量指令集。
