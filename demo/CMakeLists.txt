@@ -11,9 +11,7 @@ target_include_directories(kadd_feature_demo PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-target_link_libraries(kadd_feature_demo PRIVATE
-    ${CMAKE_BINARY_DIR}/src/libkadd_feature_engine.so
-)
+target_link_libraries(kadd_feature_demo PRIVATE kadd_feature_engine)
 
 # ========== kadd_ml_demo ==========
 add_executable(kadd_ml_demo kadd_ml_demo.c ${TOOLS_SRCS})
@@ -25,8 +23,7 @@ target_include_directories(kadd_ml_demo PRIVATE
 )
 
 target_link_libraries(kadd_ml_demo PRIVATE
-    ${ONNXRUNTIME_LIBRARIES}
-    ${CMAKE_BINARY_DIR}/src/libkadd_ml_engine.so
+    kadd_ml_engine
 )
 
 # 设置 RPATH 以便在当前目录和 src 目录查找库

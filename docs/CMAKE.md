@@ -174,7 +174,7 @@ add_kadd_library(kadd_sqli_engine
 | `libkadd_dfa_engine_pro.so` | 增强型 DFA | cJSON |
 | `libkadd_sqli_engine.so` | SQL 注入检测引擎 | cJSON + 其他引擎 |
 
-所有库输出到 `output/` 目录。
+所有库输出到 `build/lib/` 目录。
 
 ## demo/CMakeLists.txt - 示例程序
 
@@ -279,8 +279,8 @@ mkdir build && cd build
 cmake -G "Unix Makefiles" ..
 cmake --build .
 
-# 输出到 output/
-ls output/*.so
+# 输出到 build/lib/
+ls build/lib/*.so
 ```
 
 ### 场景 2：优化构建
@@ -318,16 +318,18 @@ cmake --build .
 ### 目录结构
 
 ```
-output/
-├── libkadd_dfa_engine.so
-├── libkadd_feature_engine.so
-├── libkadd_ml_engine.so
-├── libkadd_dfa_engine_pro.so     # 如果 cJSON 可用
-├── libkadd_sqli_engine.so        # 如果 cJSON 可用
-├── kadd_feature_demo
-├── kadd_ml_demo
-├── test_onnx_20
-└── test_onnx_arm
+build/
+├── lib/
+│   ├── libkadd_dfa_engine.so
+│   ├── libkadd_feature_engine.so
+│   ├── libkadd_ml_engine.so
+│   ├── libkadd_dfa_engine_pro.so     # 如果 cJSON 可用
+│   └── libkadd_sqli_engine.so        # 如果 cJSON 可用
+└── bin/
+    ├── kadd_feature_demo
+    ├── kadd_ml_demo
+    ├── test_onnx_20
+    └── test_onnx_arm
 ```
 
 ### 版本信息
@@ -360,7 +362,7 @@ ls third_party/lib/libonnxruntime*
 
 ```bash
 # 检查 RPATH
-readelf -d output/kadd_ml_demo | grep RPATH
+readelf -d build/bin/kadd_ml_demo | grep RPATH
 
 # 设置 LD_LIBRARY_PATH
 export LD_LIBRARY_PATH=$ONNXRUNTIME_HOME/lib:$LD_LIBRARY_PATH
@@ -415,7 +417,7 @@ add_kadd_gtest(new_engine_test test_new_engine_gtest.cpp)
 ```cmake
 # demo/CMakeLists.txt
 add_executable(new_demo new_demo.c)
-target_link_libraries(new_demo PRIVATE ${CMAKE_BINARY_DIR}/src/libkadd_new_engine.so)
+target_link_libraries(new_demo PRIVATE kadd_new_engine)
 ```
 
 ## 最佳实践

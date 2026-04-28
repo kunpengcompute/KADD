@@ -119,7 +119,7 @@ ctest --verbose
 | DFA Pro 引擎 | `libkadd_dfa_engine_pro.so` | 增强型 DFA 分词 |
 | SQL 注入检测引擎 | `libkadd_sqli_engine.so` | 完整检测 API |
 
-动态库位于 `output/` 目录。
+动态库位于 `build/lib/` 目录。
 
 ## 📚 文档
 

@@ -11,13 +11,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 string(TIMESTAMP BUILDDATE "%Y.%m.%d")
 set(KADD_VERSION_BUILDDATE "${BUILDDATE}")
 
-# 输出路径配置
-set(LIBRARY_OUTPUT_PATH "${PROJECT_SOURCE_DIR}/output")
-set(EXECUTABLE_OUTPUT_PATH "${PROJECT_SOURCE_DIR}/output")
-set(CMAKE_INSTALL_PREFIX "${PROJECT_SOURCE_DIR}/output")
-message("-- Library output path: ${LIBRARY_OUTPUT_PATH}")
-message("-- Executable output path: ${EXECUTABLE_OUTPUT_PATH}")
-
 # ============================================================================
 # 选项配置
 # ============================================================================
