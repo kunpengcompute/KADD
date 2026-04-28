@@ -1,18 +1,22 @@
 @echo off
 REM KADD Dynamic Library Build Script (Windows)
-REM Purpose: Build all 4 dynamic libraries in one click
+REM Purpose: Build all dynamic libraries in one click
 REM
 REM Dependencies:
 REM   - ONNX Runtime (required, for ML engine)
 REM   - cJSON (optional, for SQLi engine and DFA Pro)
 REM   - Google Test (optional, for testing only)
-REM   - CMake 3.15+ (required)
+REM   - CMake 3.16+ (required)
 REM   - MinGW (required)
 REM
 REM Dependency Lookup Strategy:
 REM   1. Try system libraries first
 REM   2. Fallback to third_party directory
 REM   3. Use -DUSE_SYSTEM_LIBS=OFF to force third_party only
+REM
+REM Build Options:
+REM   - DKADD_OPTIMIZE=ON   Enable optimizations (-O3)
+REM   - DENABLE_CODE_COVERAGE=ON Enable code coverage
 REM
 REM For installation guide, see: docs/INSTALL.md
 
@@ -36,9 +40,14 @@ echo.
 echo [INFO] Dependencies:
 echo [INFO]   Build Basic Engines (DFA/Feature): No external deps
 echo [INFO]   Build ML Engine: ONNX Runtime
-echo [INFO]   Build SQLi Engine: ONNX Runtime + cJSON
+echo [INFO]   Build DFA Pro: ONNX Runtime + cJSON
+echo [INFO]   Build SQLi Engine: ONNX Runtime + cJSON + DFA/Feature/ML
 echo [INFO]   Run Tests: ONNX Runtime + cJSON + Google Test
 echo [INFO]   Installation guide: docs\INSTALL.md
+echo [INFO]
+echo [INFO] Build Options:
+echo [INFO]   Set OPTIMIZE=1 to enable -O3 optimizations
+echo [INFO]   Set COVERAGE=1 to enable code coverage
 echo.
 
 REM Check build directory
@@ -80,7 +89,7 @@ if exist "C:\Program Files\cJSON\include\cJSON.h" (
     set USE_SYSTEM_CJSON=0
     echo [WARN] Will use third_party cJSON
 ) else (
-    echo [WARN] cJSON not found! SQLi engine will not be built
+    echo [WARN] cJSON not found! DFA Pro and SQLi engine will not be built
     set USE_SYSTEM_CJSON=0
 )
 
@@ -88,19 +97,34 @@ echo.
 echo [INFO] Dependency check completed
 echo.
 
-REM Clean old DLLs
-echo [SYSTEM] 2. Cleaning old DLLs...
-if exist build\src\*.dll (
-    del /Q build\src\*.dll 2>nul
+REM Clean old artifacts
+echo [SYSTEM] 2. Cleaning old artifacts...
+if exist output\*.dll (
+    del /Q output\*.dll 2>nul
     echo [OK]   Old DLLs deleted
 ) else (
     echo [INFO] No old DLLs to clean
+)
+if exist output\*.a (
+    del /Q output\*.a 2>nul
 )
 echo.
 
 REM Configure CMake
 echo [SYSTEM] 3. Configuring CMake...
-cmake -H. -Bbuild -G "MinGW Makefiles"
+
+REM Parse build options
+set CMAKE_OPTS=-G "MinGW Makefiles" -DBUILD_TESTS=OFF
+if "%OPTIMIZE%"=="1" (
+    set CMAKE_OPTS=%CMAKE_OPTS% -DKADD_OPTIMIZE=ON
+    echo [INFO]   Optimization enabled (-O3)
+)
+if "%COVERAGE%"=="1" (
+    set CMAKE_OPTS=%CMAKE_OPTS% -DENABLE_CODE_COVERAGE=ON
+    echo [INFO]   Code coverage enabled
+)
+
+cmake -H. -Bbuild %CMAKE_OPTS%
 if %ERRORLEVEL% NEQ 0 (
     echo [ERROR] CMake configuration failed
     pause
@@ -113,27 +137,27 @@ REM Build dynamic libraries
 echo [SYSTEM] 4. Building dynamic libraries...
 echo.
 
-echo [INFO]   [1/4] Building DFA engine DLL...
+echo [INFO]   [1/5] Building DFA engine DLL...
 mingw32-make -C build kadd_dfa_engine_dll
-if exist build\src\libkadd_dfa_engine.dll (
+if exist output\libkadd_dfa_engine.dll (
     echo [OK]     libkadd_dfa_engine.dll built successfully
 ) else (
     echo [FAIL]   libkadd_dfa_engine.dll build failed
 )
 echo.
 
-echo [INFO]   [2/4] Building Feature engine DLL...
+echo [INFO]   [2/5] Building Feature engine DLL...
 mingw32-make -C build kadd_feature_engine_dll
-if exist build\src\libkadd_feature_engine.dll (
+if exist output\libkadd_feature_engine.dll (
     echo [OK]     libkadd_feature_engine.dll built successfully
 ) else (
     echo [FAIL]   libkadd_feature_engine.dll build failed
 )
 echo.
 
-echo [INFO]   [3/4] Building ML engine DLL...
+echo [INFO]   [3/5] Building ML engine DLL...
 mingw32-make -C build kadd_ml_engine_dll
-if exist build\src\libkadd_ml_engine.dll (
+if exist output\libkadd_ml_engine.dll (
     echo [OK]     libkadd_ml_engine.dll built successfully
 ) else (
     echo [FAIL]   libkadd_ml_engine.dll build failed
@@ -141,25 +165,37 @@ if exist build\src\libkadd_ml_engine.dll (
 echo.
 
 if exist "third_party\include\cJSON.h" (
-    echo [INFO]   [4/4] Building SQLi engine DLL...
+    echo [INFO]   [4/5] Building DFA Pro engine DLL...
+    mingw32-make -C build kadd_dfa_engine_pro_dll
+    if exist output\libkadd_dfa_engine_pro.dll (
+        echo [OK]     libkadd_dfa_engine_pro.dll built successfully
+    ) else (
+        echo [WARN]   libkadd_dfa_engine_pro.dll build failed
+    )
+    echo.
+
+    echo [INFO]   [5/5] Building SQLi engine DLL...
     mingw32-make -C build kadd_sqli_engine_dll
-    if exist build\src\libkadd_sqli_engine.dll (
+    if exist output\libkadd_sqli_engine.dll (
         echo [OK]     libkadd_sqli_engine.dll built successfully
     ) else (
         echo [WARN]   libkadd_sqli_engine.dll build failed
     )
 ) else (
-    echo [INFO]   [4/4] Skipping SQLi engine (cJSON not available)
+    echo [INFO]   [4/5] Skipping DFA Pro engine (cJSON not available)
+    echo.
+    echo [INFO]   [5/5] Skipping SQLi engine (cJSON not available)
 )
 echo.
 
 REM Count results
 echo [SYSTEM] 5. Build result statistics...
 set DLL_COUNT=0
-if exist build\src\libkadd_dfa_engine.dll set /a DLL_COUNT+=1
-if exist build\src\libkadd_feature_engine.dll set /a DLL_COUNT+=1
-if exist build\src\libkadd_ml_engine.dll set /a DLL_COUNT+=1
-if exist build\src\libkadd_sqli_engine.dll set /a DLL_COUNT+=1
+if exist output\libkadd_dfa_engine.dll set /a DLL_COUNT+=1
+if exist output\libkadd_feature_engine.dll set /a DLL_COUNT+=1
+if exist output\libkadd_ml_engine.dll set /a DLL_COUNT+=1
+if exist output\libkadd_dfa_engine_pro.dll set /a DLL_COUNT+=1
+if exist output\libkadd_sqli_engine.dll set /a DLL_COUNT+=1
 
 echo.
 echo ==========================================
@@ -167,17 +203,17 @@ echo   Build Complete!
 echo ==========================================
 echo [SYSTEM] Platform: Windows
 echo [INFO]   Total DLLs: %DLL_COUNT%
-echo [INFO]   Output directory: build\src\
+echo [INFO]   Output directory: output\
 echo.
 echo Generated DLLs:
-dir /B build\src\*.dll 2>nul
+dir /B output\*.dll 2>nul
 if %ERRORLEVEL% NEQ 0 (
     echo   (No DLL files found)
 )
 echo.
 echo Usage:
 echo   1. Copy DLLs to your project directory
-echo   2. Link with -L<path\to\dll> -l<libname>
+echo   2. Link with -L^<path\to\output^> -l^<libname^>
 echo.
 echo Integration Notes:
 if %USE_SYSTEM_ONNX%==1 (
