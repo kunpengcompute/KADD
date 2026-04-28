@@ -34,7 +34,7 @@ class Config:
     }
 
     # 数据划分参数
-    TEST_SIZE = 0.8
+    TEST_SIZE = 0.2
     RANDOM_STATE = 12
 
     # 验证集大小
@@ -385,6 +385,7 @@ def save_verify_data(
 def export_onnx_model(
     models: Dict[str, Any],
     X_test: np.ndarray,
+    y_test: np.ndarray,
     output_dir: str
 ) -> None:
     """
@@ -393,6 +394,7 @@ def export_onnx_model(
     Args:
         models: 模型字典
         X_test: 测试数据（用于验证）
+        y_test: 测试标签
         output_dir: 输出目录
     """
     try:
@@ -405,21 +407,59 @@ def export_onnx_model(
         print("导出 ONNX 模型...")
         print("=" * 60)
 
+        # 在保存模型前，打印预测数据与原始数据对比
+        print("\n" + "=" * 70)
+        print("预测数据与原始数据对比 (前20条)")
+        print("=" * 70)
+
+        model = models['random_forest']
+        y_pred = model.predict(X_test[:20])
+        y_true = y_test[:20]
+
+        # 打印表头
+        print(f"{'序号':<4} {'原始标签':<8} {'预测标签':<8} {'是否正确':<8} {'对比结果':<20}")
+        print("-" * 70)
+
+        for i in range(20):
+            is_correct = "✓" if y_pred[i] == y_true[i] else "✗"
+            comparison = f"{y_true[i]} vs {y_pred[i]}"
+            if y_pred[i] == y_true[i]:
+                comparison = f"✓ {y_true[i]}"
+            else:
+                comparison = f"✗ 期望{y_true[i]} 实际{y_pred[i]}"
+            print(f"{i:<4} {y_true[i]:<8} {y_pred[i]:<8} {is_correct:<8} {comparison:<20}")
+
+        print("-" * 70)
+        correct_count = sum(y_pred == y_true)
+        print(f"前20条准确率: {correct_count}/20 = {correct_count/20:.2%}")
+        print("=" * 70)
+
         # 随机森林 ONNX
         print("\n导出随机森林 ONNX...")
         from skl2onnx import convert_sklearn as skl_convert_sklearn
         from skl2onnx.common.data_types import FloatTensorType as SklearnFloatTensorType
+
+        # 设置 opset 版本为 12（兼容性更好）
+        # 注意：使用 opset 21 会导致 IR version 10，某些 ONNX Runtime 版本不支持
+        # 使用 opset 12 会让 IR version 保持在 7，兼容性更好
+        target_opset = 12
+        print(f"使用 opset 版本: {target_opset}")
+
         initial_type = [('float_input', SklearnFloatTensorType([None, Config.FEATURE_DIM]))]
         # 使用 options 参数禁用 zipmap，输出概率数组格式
         rf_model = models['random_forest']
+
         onnx_rf = skl_convert_sklearn(
             rf_model,
             initial_types=initial_type,
+            target_opset=target_opset,
             options={id(rf_model): {'zipmap': False}}
         )
         onnx_rf_path = os.path.join(output_dir, "model_tokens_rf.onnx")
-        onnxmltools.utils.save_model(onnx_rf, onnx_rf_path)
-        print(f"[OK] 随机森林 ONNX 模型已保存: {onnx_rf_path}")
+        # 使用 ONNX 原生的 save 方法，避免版本问题
+        import onnx
+        onnx.save(onnx_rf, onnx_rf_path)
+        print(f"[OK] 随机森林 ONNX 模型已保存: {onnx_rf_path} (opset {target_opset})")
 
         # 验证 ONNX 模型
         _verify_onnx_model(onnx_rf_path, X_test)
@@ -445,7 +485,7 @@ def _verify_onnx_model(
     try:
         import onnxruntime as ort
 
-        test_input = X_test[:5].astype(np.float32)
+        test_input = X_test[:22].astype(np.float32)
 
         # 随机森林验证
         sess_rf = ort.InferenceSession(rf_path)
@@ -485,7 +525,7 @@ def save_model(
     # )
 
     # 导出 ONNX 模型
-    export_onnx_model(models, datasets['X_test'], output_dir)
+    export_onnx_model(models, datasets['X_test'], datasets['y_test'], output_dir)
 
 
 # ==================== 主流程 ====================
@@ -509,6 +549,19 @@ def main():
         random_state=Config.RANDOM_STATE,
         verify_size=Config.VERIFY_SIZE
     )
+
+    # 数据诊断
+    print("\n" + "=" * 60)
+    print("训练数据诊断")
+    print("=" * 60)
+    print(f"X_train 形状: {datasets['X_train'].shape}")
+    print(f"X_train 范围: {datasets['X_train'].min()} ~ {datasets['X_train'].max()}")
+    print(f"X_train 均值: {datasets['X_train'].mean():.2f}")
+    print(f"X_train 标准差: {datasets['X_train'].std():.2f}")
+    print(f"y_train 唯一值: {np.unique(datasets['y_train'])}")
+    from collections import Counter
+    print(f"y_train 分布: {Counter(datasets['y_train'])}")
+    print("=" * 60)
 
     # 3. 训练模型
     models = train_model(datasets)

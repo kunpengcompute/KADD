@@ -89,6 +89,41 @@ else()
     )
 endif()
 
+# ========== test_onnx_20 (ONNX Runtime 1.20+ 兼容性测试工具) ==========
+add_executable(test_onnx_20 test_onnx_20.c)
+
+target_include_directories(test_onnx_20 PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}
+)
+
+target_include_directories(test_onnx_20 PRIVATE ${ONNXRUNTIME_INCLUDE_DIRS})
+target_link_libraries(test_onnx_20 PRIVATE ${ONNXRUNTIME_LIBRARIES})
+
+if(WIN32)
+    if(EXISTS "${CMAKE_SOURCE_DIR}/third_party/lib/onnxruntime.dll")
+        add_custom_command(TARGET test_onnx_20 POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_SOURCE_DIR}/third_party/lib/onnxruntime.dll
+            $<TARGET_FILE_DIR:test_onnx_20>
+            COMMENT "Copying onnxruntime.dll"
+        )
+    endif()
+else()
+    if(EXISTS "${CMAKE_SOURCE_DIR}/third_party/lib/libonnxruntime.so")
+        add_custom_command(TTARGET test_onnx_20 POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${CMAKE_SOURCE_DIR}/third_party/lib/libonnxruntime.so
+            $<TARGET_FILE_DIR:test_onnx_20>
+            COMMENT "Copying libonnxruntime.so"
+        )
+    endif()
+    set_target_properties(test_onnx_20 PROPERTIES
+        INSTALL_RPATH "$ORIGIN;$ORIGIN/../src:${CMAKE_BINARY_DIR}/src"
+        BUILD_WITH_INSTALL_RPATH TRUE
+    )
+endif()
+
 # ========== test_onnx_arm (ARM + ONNX Runtime 1.16 诊断工具) ==========
 add_executable(test_onnx_arm test_onnx_arm.c)
 

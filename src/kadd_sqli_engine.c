@@ -319,7 +319,27 @@ int kadd_sqli_detect(kadd_sqli_engine_t *engine, const char *input, float *proba
 
     /* 步骤 3: ML 推理 -> 注入概率 */
     /* 将 int 特征转换为 float */
-    float *float_features = (float *)malloc(engine->config.feature_dim * sizeof(float));
+    /*
+     * ARM 平台内存对齐注意事项：
+     * ONNX Runtime 期望输入数据是 4 字节对齐的（float 对齐）
+     * 使用标准的 malloc 可能返回未对齐的指针，导致 ARM 上读取数据错误
+     *
+     * 解决方案：使用 aligned_alloc 或 posix_memalign
+     */
+    float *float_features = NULL;
+#if defined(_WIN32) || defined(__STDC_NO_THREADS__)
+    /* Windows 或不支持 C11 的平台，使用 malloc（Windows 默认对齐） */
+    float_features = (float *)malloc(engine->config.feature_dim * sizeof(float));
+#else
+    /* POSIX 平台（包括 ARM Linux），使用 aligned_alloc 确保对齐 */
+    if (posix_memalign((void **)&float_features, 16, engine->config.feature_dim * sizeof(float)) != 0) {
+        /* 16 字节对齐（NEON/SVE 的要求） */
+        free(token_output);
+        free(features);
+        return KADD_SQLI_ERROR_MEMORY;
+    }
+#endif
+
     if (!float_features) {
         free(token_output);
         free(features);
@@ -335,7 +355,11 @@ int kadd_sqli_detect(kadd_sqli_engine_t *engine, const char *input, float *proba
 
     free(token_output);
     free(features);
+#if defined(_WIN32) || defined(__STDC_NO_THREADS__)
     free(float_features);
+#else
+    free(float_features);  /* posix_memalign 分配的内存可以用 free 释放 */
+#endif
 
     if (ret != 0) {
         return KADD_SQLI_ERROR_ML;
@@ -442,7 +466,18 @@ int kadd_sqli_detect_batch(kadd_sqli_engine_t *engine, const char **inputs, int 
         if (feature_success > 0) {
             /* 将 int 特征转换为 float */
             int total_features = current_batch * engine->config.feature_dim;
-            float *float_features = (float *)malloc(total_features * sizeof(float));
+            float *float_features = NULL;
+
+#if defined(_WIN32) || defined(__STDC_NO_THREADS__)
+            /* Windows 或不支持 C11 的平台 */
+            float_features = (float *)malloc(total_features * sizeof(float));
+#else
+            /* POSIX 平台（包括 ARM Linux），使用 aligned_alloc 确保对齐 */
+            if (posix_memalign((void **)&float_features, 16, total_features * sizeof(float)) != 0) {
+                float_features = NULL;
+            }
+#endif
+
             if (float_features) {
                 for (int i = 0; i < total_features; i++) {
                     float_features[i] = (float)all_features[i];

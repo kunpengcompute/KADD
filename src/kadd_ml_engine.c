@@ -23,6 +23,8 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#else
+#include <stdlib.h>  // for setenv
 #endif
 
 /* ========== 内部结构体 ========== */
@@ -45,8 +47,10 @@ static int create_session(kadd_model_handle_t *handle, const char *model_path) {
         const OrtApiBase *api_base = OrtGetApiBase();
         if (!api_base) return -1;
 
-        // 尝试从当前版本开始，逐步回退到版本 10（覆盖 1.16 及更早版本）
-        for (int version = ORT_API_VERSION; version >= 10; version--) {
+        // 尝试从当前版本开始，逐步回退以兼容不同版本的 ONNX Runtime
+        // ONNX Runtime 1.16+ 支持 API 版本 15-17
+        // ONNX Runtime 1.20+ 支持 API 版本 18-20
+        for (int version = ORT_API_VERSION; version >= 15; version--) {
             g_ort_api = api_base->GetApi(version);
             if (g_ort_api) {
                 fprintf(stderr, "KADD ML: Using ONNX Runtime API version %d\n", version);
@@ -55,7 +59,8 @@ static int create_session(kadd_model_handle_t *handle, const char *model_path) {
         }
 
         if (!g_ort_api) {
-            fprintf(stderr, "KADD ML: Failed to get ONNX Runtime API (tried versions %d down to 10)\n", ORT_API_VERSION);
+            fprintf(stderr, "KADD ML: Failed to get ONNX Runtime API (tried versions %d down to 15)\n", ORT_API_VERSION);
+            fprintf(stderr, "KADD ML: ONNX Runtime 1.16+ requires API version 15 or higher\n");
             fprintf(stderr, "KADD ML: Please ensure ONNX Runtime library is compatible\n");
             return -1;
         }
@@ -63,6 +68,8 @@ static int create_session(kadd_model_handle_t *handle, const char *model_path) {
     handle->api = g_ort_api;
 
     // 创建环境
+    // 注意：ONNX Runtime 1.20+ 需要 CreateEnvWithGlobalThreadPools
+    // 但由于我们不使用 DisablePerSessionThreads，所以可以直接使用 CreateEnv
     if (!g_ort_env) {
         OrtStatus *status = handle->api->CreateEnv(ORT_LOGGING_LEVEL_WARNING, "inference", &g_ort_env);
         if (status) {
@@ -80,6 +87,22 @@ static int create_session(kadd_model_handle_t *handle, const char *model_path) {
         return -1;
     }
 
+    // 设置执行模式为顺序执行（适用于小型模型）
+    handle->api->SetSessionExecutionMode(options, ORT_SEQUENTIAL);
+
+    // 设置图优化级别
+    handle->api->SetSessionGraphOptimizationLevel(options, ORT_ENABLE_BASIC);
+
+    // 对于 ONNX Runtime 1.20+，设置环境变量以启用受限 opset 支持
+    // 注意：这需要在加载会话之前设置环境变量
+    #ifdef _WIN32
+    SetEnvironmentVariableA("ORT_UNRELEASED_OPS", "1");
+    SetEnvironmentVariableA("ORT_ENABLE_OPTIONAL_OPS", "1");
+    #else
+    setenv("ORT_UNRELEASED_OPS", "1", 1);
+    setenv("ORT_ENABLE_OPTIONAL_OPS", "1", 1);
+    #endif
+
     // 创建会话
 #ifdef _WIN32
     int len = MultiByteToWideChar(CP_UTF8, 0, model_path, -1, NULL, 0);
@@ -93,6 +116,8 @@ static int create_session(kadd_model_handle_t *handle, const char *model_path) {
     handle->api->ReleaseSessionOptions(options);
 
     if (status) {
+        const char *msg = handle->api->GetErrorMessage(status);
+        fprintf(stderr, "KADD ML: Failed to create session: %s\n", msg ? msg : "Unknown error");
         handle->api->ReleaseStatus(status);
         return -1;
     }
@@ -151,6 +176,18 @@ int kadd_model_load(kadd_model_handle_t **handle, const char *model_path, int fe
 int kadd_model_predict(kadd_model_handle_t *handle, const float *features, float *probability) {
     if (!handle || !features || !probability) return -1;
 
+    // 调试: 检查输入特征
+    #ifdef KADD_DEBUG_ML
+    float max_feat = 0.0f;
+    float sum_feat = 0.0f;
+    for (int i = 0; i < handle->feature_dim; i++) {
+        if (features[i] > max_feat) max_feat = features[i];
+        sum_feat += features[i];
+    }
+    fprintf(stderr, "[KADD_ML_DEBUG] Input features: max=%.2f, sum=%.2f, dim=%d\n",
+            max_feat, sum_feat, handle->feature_dim);
+    #endif
+
     int64_t shape[] = {1, handle->feature_dim};
     OrtValue *input = NULL;
     OrtStatus *status = handle->api->CreateTensorWithDataAsOrtValue(
@@ -184,8 +221,45 @@ int kadd_model_predict(kadd_model_handle_t *handle, const float *features, float
         return -1;
     }
 
-    /* 根据模型输出格式选择正确的概率值 */
-    *probability = data[1];  /* 使用第二个值（正类概率） */
+    /* 获取输出张量信息，确认形状 */
+    OrtTypeInfo *type_info = NULL;
+    OrtTensorTypeAndShapeInfo *tensor_info = NULL;
+    size_t output_dim_count = 0;
+    int64_t output_shape[4] = {0};
+
+    if (handle->api->GetTypeInfo(output, &type_info) == NULL) {
+        if (handle->api->GetTensorTypeAndShape(type_info, &tensor_info) == NULL) {
+            handle->api->GetDimensionsCount(tensor_info, &output_dim_count);
+            if (output_dim_count <= 4) {
+                handle->api->GetDimensions(tensor_info, output_shape, output_dim_count);
+            }
+            handle->api->ReleaseTensorTypeAndShapeInfo(tensor_info);
+        }
+        handle->api->ReleaseTypeInfo(type_info);
+    }
+
+    /*
+     * ONNX 模型输出格式: (batch_size, 2)
+     * data[0] = 负类概率, data[1] = 正类概率
+     * 对于形状 (1, 2): data[0][0], data[0][1] 在内存中连续存储
+     * 所以 data[1] 就是正类概率
+     */
+
+    // 调试: 打印原始输出
+    #ifdef KADD_DEBUG_ML
+    fprintf(stderr, "[KADD_ML_DEBUG] Output shape dims: %zu\n", output_dim_count);
+    if (output_dim_count >= 2) {
+        fprintf(stderr, "[KADD_ML_DEBUG] Output shape: [%ld, %ld]\n", output_shape[0], output_shape[1]);
+    }
+    fprintf(stderr, "[KADD_ML_DEBUG] Raw output: data[0]=%.6f, data[1]=%.6f\n", data[0], data[1]);
+    #endif
+
+    *probability = data[1];
+
+    // 调试: 打印最终结果
+    #ifdef KADD_DEBUG_ML
+    fprintf(stderr, "[KADD_ML_DEBUG] Final probability: %.6f\n", *probability);
+    #endif
 
     handle->api->ReleaseValue(output);
     return 0;

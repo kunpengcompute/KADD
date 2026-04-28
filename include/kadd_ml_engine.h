@@ -3,6 +3,12 @@
 
 #include <stddef.h>
 
+/*
+ * 调试宏定义
+ * 取消注释以启用 ML 引擎调试输出
+ */
+// #define KADD_DEBUG_ML
+
 #ifdef __cplusplus
 extern "C" {
 #endif
