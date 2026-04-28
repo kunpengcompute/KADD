@@ -28,19 +28,51 @@ endif()
 
 if(NOT onnxruntime_FOUND)
     # 使用 third_party 中的 ONNX Runtime
-    if(EXISTS "${CMAKE_SOURCE_DIR}/third_party/lib/onnxruntime.dll" OR
-       EXISTS "${CMAKE_SOURCE_DIR}/third_party/lib/libonnxruntime.so")
-        message(STATUS "Using third_party ONNX Runtime")
-        set(ONNXRUNTIME_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/third_party/include)
-        if(WIN32)
-            set(ONNXRUNTIME_LIBRARIES ${CMAKE_SOURCE_DIR}/third_party/lib/onnxruntime.dll)
-        elseif(APPLE)
-            set(ONNXRUNTIME_LIBRARIES ${CMAKE_SOURCE_DIR}/third_party/lib/libonnxruntime.dylib)
-        else()
-            set(ONNXRUNTIME_LIBRARIES ${CMAKE_SOURCE_DIR}/third_party/lib/libonnxruntime.so)
+    # 检查所有可能的库文件名
+    set(ONNX_LIB_FOUND FALSE)
+    set(ONNX_LIB_NAMES "")
+
+    # Windows
+    if(WIN32)
+        list(APPEND ONNX_LIB_NAMES "onnxruntime.dll")
+    endif()
+
+    # macOS
+    if(APPLE)
+        list(APPEND ONNX_LIB_NAMES "libonnxruntime.dylib")
+    endif()
+
+    # Linux (包括 ARM Linux)
+    if(UNIX AND NOT APPLE)
+        list(APPEND ONNX_LIB_NAMES "libonnxruntime.so")
+        # 也检查版本化的库文件
+        list(APPEND ONNX_LIB_NAMES "libonnxruntime.so.1.16.0")
+        list(APPEND ONNX_LIB_NAMES "libonnxruntime.so.1.17.0")
+        list(APPEND ONNX_LIB_NAMES "libonnxruntime.so.1.18.0")
+        list(APPEND ONNX_LIB_NAMES "libonnxruntime.so.1.20.0")
+    endif()
+
+    # 尝试找到库文件
+    foreach(lib_name ${ONNX_LIB_NAMES})
+        if(EXISTS "${CMAKE_SOURCE_DIR}/third_party/lib/${lib_name}")
+            set(ONNXRUNTIME_LIBRARIES ${CMAKE_SOURCE_DIR}/third_party/lib/${lib_name})
+            set(ONNX_LIB_FOUND TRUE)
+            message(STATUS "Using third_party ONNX Runtime: ${lib_name}")
+            break()
         endif()
+    endforeach()
+
+    if(ONNX_LIB_FOUND)
+        set(ONNXRUNTIME_INCLUDE_DIRS ${CMAKE_SOURCE_DIR}/third_party/include)
     else()
         message(FATAL_ERROR "ONNX Runtime not found! Please install it or place it in third_party/lib/")
+        message("  Looking for one of: ${ONNX_LIB_NAMES}")
+        message("  Current directory: ${CMAKE_SOURCE_DIR}/third_party/lib/")
+        message("  Contents:")
+        file(GLOB lib_files "${CMAKE_SOURCE_DIR}/third_party/lib/*")
+        foreach(lib_file ${lib_files})
+            message("    ${lib_file}")
+        endforeach()
     endif()
 endif()
 

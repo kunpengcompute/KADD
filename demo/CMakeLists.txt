@@ -69,19 +69,25 @@ elseif(APPLE)
         BUILD_WITH_INSTALL_RPATH TRUE
     )
 else()
-    # Linux
+    # Linux (包括 ARM Linux)
     target_link_libraries(kadd_ml_demo PRIVATE
         ${CMAKE_BINARY_DIR}/src/libkadd_ml_engine.so
     )
-    # 复制 ONNX Runtime .so 到输出目录
-    if(EXISTS "${CMAKE_SOURCE_DIR}/third_party/lib/libonnxruntime.so")
-        add_custom_command(TARGET kadd_ml_demo POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_SOURCE_DIR}/third_party/lib/libonnxruntime.so
-            $<TARGET_FILE_DIR:kadd_ml_demo>
-            COMMENT "Copying libonnxruntime.so"
-        )
-    endif()
+    # 复制 ONNX Runtime .so 到输出目录（支持多种命名方式）
+    set(ONNX_SO_FOUND FALSE)
+    set(ONNX_SO_NAMES "libonnxruntime.so" "libonnxruntime.so.1.16.0" "libonnxruntime.so.1.17.0" "libonnxruntime.so.1.18.0" "libonnxruntime.so.1.20.0")
+    foreach(so_name ${ONNX_SO_NAMES})
+        if(EXISTS "${CMAKE_SOURCE_DIR}/third_party/lib/${so_name}")
+            add_custom_command(TARGET kadd_ml_demo POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    ${CMAKE_SOURCE_DIR}/third_party/lib/${so_name}
+                    $<TARGET_FILE_DIR:kadd_ml_demo>
+                COMMENT "Copying ${so_name}"
+            )
+            set(ONNX_SO_FOUND TRUE)
+            break()
+        endif()
+    endforeach()
     # 设置 RPATH 以便在当前目录和 src 目录查找库
     set_target_properties(kadd_ml_demo PROPERTIES
         INSTALL_RPATH "$ORIGIN;$ORIGIN/../src:${CMAKE_BINARY_DIR}/src"
@@ -110,14 +116,21 @@ if(WIN32)
         )
     endif()
 else()
-    if(EXISTS "${CMAKE_SOURCE_DIR}/third_party/lib/libonnxruntime.so")
-        add_custom_command(TTARGET test_onnx_20 POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_SOURCE_DIR}/third_party/lib/libonnxruntime.so
-            $<TARGET_FILE_DIR:test_onnx_20>
-            COMMENT "Copying libonnxruntime.so"
-        )
-    endif()
+    # Linux (包括 ARM Linux)
+    set(ONNX_SO_FOUND FALSE)
+    set(ONNX_SO_NAMES "libonnxruntime.so" "libonnxruntime.so.1.16.0" "libonnxruntime.so.1.17.0" "libonnxruntime.so.1.18.0" "libonnxruntime.so.1.20.0")
+    foreach(so_name ${ONNX_SO_NAMES})
+        if(EXISTS "${CMAKE_SOURCE_DIR}/third_party/lib/${so_name}")
+            add_custom_command(TARGET test_onnx_20 POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    ${CMAKE_SOURCE_DIR}/third_party/lib/${so_name}
+                    $<TARGET_FILE_DIR:test_onnx_20>
+                COMMENT "Copying ${so_name}"
+            )
+            set(ONNX_SO_FOUND TRUE)
+            break()
+        endif()
+    endforeach()
     set_target_properties(test_onnx_20 PROPERTIES
         INSTALL_RPATH "$ORIGIN;$ORIGIN/../src:${CMAKE_BINARY_DIR}/src"
         BUILD_WITH_INSTALL_RPATH TRUE
@@ -145,14 +158,21 @@ if(WIN32)
         )
     endif()
 else()
-    if(EXISTS "${CMAKE_SOURCE_DIR}/third_party/lib/libonnxruntime.so")
-        add_custom_command(TARGET test_onnx_arm POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_SOURCE_DIR}/third_party/lib/libonnxruntime.so
-            $<TARGET_FILE_DIR:test_onnx_arm>
-            COMMENT "Copying libonnxruntime.so"
-        )
-    endif()
+    # Linux (包括 ARM Linux)
+    set(ONNX_SO_FOUND FALSE)
+    set(ONNX_SO_NAMES "libonnxruntime.so" "libonnxruntime.so.1.16.0" "libonnxruntime.so.1.17.0" "libonnxruntime.so.1.18.0" "libonnxruntime.so.1.20.0")
+    foreach(so_name ${ONNX_SO_NAMES})
+        if(EXISTS "${CMAKE_SOURCE_DIR}/third_party/lib/${so_name}")
+            add_custom_command(TARGET test_onnx_arm POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    ${CMAKE_SOURCE_DIR}/third_party/lib/${so_name}
+                    $<TARGET_FILE_DIR:test_onnx_arm>
+                COMMENT "Copying ${so_name}"
+            )
+            set(ONNX_SO_FOUND TRUE)
+            break()
+        endif()
+    endforeach()
     set_target_properties(test_onnx_arm PROPERTIES
         INSTALL_RPATH "$ORIGIN;$ORIGIN/../src:${CMAKE_BINARY_DIR}/src"
         BUILD_WITH_INSTALL_RPATH TRUE
