@@ -88,10 +88,20 @@ static int create_session(kadd_model_handle_t *handle, const char *model_path) {
     }
 
     // 设置执行模式为顺序执行（适用于小型模型）
-    handle->api->SetSessionExecutionMode(options, ORT_SEQUENTIAL);
+    status = handle->api->SetSessionExecutionMode(options, ORT_SEQUENTIAL);
+    if (status) {
+        handle->api->ReleaseSessionOptions(options);
+        handle->api->ReleaseStatus(status);
+        return -1;
+    }
 
     // 设置图优化级别
-    handle->api->SetSessionGraphOptimizationLevel(options, ORT_ENABLE_BASIC);
+    status = handle->api->SetSessionGraphOptimizationLevel(options, ORT_ENABLE_BASIC);
+    if (status) {
+        handle->api->ReleaseSessionOptions(options);
+        handle->api->ReleaseStatus(status);
+        return -1;
+    }
 
     // 对于 ONNX Runtime 1.20+，设置环境变量以启用受限 opset 支持
     // 注意：这需要在加载会话之前设置环境变量
@@ -131,21 +141,30 @@ static int create_session(kadd_model_handle_t *handle, const char *model_path) {
 
     // 检测输出节点名称
     OrtAllocator *allocator = NULL;
-    handle->api->GetAllocatorWithDefaultOptions(&allocator);
-    if (allocator) {
+    OrtStatus *alloc_status = handle->api->GetAllocatorWithDefaultOptions(&allocator);
+    if (!alloc_status && allocator) {
         size_t num_outputs = 0;
-        handle->api->SessionGetOutputCount(handle->session, &num_outputs);
-        for (size_t i = 0; i < num_outputs; i++) {
-            char *name = NULL;
-            if (handle->api->SessionGetOutputName(handle->session, i, allocator, &name) == NULL && name) {
-                if (strstr(name, "probability")) {
-                    handle->output_name = strdup(name);
-                    allocator->Free(allocator, name);
-                    break;
+        OrtStatus *count_status = handle->api->SessionGetOutputCount(handle->session, &num_outputs);
+        if (!count_status) {
+            for (size_t i = 0; i < num_outputs; i++) {
+                char *name = NULL;
+                OrtStatus *name_status = handle->api->SessionGetOutputName(handle->session, i, allocator, &name);
+                if (!name_status && name) {
+                    if (strstr(name, "probability")) {
+                        handle->output_name = strdup(name);
+                        handle->api->AllocatorFree(allocator, name);
+                        break;
+                    }
+                    handle->api->AllocatorFree(allocator, name);
+                } else if (name_status) {
+                    handle->api->ReleaseStatus(name_status);
                 }
-                allocator->Free(allocator, name);
             }
+        } else if (count_status) {
+            handle->api->ReleaseStatus(count_status);
         }
+    } else if (alloc_status) {
+        handle->api->ReleaseStatus(alloc_status);
     }
 
     if (!handle->output_name) {
@@ -205,6 +224,11 @@ int kadd_model_predict(kadd_model_handle_t *handle, const float *features, float
 
     OrtValue *inputs[] = {input};
     status = handle->api->Run(handle->session, NULL, input_names, inputs, 1, output_names, 1, &output);
+    if (status) {
+        handle->api->ReleaseValue(input);
+        handle->api->ReleaseStatus(status);
+        return -1;
+    }
     handle->api->ReleaseValue(input);
 
     if (status) {
@@ -227,15 +251,26 @@ int kadd_model_predict(kadd_model_handle_t *handle, const float *features, float
     size_t output_dim_count = 0;
     int64_t output_shape[4] = {0};
 
-    if (handle->api->GetTypeInfo(output, &type_info) == NULL) {
-        if (handle->api->GetTensorTypeAndShape(type_info, &tensor_info) == NULL) {
-            handle->api->GetDimensionsCount(tensor_info, &output_dim_count);
-            if (output_dim_count <= 4) {
-                handle->api->GetDimensions(tensor_info, output_shape, output_dim_count);
+    OrtStatus *type_status = handle->api->GetTypeInfo(output, &type_info);
+    if (!type_status && type_info) {
+        OrtStatus *tensor_status = handle->api->GetTensorTypeAndShape(type_info, &tensor_info);
+        if (!tensor_status && tensor_info) {
+            OrtStatus *dim_status = handle->api->GetDimensionsCount(tensor_info, &output_dim_count);
+            if (!dim_status && output_dim_count <= 4) {
+                OrtStatus *shape_status = handle->api->GetDimensions(tensor_info, output_shape, 4);
+                if (shape_status) {
+                    handle->api->ReleaseStatus(shape_status);
+                }
+            } else if (dim_status) {
+                handle->api->ReleaseStatus(dim_status);
             }
             handle->api->ReleaseTensorTypeAndShapeInfo(tensor_info);
+        } else if (tensor_status) {
+            handle->api->ReleaseStatus(tensor_status);
         }
         handle->api->ReleaseTypeInfo(type_info);
+    } else if (type_status) {
+        handle->api->ReleaseStatus(type_status);
     }
 
     /*
@@ -312,13 +347,13 @@ int kadd_model_predict_batch(kadd_model_handle_t *handle, const float *features,
 
         OrtValue *inputs[] = {input};
         status = handle->api->Run(handle->session, NULL, input_names, inputs, 1, output_names, 1, &output);
-        handle->api->ReleaseValue(input);
-
         if (status) {
+            handle->api->ReleaseValue(input);
             handle->api->ReleaseStatus(status);
             // 当前批次推理失败，跳过继续处理下一批次
             continue;
         }
+        handle->api->ReleaseValue(input);
 
         // 获取输出数据
         float *data = NULL;
