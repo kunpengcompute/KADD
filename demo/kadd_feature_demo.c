@@ -1,8 +1,6 @@
 /**
  * @file kadd_feature_demo.c
- * @brief 特征转换功能与性能示例
- *
- * 演示如何使用 kadd_seq_to_feature 接口将不定长序列转换为固定维度特征向量
+ * @brief 特征转换交互式演示
  */
 
 #include <stdio.h>
@@ -17,271 +15,226 @@
 #include <sys/time.h>
 #endif
 
-int main(int argc, char *argv[])
-{
+// 解析整数序列
+int parse_sequence(const char *input, int **seq_out) {
+    int capacity = 32;
+    int *seq = (int *)malloc(capacity * sizeof(int));
+    if (!seq) return -1;
+
+    int len = 0;
+    char *token = strtok((char *)input, ", ");
+    while (token != NULL) {
+        if (len >= capacity) {
+            capacity *= 2;
+            int *new_seq = (int *)realloc(seq, capacity * sizeof(int));
+            if (!new_seq) {
+                free(seq);
+                return -1;
+            }
+            seq = new_seq;
+        }
+
+        if (sscanf(token, "%d", &seq[len]) == 1) {
+            len++;
+        }
+        token = strtok(NULL, ", ");
+    }
+
+    *seq_out = seq;
+    return len;
+}
+
+// 特征转换测试
+void test_feature_conversion() {
+    int feature_dim = 28;
+    int *feature = (int *)calloc(feature_dim, sizeof(int));
+    if (!feature) {
+        printf("内存分配失败\n");
+        return;
+    }
+
+    printf("请输入序列 (用逗号或空格分隔，直接回车使用默认值): ");
+
+    char input[1024];
+    fgets(input, sizeof(input), stdin);
+    input[strcspn(input, "\n")] = 0;
+
+    int *seq = NULL;
+    int seq_len = 0;
+
+    if (strlen(input) == 0) {
+        // 默认序列
+        int default_seq[] = {7, 11, 8, 12, 8, 11, 8};
+        seq_len = 7;
+        seq = (int *)malloc(seq_len * sizeof(int));
+        if (seq) {
+            memcpy(seq, default_seq, seq_len * sizeof(int));
+            printf("使用默认序列: ");
+            for (int i = 0; i < seq_len; i++) {
+                printf("%d", seq[i]);
+                if (i < seq_len - 1) printf(", ");
+            }
+            printf("\n");
+        }
+    } else {
+        seq_len = parse_sequence(input, &seq);
+        if (seq_len < 0) {
+            printf("序列解析失败\n");
+            free(feature);
+            return;
+        }
+        printf("解析到 %d 个值\n", seq_len);
+    }
+
+    if (!seq) {
+        free(feature);
+        return;
+    }
+
+    printf("请输入窗口大小 (直接回车使用默认值5): ");
+
+    char window_input[64];
+    fgets(window_input, sizeof(window_input), stdin);
+    window_input[strcspn(window_input, "\n")] = 0;
+
+    int window_size = 5;
+    if (strlen(window_input) > 0 && sscanf(window_input, "%d", &window_size) == 1) {
+        if (window_size <= 0) {
+            printf("窗口大小必须大于0，使用默认值5\n");
+            window_size = 5;
+        }
+    } else {
+        printf("使用默认窗口大小: 5\n");
+    }
+
+    printf("请输入输出特征维度 (直接回车使用默认值28): ");
+
+    char dim_input[64];
+    fgets(dim_input, sizeof(dim_input), stdin);
+    dim_input[strcspn(dim_input, "\n")] = 0;
+
+    if (strlen(dim_input) > 0 && sscanf(dim_input, "%d", &feature_dim) == 1) {
+        if (feature_dim <= 0 || feature_dim > 1024) {
+            printf("特征维度无效，使用默认值28\n");
+            feature_dim = 28;
+        }
+    } else {
+        printf("使用默认特征维度: 28\n");
+    }
+
+    void *timer = timer_start();
+    int ret = kadd_seq_to_feature(seq, seq_len, window_size, feature, feature_dim);
+    double elapsed = timer_end(timer);
+
+    if (ret == 0) {
+        printf("转换成功，耗时: %.3f ms\n", elapsed);
+        printf("特征向量: [");
+        for (int i = 0; i < feature_dim; i++) {
+            printf("%d", feature[i]);
+            if (i < feature_dim - 1) printf(", ");
+        }
+        printf("]\n");
+    } else {
+        printf("转换失败\n");
+    }
+
+    free(seq);
+    free(feature);
+}
+
+// 性能测试
+void test_performance() {
+    int iterations = 0;
+    printf("请输入测试次数 (100-100000, 直接回车使用默认值10000): ");
+
+    char input[64];
+    fgets(input, sizeof(input), stdin);
+    input[strcspn(input, "\n")] = 0;
+
+    if (strlen(input) == 0) {
+        iterations = 10000;
+        printf("使用默认测试次数: 10000\n");
+    } else if (sscanf(input, "%d", &iterations) != 1 || iterations < 100 || iterations > 100000) {
+        printf("测试次数无效，使用默认值10000\n");
+        iterations = 10000;
+    }
+
+    int feature_dim = 28;
+    int *feature = (int *)calloc(feature_dim, sizeof(int));
+    int seq[] = {7, 11, 8, 12, 8, 11, 8};
+    int seq_len = 7;
+    int window_size = 5;
+
+    if (!feature) {
+        printf("内存分配失败\n");
+        return;
+    }
+
+    printf("开始性能测试...\n");
+    void *timer = timer_start();
+
+    for (int i = 0; i < iterations; i++) {
+        kadd_seq_to_feature(seq, seq_len, window_size, feature, feature_dim);
+    }
+
+    double elapsed = timer_end(timer);
+    printf("总耗时: %.3f ms\n", elapsed);
+    printf("平均耗时: %.6f ms/次\n", elapsed / iterations);
+    printf("吞吐量: %.0f 次/秒\n", 1000.0 / (elapsed / iterations));
+
+    free(feature);
+}
+
+// 主菜单
+void show_main_menu() {
+    printf("\n╔════════════════════════════════════════════════════════════╗\n");
+    printf("║           特征转换交互式测试 (kadd_seq_to_feature)           ║\n");
+    printf("╠════════════════════════════════════════════════════════════╣\n");
+    printf("║  1. 特征转换测试                                            ║\n");
+    printf("║  2. 性能测试                                                ║\n");
+    printf("║  0. 退出程序                                               ║\n");
+    printf("╚════════════════════════════════════════════════════════════╝\n");
+}
+
+int main() {
     setbuf(stdout, NULL);
     setbuf(stderr, NULL);
 
 #ifdef _WIN32
-    // 设置控制台输出为 UTF-8 编码
     SetConsoleOutputCP(CP_UTF8);
 #endif
 
-    /* 默认配置 */
-    const int window_size = 5;
-    const int feature_dim = 28;
-    const int performance_iterations = 10000;
+    int running = 1;
 
-    printf("╔════════════════════════════════════════════════════════════╗\n");
-    printf("║        特征转换功能与性能演示 (kadd_feature_engine)       ║\n");
-    printf("╚════════════════════════════════════════════════════════════╝\n\n");
+    while (running) {
+        show_main_menu();
+        printf("请选择操作 (0-2): ");
 
-    // ========== 示例 1: 基本功能演示 ==========
-    printf("【示例 1】基本功能演示\n");
-    printf("─────────────────────────────────────────────────────────────\n");
-
-    int seq1[] = {7, 11, 8, 12, 8, 11, 8};
-    int seq_len = sizeof(seq1) / sizeof(seq1[0]);
-    int *feature = (int *)calloc(feature_dim, sizeof(int));
-    if (!feature) {
-        printf("✗ 内存分配失败\n");
-        return 1;
-    }
-
-    printf("输入序列: ");
-    print_array(seq1, seq_len);
-    printf(" (长度=%d)\n", seq_len);
-    printf("窗口大小: %d\n", window_size);
-    printf("输出维度: %d\n", feature_dim);
-
-    int ret = kadd_seq_to_feature(seq1, seq_len, window_size, feature, feature_dim);
-
-    if (ret == 0) {
-        printf("✓ 转换成功\n");
-        printf("特征向量: ");
-        print_array(feature, feature_dim);
-        printf("\n");
-        free(feature);
-    } else {
-        printf("✗ 转换失败\n");
-        free(feature);
-        return 1;
-    }
-
-    // ========== 示例 2: 不同序列长度 ==========
-    printf("\n【示例 2】不同序列长度测试\n");
-    printf("─────────────────────────────────────────────────────────────\n");
-
-    int test_cases[][20] = {
-        {1, 2, 3},                                    // 短序列
-        {5, 10, 15, 20, 25, 30, 35},                  // 中等序列
-        {100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200}  // 长序列
-    };
-    int test_lengths[] = {3, 7, 12};
-
-    for (int i = 0; i < 3; i++) {
-        int *f = (int *)calloc(feature_dim, sizeof(int));
-        if (!f) continue;
-
-        printf("测试 %d: 长度=%d, ", i + 1, test_lengths[i]);
-        if (kadd_seq_to_feature(test_cases[i], test_lengths[i], window_size, f, feature_dim) == 0) {
-            printf("结果: [");
-            for (int j = 0; j < 10 && j < feature_dim; j++) {  // 只显示前10个
-                printf("%d", f[j]);
-                if (j < 9 && j < feature_dim - 1) printf(", ");
-            }
-            printf("...]\n");
-        }
-        free(f);
-    }
-
-    // ========== 示例 3: 性能测试 ==========
-    printf("\n【示例 3】性能测试 (%d次转换)\n", performance_iterations);
-    printf("─────────────────────────────────────────────────────────────\n");
-
-    const int ITERATIONS = performance_iterations;
-    void *timer = timer_start();
-
-    int *f = (int *)calloc(feature_dim, sizeof(int));
-    if (!f) {
-        printf("✗ 内存分配失败\n");
-        /* 配置已内置，无需释放 */
-        return 1;
-    }
-
-    for (int i = 0; i < ITERATIONS; i++) {
-        kadd_seq_to_feature(seq1, seq_len, window_size, f, feature_dim);
-    }
-
-    double elapsed = timer_end(timer);
-    double avg_time = elapsed / ITERATIONS;
-
-    printf("总耗时: %.3f ms\n", elapsed);
-    printf("平均耗时: %.6f ms/次\n", avg_time);
-    printf("吞吐量: %.0f 次/秒\n", 1000.0 / avg_time);
-
-    free(f);
-
-    // ========== 示例 4: 边界条件测试 ==========
-    printf("\n【示例 4】边界条件测试\n");
-    printf("─────────────────────────────────────────────────────────────\n");
-
-    struct {
-        const char *name;
-        const int *seq;
-        int len;
-        int window;
-        int expected;
-    } boundary_tests[] = {
-        {"空序列", NULL, 0, 5, -1},
-        {"NULL特征向量", seq1, seq_len, 5, -1},
-        {"窗口大小=0", seq1, seq_len, 0, -1},
-        {"窗口大小=1", seq1, seq_len, 1, 0},
-        {"窗口大小>序列长度", seq1, seq_len, 100, 0},
-    };
-
-    int *f4 = (int *)calloc(feature_dim, sizeof(int));
-    if (!f4) {
-        printf("✗ 内存分配失败\n");
-    } else {
-        int passed = 0;
-        for (int i = 0; i < 5; i++) {
-            // 对于 NULL 特征向量的测试，跳过
-            if (i == 1) continue;
-
-            int result = kadd_seq_to_feature(
-                boundary_tests[i].seq,
-                boundary_tests[i].len,
-                boundary_tests[i].window,
-                f4, feature_dim
-            );
-
-            if (result == boundary_tests[i].expected) {
-                printf("✓ %s: 通过\n", boundary_tests[i].name);
-                passed++;
-            } else {
-                printf("✗ %s: 失败 (期望=%d, 实际=%d)\n",
-                       boundary_tests[i].name,
-                       boundary_tests[i].expected, result);
-            }
-        }
-        printf("\n边界测试通过: %d/4\n", passed);
-        free(f4);
-    }
-
-    printf("\n╔════════════════════════════════════════════════════════════╗\n");
-    printf("║                     演示完成                                ║\n");
-    printf("╚════════════════════════════════════════════════════════════╝\n");
-
-    // ========== 交互式测试模式 ==========
-    printf("\n【交互式测试模式】\n");
-    printf("─────────────────────────────────────────────────────────────\n");
-    printf("输入格式说明:\n");
-    printf("  - 序列: 用逗号或空格分隔的整数，例如: 7,11,8,12,8,11,8\n");
-    printf("  - 窗口大小: 一个整数，例如: 5\n");
-    printf("  - 输入 'q' 或 'quit' 退出程序\n\n");
-
-    int *interactive_feature = (int *)calloc(feature_dim, sizeof(int));
-    if (!interactive_feature) {
-        printf("✗ 内存分配失败，无法进入交互模式\n");
-        /* 配置已内置，无需释放 */
-        return 0;
-    }
-
-    char input[1024];
-    while (1) {
-        printf(">> 请输入序列 (或 'q' 退出): ");
+        char input[64];
         if (fgets(input, sizeof(input), stdin) == NULL) break;
 
-        // 去除换行符
-        input[strcspn(input, "\n")] = 0;
-
-        // 检查退出命令
-        if (strcmp(input, "q") == 0 || strcmp(input, "quit") == 0 ||
-            strcmp(input, "Q") == 0 || strcmp(input, "QUIT") == 0) {
-            printf("退出交互模式\n");
-            break;
-        }
-
-        // 检查空输入
-        if (strlen(input) == 0) {
+        int choice;
+        if (sscanf(input, "%d", &choice) != 1) {
+            printf("输入无效，请输入数字\n");
             continue;
         }
 
-        // 解析序列
-        int *seq = NULL;
-        int seq_capacity = 32;
-        int seq_len = 0;
-
-        seq = (int *)malloc(seq_capacity * sizeof(int));
-        if (!seq) {
-            printf("✗ 内存分配失败\n");
-            continue;
+        switch (choice) {
+            case 1:
+                test_feature_conversion();
+                break;
+            case 2:
+                test_performance();
+                break;
+            case 0:
+                running = 0;
+                printf("退出程序\n");
+                break;
+            default:
+                printf("无效选择，请输入 0-2\n");
+                break;
         }
-
-        char *token = strtok(input, ", ");
-        while (token != NULL) {
-            if (seq_len >= seq_capacity) {
-                seq_capacity *= 2;
-                int *new_seq = (int *)realloc(seq, seq_capacity * sizeof(int));
-                if (!new_seq) {
-                    printf("✗ 内存分配失败\n");
-                    free(seq);
-                    seq = NULL;
-                    break;
-                }
-                seq = new_seq;
-            }
-
-            if (sscanf(token, "%d", &seq[seq_len]) == 1) {
-                seq_len++;
-            }
-            token = strtok(NULL, ", ");
-        }
-
-        if (!seq) {
-            continue;
-        }
-
-        // 获取窗口大小
-        int user_window_size = window_size;
-        printf(">> 请输入窗口大小 (默认 %d): ", window_size);
-        if (fgets(input, sizeof(input), stdin) != NULL) {
-            input[strcspn(input, "\n")] = 0;
-            if (strlen(input) > 0 && sscanf(input, "%d", &user_window_size) == 1) {
-                if (user_window_size <= 0) {
-                    printf("警告: 窗口大小必须大于0，使用默认值 %d\n", window_size);
-                    user_window_size = window_size;
-                }
-            }
-        }
-
-        // 清空特征向量
-        memset(interactive_feature, 0, feature_dim * sizeof(int));
-
-        // 执行特征转换
-        printf("\n输入序列: ");
-        print_array(seq, seq_len);
-        printf(" (长度=%d)\n", seq_len);
-        printf("窗口大小: %d\n", user_window_size);
-
-        if (kadd_seq_to_feature(seq, seq_len, user_window_size, interactive_feature, feature_dim) == 0) {
-            printf("✓ 转换成功\n");
-            printf("特征向量: ");
-            print_array(interactive_feature, feature_dim);
-            printf("\n");
-        } else {
-            printf("✗ 转换失败\n");
-        }
-
-        printf("\n");
-
-        free(seq);
     }
-
-    free(interactive_feature);
-
-    /* 配置已内置，无需释放 */
 
     return 0;
 }
