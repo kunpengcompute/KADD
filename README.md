@@ -50,8 +50,12 @@ cmake --build .
 # 运行测试
 ctest --verbose
 
-# 代码覆盖率报告
-cmake -DENABLE_CODE_COVERAGE=ON ..
+# 代码覆盖率报告（需要重新编译）
+rm -rf build
+mkdir build && cd build
+cmake -DENABLE_CODE_COVERAGE=ON -G "Unix Makefiles" ..
+make
+ctest --verbose
 make coverage
 ```
 

@@ -38,13 +38,14 @@ endfunction()
 # ============================================================================
 if(ENABLE_CODE_COVERAGE)
     add_custom_target(coverage
+        COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
         COMMAND ${CMAKE_COMMAND} -E chdir ${CMAKE_BINARY_DIR}
-            lcov --capture --directory ${CMAKE_CURRENT_SOURCE_DIR} --output-file coverage.info
+            lcov --capture --base-directory ${CMAKE_SOURCE_DIR} --directory ${CMAKE_BINARY_DIR} --output-file coverage.info
         COMMAND ${CMAKE_COMMAND} -E chdir ${CMAKE_BINARY_DIR}
-            lcov --remove coverage.info '/usr/*' --output-file coverage.info
+            lcov --remove coverage.info '/usr/*' '${CMAKE_BINARY_DIR}/*' --output-file coverage.info
         COMMAND ${CMAKE_COMMAND} -E chdir ${CMAKE_BINARY_DIR}
             lcov --genhtml coverage.info --output-directory coverage_html
-        COMMENT "Generate code coverage report"
+        COMMENT "Run tests and generate code coverage report"
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     )
 

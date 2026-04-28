@@ -152,10 +152,10 @@ static int create_session(kadd_model_handle_t *handle, const char *model_path) {
                 if (!name_status && name) {
                     if (strstr(name, "probability")) {
                         handle->output_name = strdup(name);
-                        (void)handle->api->AllocatorFree(allocator, name);
+                        handle->api->AllocatorFree(allocator, name);
                         break;
                     }
-                    (void)handle->api->AllocatorFree(allocator, name);
+                    handle->api->AllocatorFree(allocator, name);
                 } else if (name_status) {
                     handle->api->ReleaseStatus(name_status);
                 }
@@ -258,6 +258,8 @@ int kadd_model_predict(kadd_model_handle_t *handle, const float *features, float
             (void)handle->api->GetDimensions(tensor_info, output_shape, 4);
         }
         handle->api->ReleaseTensorTypeAndShapeInfo(tensor_info);
+    } else if (tensor_status) {
+        handle->api->ReleaseStatus(tensor_status);
     }
 
     /*

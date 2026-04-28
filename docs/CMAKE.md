@@ -365,13 +365,16 @@ cmake --build .
 ### 场景 5：代码覆盖率测试
 
 ```bash
+# 清理旧的构建目录
+rm -rf build
+
 # 配置项目（启用覆盖率）
 cmake -DENABLE_CODE_COVERAGE=ON -H. -Bbuild -G "Unix Makefiles"
 
-# 构建项目
+# 构建项目（必须用覆盖率标志重新编译）
 cmake --build build
 
-# 运行测试
+# 运行测试（生成 .gcda 覆盖率数据文件）
 cd build
 ctest --verbose
 
@@ -396,6 +399,8 @@ make coverage-clean
 **注意事项：**
 - 覆盖率编译会降低性能，仅用于测试环境
 - 需要安装 `lcov` 工具：`sudo apt-get install lcov`
+- **必须重新编译**：启用 `ENABLE_CODE_COVERAGE` 后必须完整重新编译，不能只运行 cmake 配置
+- **必须运行测试**：`.gcda` 文件只在测试程序运行时生成，不运行测试就没有覆盖率数据
 - 测试必须完整执行才能获得准确的覆盖率数据
 
 ### 场景 6：使用特定 ONNX Runtime
