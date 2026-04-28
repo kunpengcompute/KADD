@@ -152,10 +152,10 @@ static int create_session(kadd_model_handle_t *handle, const char *model_path) {
                 if (!name_status && name) {
                     if (strstr(name, "probability")) {
                         handle->output_name = strdup(name);
-                        handle->api->AllocatorFree(allocator, name);
+                        (void)handle->api->AllocatorFree(allocator, name);
                         break;
                     }
-                    handle->api->AllocatorFree(allocator, name);
+                    (void)handle->api->AllocatorFree(allocator, name);
                 } else if (name_status) {
                     handle->api->ReleaseStatus(name_status);
                 }
@@ -223,7 +223,8 @@ int kadd_model_predict(kadd_model_handle_t *handle, const float *features, float
     OrtValue *output = NULL;
 
     OrtValue *inputs[] = {input};
-    status = handle->api->Run(handle->session, NULL, input_names, inputs, 1, output_names, 1, &output);
+    const OrtValue *inputs_const[] = {input};
+    status = handle->api->Run(handle->session, NULL, input_names, inputs_const, 1, output_names, 1, &output);
     if (status) {
         handle->api->ReleaseValue(input);
         handle->api->ReleaseStatus(status);
@@ -257,12 +258,7 @@ int kadd_model_predict(kadd_model_handle_t *handle, const float *features, float
         if (!tensor_status && tensor_info) {
             OrtStatus *dim_status = handle->api->GetDimensionsCount(tensor_info, &output_dim_count);
             if (!dim_status && output_dim_count <= 4) {
-                OrtStatus *shape_status = handle->api->GetDimensions(tensor_info, output_shape, 4);
-                if (shape_status) {
-                    handle->api->ReleaseStatus(shape_status);
-                }
-            } else if (dim_status) {
-                handle->api->ReleaseStatus(dim_status);
+                handle->api->GetDimensions(tensor_info, output_shape, 4);
             }
             handle->api->ReleaseTensorTypeAndShapeInfo(tensor_info);
         } else if (tensor_status) {
@@ -346,7 +342,8 @@ int kadd_model_predict_batch(kadd_model_handle_t *handle, const float *features,
         OrtValue *output = NULL;
 
         OrtValue *inputs[] = {input};
-        status = handle->api->Run(handle->session, NULL, input_names, inputs, 1, output_names, 1, &output);
+        const OrtValue *inputs_const[] = {input};
+        status = handle->api->Run(handle->session, NULL, input_names, inputs_const, 1, output_names, 1, &output);
         if (status) {
             handle->api->ReleaseValue(input);
             handle->api->ReleaseStatus(status);
