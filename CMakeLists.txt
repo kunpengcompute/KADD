@@ -18,12 +18,41 @@ option(BUILD_TESTS "Build test programs" ON)
 option(USE_SYSTEM_LIBS "Use system libraries instead of third_party" ON)
 option(ENABLE_CODE_COVERAGE "Enable code coverage reporting" OFF)
 option(KADD_OPTIMIZE "Enable optimizations" OFF)
+option(ENABLE_ARM_SVE "Enable ARM SVE acceleration (ARMv9-A)" OFF)
+option(ENABLE_ARM_SVE2 "Enable ARM SVE2 acceleration (ARMv9.2-A+)" OFF)
+
+# SVE 选项互斥
+if(ENABLE_ARM_SVE2)
+    set(ENABLE_ARM_SVE ON)
+    message(STATUS "SVE2 enabled, implies SVE")
+endif()
 
 # 优化选项
 if(KADD_OPTIMIZE)
     add_definitions(-DKADD_OPTIMIZE)
     set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O3 -DNDEBUG")
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG")
+endif()
+
+# ARM SVE 加速选项
+if(ENABLE_ARM_SVE AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|ARM64")
+    message(WARNING "ENABLE_ARM_SVE is ON but system is not ARM64. SVE will be disabled.")
+    set(ENABLE_ARM_SVE OFF)
+endif()
+
+if(ENABLE_ARM_SVE)
+    if(ENABLE_ARM_SVE2)
+        message(STATUS "Enabling ARM SVE2 acceleration (-march=armv9-a+sve2)")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=armv9-a+sve2")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=armv9-a+sve2")
+        add_definitions(-D__ARM_FEATURE_SVE)
+        add_definitions(-D__ARM_FEATURE_SVE2)
+    else()
+        message(STATUS "Enabling ARM SVE acceleration (-march=armv9-a+sve)")
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=armv9-a+sve")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=armv9-a+sve")
+        add_definitions(-D__ARM_FEATURE_SVE)
+    endif()
 endif()
 
 # 代码覆盖率
@@ -39,6 +68,10 @@ message(STATUS "Build tests: ${BUILD_TESTS}")
 message(STATUS "Use system libs: ${USE_SYSTEM_LIBS}")
 message(STATUS "Enable coverage: ${ENABLE_CODE_COVERAGE}")
 message(STATUS "Enable optimize: ${KADD_OPTIMIZE}")
+message(STATUS "Enable ARM SVE: ${ENABLE_ARM_SVE}")
+if(ENABLE_ARM_SVE)
+    message(STATUS "  SVE version: ${ENABLE_ARM_SVE2}")
+endif()
 
 # ============================================================================
 # ONNX Runtime 依赖
