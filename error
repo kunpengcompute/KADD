@@ -6,13 +6,6 @@
 [ 14%] Linking C shared library libkadd_feature_engine.so
 [ 14%] Built target kadd_feature_engine
 [ 17%] Building C object src/CMakeFiles/kadd_ml_engine.dir/kadd_ml_engine.c.o
-/root/hfx/KADD_1/src/kadd_ml_engine.c: In function ‘kadd_model_predict’:
-/root/hfx/KADD_1/src/kadd_ml_engine.c:257:71: warning: passing argument 1 of ‘handle->api->GetTensorTypeAndShape’ from incompatible pointer type [-Wincompatible-pointer-types]
-  257 |         OrtStatus *tensor_status = handle->api->GetTensorTypeAndShape(type_info, &tensor_info);
-      |                                                                       ^~~~~~~~~
-      |                                                                       |
-      |                                                                       OrtTypeInfo *
-/root/hfx/KADD_1/src/kadd_ml_engine.c:257:71: note: expected ‘const OrtValue *’ but argument is of type ‘OrtTypeInfo *’
 /root/hfx/KADD_1/src/kadd_ml_engine.c: In function ‘create_session’:
 /root/hfx/KADD_1/src/kadd_ml_engine.c:155:31: warning: ignoring return value of function declared with attribute ‘warn_unused_result’ [-Wunused-result]
   155 |                         (void)handle->api->AllocatorFree(allocator, name);
@@ -21,9 +14,9 @@
   158 |                     (void)handle->api->AllocatorFree(allocator, name);
       |                           ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 /root/hfx/KADD_1/src/kadd_ml_engine.c: In function ‘kadd_model_predict’:
-/root/hfx/KADD_1/src/kadd_ml_engine.c:261:17: warning: ignoring return value of function declared with attribute ‘warn_unused_result’ [-Wunused-result]
-  261 |                 handle->api->GetDimensions(tensor_info, output_shape, 4);
-      |                 ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/root/hfx/KADD_1/src/kadd_ml_engine.c:258:19: warning: ignoring return value of function declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  258 |             (void)handle->api->GetDimensions(tensor_info, output_shape, 4);
+      |                   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 [ 21%] Linking C shared library libkadd_ml_engine.so
 [ 21%] Built target kadd_ml_engine
 [ 25%] Building C object src/CMakeFiles/kadd_dfa_engine_pro.dir/kadd_dfa_engine_pro.c.o
@@ -36,13 +29,6 @@
 [ 42%] Built target kadd_sqli_engine
 [ 46%] Building C object src/CMakeFiles/kadd_other_engines.dir/kadd_feature_engine.c.o
 [ 50%] Building C object src/CMakeFiles/kadd_other_engines.dir/kadd_ml_engine.c.o
-/root/hfx/KADD_1/src/kadd_ml_engine.c: In function ‘kadd_model_predict’:
-/root/hfx/KADD_1/src/kadd_ml_engine.c:257:71: warning: passing argument 1 of ‘handle->api->GetTensorTypeAndShape’ from incompatible pointer type [-Wincompatible-pointer-types]
-  257 |         OrtStatus *tensor_status = handle->api->GetTensorTypeAndShape(type_info, &tensor_info);
-      |                                                                       ^~~~~~~~~
-      |                                                                       |
-      |                                                                       OrtTypeInfo *
-/root/hfx/KADD_1/src/kadd_ml_engine.c:257:71: note: expected ‘const OrtValue *’ but argument is of type ‘OrtTypeInfo *’
 /root/hfx/KADD_1/src/kadd_ml_engine.c: In function ‘create_session’:
 /root/hfx/KADD_1/src/kadd_ml_engine.c:155:31: warning: ignoring return value of function declared with attribute ‘warn_unused_result’ [-Wunused-result]
   155 |                         (void)handle->api->AllocatorFree(allocator, name);
@@ -51,9 +37,9 @@
   158 |                     (void)handle->api->AllocatorFree(allocator, name);
       |                           ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 /root/hfx/KADD_1/src/kadd_ml_engine.c: In function ‘kadd_model_predict’:
-/root/hfx/KADD_1/src/kadd_ml_engine.c:261:17: warning: ignoring return value of function declared with attribute ‘warn_unused_result’ [-Wunused-result]
-  261 |                 handle->api->GetDimensions(tensor_info, output_shape, 4);
-      |                 ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/root/hfx/KADD_1/src/kadd_ml_engine.c:258:19: warning: ignoring return value of function declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  258 |             (void)handle->api->GetDimensions(tensor_info, output_shape, 4);
+      |                   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 [ 53%] Building C object src/CMakeFiles/kadd_other_engines.dir/kadd_sqli_engine.c.o
 [ 57%] Linking C static library libkadd_other_engines.a
 [ 57%] Built target kadd_other_engines
@@ -73,3 +59,21 @@
 [ 96%] Building C object tests/CMakeFiles/feature_engine_test.dir/__/third_party/src/cJSON.c.o
 [100%] Linking CXX executable feature_engine_test
 [100%] Built target feature_engine_test
+
+
+
+[root@localhost build]# make coverage
+[100%] Generate code coverage report
+Capturing coverage data from /root/hfx/KADD_1/tests
+Found gcov version: 12.3.1
+Using intermediate gcov format
+Using JSON module JSON::PP
+Scanning /root/hfx/KADD_1/tests for .gcda files ...
+geninfo: WARNING: no .gcda files found in /root/hfx/KADD_1/tests - skipping!
+Finished .info-file creation
+Reading tracefile coverage.info
+lcov: ERROR: no valid records found in tracefile coverage.info
+make[3]: *** [tests/CMakeFiles/coverage.dir/build.make:72: tests/CMakeFiles/coverage] Error 255
+make[2]: *** [CMakeFiles/Makefile2:360: tests/CMakeFiles/coverage.dir/all] Error 2
+make[1]: *** [CMakeFiles/Makefile2:367: tests/CMakeFiles/coverage.dir/rule] Error 2
+make: *** [Makefile:238: coverage] Error 2
