@@ -362,13 +362,41 @@ cmake -DCMAKE_BUILD_TYPE=Debug ..
 cmake --build .
 ```
 
-### 场景 5：覆盖率测试
+### 场景 5：代码覆盖率测试
 
 ```bash
-cmake -DENABLE_CODE_COVERAGE=ON ..
-cmake --build .
-ctest
+# 配置项目（启用覆盖率）
+cmake -DENABLE_CODE_COVERAGE=ON -H. -Bbuild -G "Unix Makefiles"
+
+# 构建项目
+cmake --build build
+
+# 运行测试
+cd build
+ctest --verbose
+
+# 生成覆盖率报告
+make coverage
+
+# 查看报告（HTML 格式）
+# 报告位置: build/coverage_html/index.html
+xdg-open coverage_html/index.html  # Linux
+# 或用浏览器打开: file:///path/to/build/coverage_html/index.html
+
+# 清理覆盖率数据
+make coverage-clean
 ```
+
+**覆盖率报告内容：**
+- 行覆盖率（Line Coverage）
+- 分支覆盖率（Branch Coverage）
+- 函数覆盖率（Function Coverage）
+- HTML 可视化报告
+
+**注意事项：**
+- 覆盖率编译会降低性能，仅用于测试环境
+- 需要安装 `lcov` 工具：`sudo apt-get install lcov`
+- 测试必须完整执行才能获得准确的覆盖率数据
 
 ### 场景 6：使用特定 ONNX Runtime
 

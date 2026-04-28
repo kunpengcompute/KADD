@@ -247,26 +247,17 @@ int kadd_model_predict(kadd_model_handle_t *handle, const float *features, float
     }
 
     /* 获取输出张量信息，确认形状 */
-    OrtTypeInfo *type_info = NULL;
     OrtTensorTypeAndShapeInfo *tensor_info = NULL;
     size_t output_dim_count = 0;
     int64_t output_shape[4] = {0};
 
-    OrtStatus *type_status = handle->api->GetTypeInfo(output, &type_info);
-    if (!type_status && type_info) {
-        OrtStatus *tensor_status = handle->api->GetTensorTypeAndShape(type_info, &tensor_info);
-        if (!tensor_status && tensor_info) {
-            OrtStatus *dim_status = handle->api->GetDimensionsCount(tensor_info, &output_dim_count);
-            if (!dim_status && output_dim_count <= 4) {
-                handle->api->GetDimensions(tensor_info, output_shape, 4);
-            }
-            handle->api->ReleaseTensorTypeAndShapeInfo(tensor_info);
-        } else if (tensor_status) {
-            handle->api->ReleaseStatus(tensor_status);
+    OrtStatus *tensor_status = handle->api->GetTensorTypeAndShape(output, &tensor_info);
+    if (!tensor_status && tensor_info) {
+        OrtStatus *dim_status = handle->api->GetDimensionsCount(tensor_info, &output_dim_count);
+        if (!dim_status && output_dim_count <= 4) {
+            (void)handle->api->GetDimensions(tensor_info, output_shape, 4);
         }
-        handle->api->ReleaseTypeInfo(type_info);
-    } else if (type_status) {
-        handle->api->ReleaseStatus(type_status);
+        handle->api->ReleaseTensorTypeAndShapeInfo(tensor_info);
     }
 
     /*

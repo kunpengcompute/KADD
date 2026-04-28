@@ -35,7 +35,7 @@ sudo apt-get install libcjson-dev libgtest-dev
 
 > 详见 [第三方库安装指南](docs/DEPENDENCIES.md)
 
-### 构建项目
+### 构建与测试
 
 ```bash
 # 标准构建
@@ -43,25 +43,16 @@ mkdir build && cd build
 cmake -G "Unix Makefiles" ..
 cmake --build .
 
-# 启用优化
-cmake -DKADD_OPTIMIZE=ON -DCMAKE_BUILD_TYPE=Release ..
+# 启用优化和 SVE 加速
+cmake -DKADD_OPTIMIZE=ON -DENABLE_ARM_SVE2=ON -DCMAKE_BUILD_TYPE=Release ..
 cmake --build .
 
-# ARMv9-A 启用 SVE 加速
-cmake -DENABLE_ARM_SVE=ON -DCMAKE_BUILD_TYPE=Release ..
-cmake --build .
+# 运行测试
+ctest --verbose
 
-# ARMv9.2-A+ 启用 SVE2 加速（最佳性能）
-cmake -DENABLE_ARM_SVE2=ON -DCMAKE_BUILD_TYPE=Release ..
-cmake --build .
-```
-
-### 运行测试
-
-```bash
-cd build
-./bin/ml_engine_test
-./bin/feature_engine_test
+# 代码覆盖率报告
+cmake -DENABLE_CODE_COVERAGE=ON ..
+make coverage
 ```
 
 ## 📦 模块说明
@@ -103,7 +94,7 @@ int main() {
 
 - [第三方库安装指南](docs/DEPENDENCIES.md) - ONNX Runtime、cJSON、Google Test 安装
 - [KADD API 参考](docs/API.md) - 完整的 API 使用手册
-- [CMake 构建指南](docs/CMAKE.md) - 构建系统说明
+- [CMake 构建指南](docs/CMAKE.md) - 构建系统和覆盖率测试说明
 - [ARM 故障排除](demo/README_ARM_TROUBLESHOOTING.md) - ARM 特定问题
 
 ## 🏗️ 架构
