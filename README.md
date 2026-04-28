@@ -8,9 +8,9 @@
 - 🚀 **高性能** - 单样本推理 ~100,000 ops/sec
 - 📦 **模块化设计** - DFA、特征、ML 引擎独立可用
 - 🎯 **ARM SVE 加速** - 支持 ARMv9-A SVE 向量化
-- 🔧 **易于集成** - 简洁的 C API，支持跨平台
+- 🔧 **易于集成** - 简洁的 C API
 
-## 🚀 快速开始
+## 🚀 快速开始 (ARM Linux)
 
 ### 依赖管理
 
@@ -18,11 +18,12 @@
 
 **方式 1：系统库安装（推荐）**
 ```bash
-# Linux
-sudo apt-get install libonnxruntime-dev libcjson-dev libgtest-dev
+# ARM Linux (Debian/Ubuntu)
+sudo apt-get update
+sudo apt-get install libonnxruntime-dev libcjson-dev libgtest-dev cmake build-essential
 
-# macOS
-brew install onnxruntime cjson googletest
+# ARM Linux (CentOS/RHEL)
+sudo yum install onnxruntime-devel cjson-devel gtest-devel cmake gcc-c++
 ```
 
 **方式 2：third_party 目录**
@@ -35,7 +36,7 @@ brew install onnxruntime cjson googletest
 
 | 模块 | 必需依赖 | 可选依赖 |
 |------|---------|----------|
-| 基础引擎 | CMake 3.15+, 编译器 | - |
+| 基础引擎 | CMake 3.16+, GCC 10+ | - |
 | ML 引擎 | ONNX Runtime | - |
 | SQLi 引擎 | ONNX Runtime | cJSON |
 | 单元测试 | ONNX Runtime | Google Test, cJSON |
@@ -45,31 +46,30 @@ brew install onnxruntime cjson googletest
 ### 一键构建动态库
 
 ```bash
-# Windows (CMD/PowerShell)
-build_libs.bat
-
-# Linux/macOS
 chmod +x build_libs.sh
 ./build_libs.sh
 ```
 
-### 平台特定配置
+### ARM Linux 构建配置
 
-#### Windows (MinGW)
+#### 标准 ARM64 构建
 ```bash
-cmake -H. -Bbuild -G "MinGW Makefiles"
+cmake -H. -Bbuild -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
 
-#### Linux
+#### 启用 ARM SVE 优化 (ARMv9-A)
 ```bash
-cmake -H. -Bbuild -G "Unix Makefiles"
+cmake -H. -Bbuild -G "Unix Makefiles" \
+    -DKADD_OPTIMIZE=ON \
+    -DCMAKE_C_FLAGS="-march=armv9-a+sve" \
+    -DCMAKE_CXX_FLAGS="-march=armv9-a+sve"
 cmake --build build
 ```
 
-#### macOS
+#### 启用代码覆盖率
 ```bash
-cmake -H. -Bbuild -G "Unix Makefiles"
+cmake -H. -Bbuild -G "Unix Makefiles" -DENABLE_CODE_COVERAGE=ON
 cmake --build build
 ```
 
@@ -79,23 +79,13 @@ cmake --build build
 # 1. 安装依赖
 # 详见 docs/INSTALL.md
 
-# 2. 配置项目
-# Windows (MinGW)
-cmake -H. -Bbuild -G "MinGW Makefiles"
-
-# Linux/macOS
+# 2. 配置项目 (ARM Linux)
 cmake -H. -Bbuild -G "Unix Makefiles"
 
 # 3. 构建动态库
-# Windows: build_libs.bat
-# Linux/macOS: ./build_libs.sh
+./build_libs.sh
 
 # 4. 运行测试
-# Windows
-./build/ml_engine_test.exe
-./build/feature_engine_test.exe
-
-# Linux/macOS
 ./build/ml_engine_test
 ./build/feature_engine_test
 ```
@@ -104,44 +94,38 @@ cmake -H. -Bbuild -G "Unix Makefiles"
 
 | 测试 | 说明 | 命令 |
 |------|------|------|
-| ML 引擎测试 | 模型推理、准确率、性能测试 | `./build/ml_engine_test.exe` |
-| 特征引擎测试 | 特征提取、滑动窗口测试 | `./build/feature_engine_test.exe` |
-| DFA 引擎测试 | 分词器测试（待启用） | - |
-
-## 📦 动态库
-
-### 跨平台支持
-
-| 平台 | 动态库扩展名 | 输出目录 |
-|------|--------------|----------|
-| Windows | `.dll` | `build/src/` |
-| Linux | `.so` | `build/src/` |
-| macOS | `.dylib` | `build/src/` |
-
-### 可用库
-
-| 库 | Windows | Linux/macOS | 说明 |
-|------|---------|-------------|------|
-| DFA 引擎 | `libkadd_dfa_engine.dll` | `libkadd_dfa_engine.so` | 字符串分词 |
-| 特征引擎 | `libkadd_feature_engine.dll` | `libkadd_feature_engine.so` | 序列转特征向量 |
-| ML 引擎 | `libkadd_ml_engine.dll` | `libkadd_ml_engine.so` | ONNX 模型推理 |
-| SQL 注入检测引擎 | `libkadd_sqli_engine.dll` | `libkadd_sqli_engine.so` | 完整检测 API |
-
-动态库位于 `build/src/` 目录，可用于其他项目。
+| ML 引擎测试 | 模型推理、准确率、性能测试 | `./build/ml_engine_test` |
+| 特征引擎测试 | 特征提取、滑动窗口测试 | `./build/feature_engine_test` |
 
 运行特定测试：
 ```bash
 # 只运行准确率测试
-./build/ml_engine_test.exe --gtest_filter="*Accuracy*"
+./build/ml_engine_test --gtest_filter="*Accuracy*"
 
 # 运行所有测试
+cd build
 ctest --verbose
 ```
 
+## 📦 动态库
+
+### ARM Linux 动态库
+
+| 库 | 文件名 | 说明 |
+|------|--------|------|
+| DFA 引擎 | `libkadd_dfa_engine.so` | 字符串分词 |
+| 特征引擎 | `libkadd_feature_engine.so` | 序列转特征向量 |
+| ML 引擎 | `libkadd_ml_engine.so` | ONNX 模型推理 |
+| DFA Pro 引擎 | `libkadd_dfa_engine_pro.so` | 增强型 DFA 分词 |
+| SQL 注入检测引擎 | `libkadd_sqli_engine.so` | 完整检测 API |
+
+动态库位于 `output/` 目录。
+
 ## 📚 文档
 
-- [安装指南](docs/INSTALL.md) - 详细的安装步骤和依赖说明
+- [安装指南](docs/INSTALL.md) - ARM Linux 上的详细安装步骤
 - [构建脚本](docs/BUILD_LIBS.md) - 一键构建动态库脚本使用说明
+- [ARM 故障排除](demo/README_ARM_TROUBLESHOOTING.md) - ARM Linux 特定问题解决
 - [API 文档](docs/API.md) - 完整的 API 使用手册和示例代码
 - [测试文档](docs/TEST.md) - 测试框架和运行说明
 - [设计文档](docs/DESIGN.md) - 架构设计和模块说明
@@ -153,17 +137,17 @@ ctest --verbose
 
 int main() {
     kadd_sqli_engine_t *engine = kadd_sqli_engine_create_from_file("config.json");
-    
+
     kadd_sqli_result_t result;
     const char *input = "id=1' OR '1'='1";
-    
+
     if (kadd_sqli_detect(engine, input, &result) == 0) {
         if (result.is_sqli) {
             printf("SQL 注入检测到! 概率: %.2f%%\n", result.probability * 100);
         }
         kadd_sqli_result_free(&result);
     }
-    
+
     kadd_sqli_engine_free(engine);
     return 0;
 }
@@ -186,7 +170,7 @@ int main() {
 | ML 引擎 | ONNX 模型推理 |
 | 检测引擎 | 整合检测 API |
 
-## 📊 性能
+## 📊 性能 (ARM Linux)
 
 | 指标 | 数值 |
 |------|------|
@@ -199,20 +183,24 @@ int main() {
 
 | 选项 | 说明 |
 |------|------|
-| `-DUSE_ONNX=ON` | 启用 ONNX Runtime 支持 |
-| `-DENABLE_SVE=ON` | 启用 ARM SVE 加速 |
+| `-DKADD_OPTIMIZE=ON` | 启用 -O3 优化 |
+| `-DENABLE_CODE_COVERAGE=ON` | 启用代码覆盖率 |
 | `-DBUILD_TESTS=ON` | 构建测试程序 |
-| `-DBUILD_DEMOS=ON` | 构建 Demo 程序 |
+| `-DUSE_SYSTEM_LIBS=OFF` | 强制使用 third_party |
 
-## 🌍 跨平台支持
+## 🌍 ARM Linux 支持
 
-| 平台 | 编译器 | 生成器 | 动态库 | 状态 |
-|------|--------|--------|--------|------|
-| Windows | MinGW 8+ | "MinGW Makefiles" | .dll | ✅ 完全支持 |
-| Linux | GCC 7+ | "Unix Makefiles" | .so | ✅ 完全支持 |
-| macOS | Clang 10+ | "Unix Makefiles" | .dylib | ✅ 完全支持 |
-| ARM Linux | GCC 10+ | "Unix Makefiles" | .so | ✅ 支持 +SVE |
-| ARM macOS | Clang 12+ | "Unix Makefiles" | .dylib | ✅ 支持 |
+| 平台 | 架构 | 编译器 | 状态 |
+|------|------|--------|------|
+| ARM Linux | aarch64 | GCC 10+ | ✅ 完全支持 |
+| ARM Linux | armv7l | GCC 10+ | ✅ 支持 |
+| ARMv9-A Linux | aarch64 | GCC 11+ | ✅ SVE 支持 |
+
+### ARM 特定优化
+
+- **NEON 指令集**: 自动启用 SIMD 优化
+- **SVE 支持**: ARMv9-A 可扩展向量指令
+- **多核优化**: 自动检测核心数并优化线程池
 
 ## 📁 项目结构
 
@@ -221,8 +209,7 @@ KADD/
 ├── include/    # 公共头文件
 ├── src/        # 源代码
 ├── tests/      # 测试
-├── demo/       # 示例程序
-├── tools/      # 训练脚本
+├── demo/       # ARM Linux 示例程序
 ├── docs/       # 文档
 └── assets/     # 模型和数据
 ```
@@ -230,8 +217,8 @@ KADD/
 ## 🔗 参考资料
 
 - [ONNX Runtime](https://github.com/microsoft/onnxruntime)
-- [Google Test](https://google.github.io/googletest/)
 - [ARM SVE](https://developer.arm.com/documentation/ddi0602/latest/)
+- [NEON 编程](https://developer.arm.com/documentation/dht0002/a/)
 
 ## 📄 许可证
 

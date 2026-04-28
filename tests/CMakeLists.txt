@@ -1,79 +1,48 @@
-# Tests CMakeLists.txt
+# Tests CMakeLists.txt (仅 gtest 测试)
 
-# JSON 解析器库（辅助工具）
-add_library(json_parser STATIC
-    ../tools/scripts/json_parser.c
-)
-target_include_directories(json_parser PUBLIC
-    ${CMAKE_SOURCE_DIR}/tools/scripts
-)
+# ============================================================================
+# 通用测试函数
+# ============================================================================
+function(add_kadd_gtest TEST_NAME SOURCE_FILE)
+    add_executable(${TEST_NAME} ${SOURCE_FILE})
+    target_compile_features(${TEST_NAME} PRIVATE cxx_std_17)
 
-# URL解码器库（辅助工具）
-add_library(url_decoder STATIC
-    ../tools/scripts/url_decoder.c
-)
-target_include_directories(url_decoder PUBLIC
-    ${CMAKE_SOURCE_DIR}/tools/scripts
-)
+    # 链接引擎库
+    target_link_libraries(${TEST_NAME} PRIVATE kadd_other_engines)
 
-# DFA 准确率测试 v2
-add_executable(dfa_accuracy_test_v2
-    dfa_accuracy_test_v2.c
-)
+    # 链接 Google Test
+    if(TARGET gtest_main)
+        target_link_libraries(${TEST_NAME} PRIVATE gtest_main)
+    elseif(GTest_FOUND)
+        target_link_libraries(${TEST_NAME} PRIVATE GTest::gtest_main)
+    endif()
 
-target_link_libraries(dfa_accuracy_test_v2 PRIVATE
-    kadd_dfa_engine
-    json_parser
-    url_decoder
-)
+    # 链接 ONNX Runtime
+    target_link_libraries(${TEST_NAME} PRIVATE ${ONNXRUNTIME_LIBRARIES})
+    target_include_directories(${TEST_NAME} PRIVATE ${ONNXRUNTIME_INCLUDE_DIRS})
 
-target_include_directories(dfa_accuracy_test_v2 PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-    ${CMAKE_SOURCE_DIR}/tools/scripts
-)
+    # 链接 cJSON（如果需要）
+    if(CJSON_FOUND)
+        if(CJSON_IS_THIRD_PARTY)
+            target_sources(${TEST_NAME} PRIVATE ${CJSON_LIBRARIES})
+        else()
+            target_link_libraries(${TEST_NAME} PRIVATE ${CJSON_LIBRARIES})
+            target_include_directories(${TEST_NAME} PRIVATE ${CJSON_INCLUDE_DIRS})
+        endif()
+    endif()
 
-# ML 推理测试
-add_executable(test_ml_inference
-    test_ml_inference.c
-)
+    # 公共包含目录
+    target_include_directories(${TEST_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/include)
 
-target_link_libraries(test_ml_inference PRIVATE
-    onnxruntime
-)
+    # 注册测试
+    add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
+endfunction()
 
-target_include_directories(test_ml_inference PRIVATE
-    ${CMAKE_SOURCE_DIR}/third_party/include
-)
+# ============================================================================
+# GTest 测试程序
+# ============================================================================
 
-# 简单 ML 测试
-add_executable(test_ml_simple
-    test_ml_simple.c
-)
+add_kadd_gtest(ml_engine_test test_ml_engine_gtest.cpp)
+add_kadd_gtest(feature_engine_test test_feature_engine_gtest.cpp)
 
-target_link_libraries(test_ml_simple PRIVATE
-    kadd_other_engines
-)
-
-target_include_directories(test_ml_simple PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-
-# 复制模型文件到构建目录
-add_custom_command(TARGET test_ml_inference POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_SOURCE_DIR}/tools/model_tokens_rf.onnx
-        ${CMAKE_BINARY_DIR}/model_tokens_rf.onnx
-    COMMENT "Copying model file for testing"
-)
-
-# 复制转移表文件到构建目录（用于测试）
-add_custom_command(TARGET dfa_accuracy_test_v2 POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_BINARY_DIR}/tools/profile_data
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_SOURCE_DIR}/tools/profile_data/transition_table.bin
-        ${CMAKE_BINARY_DIR}/tools/profile_data/
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_SOURCE_DIR}/tools/profile_data/states_meta.json
-        ${CMAKE_BINARY_DIR}/tools/profile_data/
-    COMMENT "Copying DFA table files for testing"
-)
+message(STATUS "Tests configured: ml_engine_test, feature_engine_test")

@@ -50,49 +50,48 @@ message(STATUS "Enable optimize: ${KADD_OPTIMIZE}")
 # ============================================================================
 # ONNX Runtime 依赖
 # ============================================================================
-# ONNX Runtime 查找
-if(USE_SYSTEM_LIBS)
-    find_package(onnxruntime QUIET)
-    if(onnxruntime_FOUND)
-        message(STATUS "Found system ONNX Runtime")
-        set(ONNXRUNTIME_INCLUDE_DIRS ${onnxruntime_INCLUDE_DIRS})
-        set(ONNXRUNTIME_LIBRARIES ${onnxruntime_LIBRARIES})
-    endif()
+
+# 优先使用环境变量 ONNXRUNTIME_HOME
+set(ONNXRUNTIME_ROOT "$ENV{ONNXRUNTIME_HOME}" CACHE PATH "Root directory of ONNX Runtime installation")
+
+if(ONNXRUNTIME_ROOT)
+    # 用户指定了路径
+    message(STATUS "Using ONNXRUNTIME_HOME: ${ONNXRUNTIME_ROOT}")
+    set(SEARCH_PATHS "${ONNXRUNTIME_ROOT}")
+    set(SEARCH_MODE NO_DEFAULT_PATH)
+else()
+    # 未指定，搜索 third_party 和系统路径
+    set(SEARCH_PATHS "${CMAKE_SOURCE_DIR}/third_party" "/usr/local" "/usr")
+    set(SEARCH_MODE "")
 endif()
 
-if(NOT onnxruntime_FOUND)
-    # 使用 third_party 中的 ONNX Runtime
-    set(ONNX_LIB_FOUND FALSE)
-    set(ONNX_LIB_NAMES "onnxruntime.dll" "libonnxruntime.dylib" "libonnxruntime.so")
+# 查找库
+find_library(ONNXRUNTIME_LIBRARIES
+    NAMES onnxruntime
+    PATHS ${SEARCH_PATHS}
+    PATH_SUFFIXES lib lib64
+    ${SEARCH_MODE}
+)
 
-    # 检查版本化的库文件 (Linux)
-    if(UNIX AND NOT APPLE)
-        list(APPEND ONNX_LIB_NAMES
-            "libonnxruntime.so.1.16.0"
-            "libonnxruntime.so.1.17.0"
-            "libonnxruntime.so.1.18.0"
-            "libonnxruntime.so.1.20.0"
-        )
-    endif()
+# 查找头文件
+find_path(ONNXRUNTIME_INCLUDE_DIRS
+    NAMES onnxruntime_c_api.h
+    PATHS ${SEARCH_PATHS}
+    PATH_SUFFIXES include include/onnxruntime
+    ${SEARCH_MODE}
+)
 
-    # 搜索库文件
-    foreach(lib_name ${ONNX_LIB_NAMES})
-        set(lib_path "${CMAKE_SOURCE_DIR}/third_party/lib/${lib_name}")
-        if(EXISTS "${lib_path}")
-            set(ONNXRUNTIME_LIBRARIES "${lib_path}")
-            set(ONNXRUNTIME_INCLUDE_DIRS "${CMAKE_SOURCE_DIR}/third_party/include")
-            set(ONNX_LIB_FOUND TRUE)
-            message(STATUS "Using third_party ONNX Runtime: ${lib_name}")
-            break()
-        endif()
-    endforeach()
-
-    if(NOT ONNX_LIB_FOUND)
-        message(FATAL_ERROR "ONNX Runtime not found in third_party/lib/")
-        message("  Looking for: ${ONNX_LIB_NAMES}")
-        message("  Search path: ${CMAKE_SOURCE_DIR}/third_party/lib/")
-    endif()
+# 验证结果
+if(NOT ONNXRUNTIME_LIBRARIES OR NOT ONNXRUNTIME_INCLUDE_DIRS)
+    message(FATAL_ERROR "ONNX Runtime not found!"
+        "\n  Solutions:"
+        "\n    1. Set ONNXRUNTIME_HOME environment variable"
+        "\n    2. Install: sudo apt-get install libonnxruntime-dev"
+        "\n    3. Place in: third_party/lib/")
 endif()
+
+get_filename_component(ONNXRUNTIME_LIB_DIR ${ONNXRUNTIME_LIBRARIES} DIRECTORY)
+message(STATUS "Found ONNX Runtime: ${ONNXRUNTIME_LIBRARIES}")
 
 # ============================================================================
 # cJSON 依赖
@@ -178,63 +177,15 @@ if(CJSON_IS_THIRD_PARTY)
 endif()
 
 # ============================================================================
-# 子目录
+# 子目录 (不包含 tools 目录)
 # ============================================================================
 add_subdirectory(src)
 add_subdirectory(demo)
-add_subdirectory(tests)
 
-# ============================================================================
-# 测试程序配置
-# ============================================================================
-if(BUILD_TESTS AND GTest_FOUND)
+# 仅在启用测试时添加 tests 目录
+if(BUILD_TESTS)
     enable_testing()
-
-    # ML 引擎单元测试
-    add_executable(ml_engine_test tests/test_ml_engine_gtest.cpp)
-    target_compile_features(ml_engine_test PRIVATE cxx_std_17)
-    target_link_libraries(ml_engine_test PRIVATE kadd_other_engines)
-    target_link_libraries(ml_engine_test PRIVATE "${ONNXRUNTIME_LIBRARIES}")
-    target_include_directories(ml_engine_test PRIVATE
-        "${CMAKE_SOURCE_DIR}/include"
-        "${ONNXRUNTIME_INCLUDE_DIRS}"
-    )
-
-    # 链接 Google Test
-    if(TARGET gtest_main)
-        target_link_libraries(ml_engine_test PRIVATE gtest_main)
-    elseif(GTest_FOUND)
-        target_link_libraries(ml_engine_test PRIVATE GTest::gtest GTest::gtest_main)
-    endif()
-
-    # 链接 cJSON
-    if(CJSON_FOUND)
-        if(CJSON_IS_THIRD_PARTY)
-            target_sources(ml_engine_test PRIVATE "${CJSON_LIBRARIES}")
-        else()
-            target_link_libraries(ml_engine_test PRIVATE "${CJSON_LIBRARIES}")
-            target_include_directories(ml_engine_test PRIVATE "${CJSON_INCLUDE_DIRS}")
-        endif()
-    endif()
-
-    # 特征引擎单元测试
-    add_executable(feature_engine_test tests/test_feature_engine_gtest.cpp)
-    target_compile_features(feature_engine_test PRIVATE cxx_std_17)
-    target_link_libraries(feature_engine_test PRIVATE kadd_other_engines)
-    target_include_directories(feature_engine_test PRIVATE "${CMAKE_SOURCE_DIR}/include")
-
-    # 链接 Google Test
-    if(TARGET gtest_main)
-        target_link_libraries(feature_engine_test PRIVATE gtest_main)
-    elseif(GTest_FOUND)
-        target_link_libraries(feature_engine_test PRIVATE GTest::gtest GTest::gtest_main)
-    endif()
-
-    # 注册测试
-    add_test(NAME MLEngineTest COMMAND ml_engine_test)
-    add_test(NAME FeatureEngineTest COMMAND feature_engine_test)
-
-    message(STATUS "Tests configured: MLEngineTest, FeatureEngineTest")
+    add_subdirectory(tests)
 endif()
 
 # ============================================================================
