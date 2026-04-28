@@ -1,0 +1,85 @@
+/root/hfx/KADD_1/src/kadd_ml_engine.c:226:67: warning: passing argument 4 of ‘handle->api->Run’ from incompatible pointer type [-Wincompatible-pointer-types]
+  226 |     status = handle->api->Run(handle->session, NULL, input_names, inputs, 1, output_names, 1, &output);
+      |                                                                   ^~~~~~
+      |                                                                   |
+      |                                                                   OrtValue **
+/root/hfx/KADD_1/src/kadd_ml_engine.c:226:67: note: expected ‘const OrtValue * const*’ but argument is of type ‘OrtValue **’
+/root/hfx/KADD_1/src/kadd_ml_engine.c:256:71: warning: passing argument 1 of ‘handle->api->GetTensorTypeAndShape’ from incompatible pointer type [-Wincompatible-pointer-types]
+  256 |         OrtStatus *tensor_status = handle->api->GetTensorTypeAndShape(type_info, &tensor_info);
+      |                                                                       ^~~~~~~~~
+      |                                                                       |
+      |                                                                       OrtTypeInfo *
+/root/hfx/KADD_1/src/kadd_ml_engine.c:256:71: note: expected ‘const OrtValue *’ but argument is of type ‘OrtTypeInfo *’
+/root/hfx/KADD_1/src/kadd_ml_engine.c: In function ‘kadd_model_predict_batch’:
+/root/hfx/KADD_1/src/kadd_ml_engine.c:349:71: warning: passing argument 4 of ‘handle->api->Run’ from incompatible pointer type [-Wincompatible-pointer-types]
+  349 |         status = handle->api->Run(handle->session, NULL, input_names, inputs, 1, output_names, 1, &output);
+      |                                                                       ^~~~~~
+      |                                                                       |
+      |                                                                       OrtValue **
+/root/hfx/KADD_1/src/kadd_ml_engine.c:349:71: note: expected ‘const OrtValue * const*’ but argument is of type ‘OrtValue **’
+/root/hfx/KADD_1/src/kadd_ml_engine.c: In function ‘create_session’:
+/root/hfx/KADD_1/src/kadd_ml_engine.c:155:25: warning: ignoring return value of function declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  155 |                         handle->api->AllocatorFree(allocator, name);
+      |                         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/root/hfx/KADD_1/src/kadd_ml_engine.c:158:21: warning: ignoring return value of function declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  158 |                     handle->api->AllocatorFree(allocator, name);
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[ 21%] Linking C shared library libkadd_ml_engine.so
+[ 21%] Built target kadd_ml_engine
+[ 25%] Building C object src/CMakeFiles/kadd_dfa_engine_pro.dir/kadd_dfa_engine_pro.c.o
+[ 28%] Building C object src/CMakeFiles/kadd_dfa_engine_pro.dir/__/third_party/src/cJSON.c.o
+[ 32%] Linking C shared library libkadd_dfa_engine_pro.so
+[ 32%] Built target kadd_dfa_engine_pro
+[ 35%] Building C object src/CMakeFiles/kadd_sqli_engine.dir/kadd_sqli_engine.c.o
+[ 39%] Building C object src/CMakeFiles/kadd_sqli_engine.dir/__/third_party/src/cJSON.c.o
+[ 42%] Linking C shared library libkadd_sqli_engine.so
+[ 42%] Built target kadd_sqli_engine
+[ 46%] Building C object src/CMakeFiles/kadd_other_engines.dir/kadd_feature_engine.c.o
+[ 50%] Building C object src/CMakeFiles/kadd_other_engines.dir/kadd_ml_engine.c.o
+/root/hfx/KADD_1/src/kadd_ml_engine.c: In function ‘kadd_model_predict’:
+/root/hfx/KADD_1/src/kadd_ml_engine.c:226:67: warning: passing argument 4 of ‘handle->api->Run’ from incompatible pointer type [-Wincompatible-pointer-types]
+  226 |     status = handle->api->Run(handle->session, NULL, input_names, inputs, 1, output_names, 1, &output);
+      |                                                                   ^~~~~~
+      |                                                                   |
+      |                                                                   OrtValue **
+/root/hfx/KADD_1/src/kadd_ml_engine.c:226:67: note: expected ‘const OrtValue * const*’ but argument is of type ‘OrtValue **’
+/root/hfx/KADD_1/src/kadd_ml_engine.c:256:71: warning: passing argument 1 of ‘handle->api->GetTensorTypeAndShape’ from incompatible pointer type [-Wincompatible-pointer-types]
+  256 |         OrtStatus *tensor_status = handle->api->GetTensorTypeAndShape(type_info, &tensor_info);
+      |                                                                       ^~~~~~~~~
+      |                                                                       |
+      |                                                                       OrtTypeInfo *
+/root/hfx/KADD_1/src/kadd_ml_engine.c:256:71: note: expected ‘const OrtValue *’ but argument is of type ‘OrtTypeInfo *’
+/root/hfx/KADD_1/src/kadd_ml_engine.c: In function ‘kadd_model_predict_batch’:
+/root/hfx/KADD_1/src/kadd_ml_engine.c:349:71: warning: passing argument 4 of ‘handle->api->Run’ from incompatible pointer type [-Wincompatible-pointer-types]
+  349 |         status = handle->api->Run(handle->session, NULL, input_names, inputs, 1, output_names, 1, &output);
+      |                                                                       ^~~~~~
+      |                                                                       |
+      |                                                                       OrtValue **
+/root/hfx/KADD_1/src/kadd_ml_engine.c:349:71: note: expected ‘const OrtValue * const*’ but argument is of type ‘OrtValue **’
+/root/hfx/KADD_1/src/kadd_ml_engine.c: In function ‘create_session’:
+/root/hfx/KADD_1/src/kadd_ml_engine.c:155:25: warning: ignoring return value of function declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  155 |                         handle->api->AllocatorFree(allocator, name);
+      |                         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/root/hfx/KADD_1/src/kadd_ml_engine.c:158:21: warning: ignoring return value of function declared with attribute ‘warn_unused_result’ [-Wunused-result]
+  158 |                     handle->api->AllocatorFree(allocator, name);
+      |                     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+[ 53%] Building C object src/CMakeFiles/kadd_other_engines.dir/kadd_sqli_engine.c.o
+[ 57%] Linking C static library libkadd_other_engines.a
+[ 57%] Built target kadd_other_engines
+[ 60%] Building C object demo/CMakeFiles/kadd_feature_demo.dir/kadd_feature_demo.c.o
+[ 64%] Building C object demo/CMakeFiles/kadd_feature_demo.dir/tools.c.o
+[ 67%] Linking C executable kadd_feature_demo
+[ 67%] Built target kadd_feature_demo
+[ 71%] Building C object demo/CMakeFiles/kadd_ml_demo.dir/kadd_ml_demo.c.o
+[ 75%] Building C object demo/CMakeFiles/kadd_ml_demo.dir/tools.c.o
+[ 78%] Linking C executable kadd_ml_demo
+[ 78%] Built target kadd_ml_demo
+[ 82%] Building CXX object tests/CMakeFiles/ml_engine_test.dir/test_ml_engine_gtest.cpp.o
+[ 85%] Building C object tests/CMakeFiles/ml_engine_test.dir/__/third_party/src/cJSON.c.o
+[ 89%] Linking CXX executable ml_engine_test
+[ 89%] Built target ml_engine_test
+[ 92%] Building CXX object tests/CMakeFiles/feature_engine_test.dir/test_feature_engine_gtest.cpp.o
+[ 96%] Building C object tests/CMakeFiles/feature_engine_test.dir/__/third_party/src/cJSON.c.o
+[100%] Linking CXX executable feature_engine_test
+[100%] Built target feature_engine_test
+[root@localhost build]# ll
