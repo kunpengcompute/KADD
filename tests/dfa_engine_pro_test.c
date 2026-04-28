@@ -1,8 +1,9 @@
 /**
  * @file dfa_engine_pro_test.c
- * @brief DFA引擎Pro版本测试 - 基于dfa_engine.py的test_sections
+ * @brief DFA引擎测试 - 基于dfa_engine.py的test_sections
  *
  * 测试用例与libinjection完全对齐
+ * 使用基础版 kadd_dfa_engine_t 引擎
  */
 
 #define _POSIX_C_SOURCE 200809L
@@ -11,7 +12,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdint.h>
-#include "../include/kadd_dfa_engine_pro.h"
+#include "../include/kadd_dfa_engine.h"
 #include "libinjection_sqli.h"
 
 /* ========== 测试数据定义 ========== */
@@ -335,7 +336,7 @@ static int compare_tokens(const int *actual, int actual_count,
 /**
  * @brief 运行单个测试章节
  */
-static int run_test_section(kadd_dfa_engine_pro_t *engine,
+static int run_test_section(kadd_dfa_engine_t *engine,
                            const char *section_name,
                            const char **test_inputs,
                            size_t test_count,
@@ -372,8 +373,8 @@ static int run_test_section(kadd_dfa_engine_pro_t *engine,
         int dfa_output[8192];
         int dfa_dim = 0;
 
-        if (kadd_dfa_engine_pro_tokenize(engine, test, strlen(test),
-                                        dfa_output, &dfa_dim) == 0) {
+        if (kadd_dfa_engine_tokenize(engine, test, strlen(test),
+                                     dfa_output, &dfa_dim) == 0) {
             dfa_count = (size_t)dfa_dim;
             dfa_tokens = dfa_output;
         }
@@ -432,12 +433,12 @@ int main(void) {
     #endif
 
     printf("╔════════════════════════════════════════════════════════════╗\n");
-    printf("║              DFA 引擎 Pro 版本测试                          ║\n");
+    printf("║                 DFA 引擎测试                                ║\n");
     printf("║         对比 libinjection (Expected) vs DFA (Actual)        ║\n");
     printf("╚════════════════════════════════════════════════════════════╝\n");
 
     /* 创建 DFA 引擎 */
-    kadd_dfa_engine_pro_t *engine = NULL;
+    kadd_dfa_engine_t *engine = NULL;
 
     /* 尝试多个可能的路径 */
     const char *table_paths[] = {
@@ -461,8 +462,8 @@ int main(void) {
                 FILE *sf = fopen(state_paths[j], "r");
                 if (sf) {
                     fclose(sf);
-                    if (kadd_dfa_engine_pro_create(&engine, table_paths[i],
-                                                     state_paths[j], 8192, 8192) == 0) {
+                    if (kadd_dfa_engine_create(&engine, table_paths[i],
+                                               state_paths[j], 8192, 8192) == 0) {
                         engine_created = 1;
                         printf("\nDFA引擎创建成功\n");
                         printf("转移表: %s\n", table_paths[i]);
@@ -513,7 +514,7 @@ int main(void) {
     printf("╚════════════════════════════════════════════════════════════╝\n");
 
     /* 释放引擎 */
-    kadd_dfa_engine_pro_free(engine);
+    kadd_dfa_engine_free(engine);
 
     return (total_failed == 0) ? 0 : 1;
 }
