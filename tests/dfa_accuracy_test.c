@@ -259,15 +259,28 @@ int load_test_data_from_json(const char *filepath, TestDataArray *array) {
     content[read_size] = '\0';
     fclose(file);
 
-    printf("文件大小: %ld bytes\n", file_size);
+    printf("文件大小: %ld bytes (%.2f MB)\n", file_size, file_size / 1024.0 / 1024.0);
+    printf("开始解析 JSON...\n");
+    fflush(stdout);
 
     // 使用cJSON解析
+    clock_t parse_start = clock();
     cJSON *root = cJSON_Parse(content);
+    clock_t parse_end = clock();
+
     if (!root) {
-        printf("错误: JSON解析失败\n");
+        const char *error_ptr = cJSON_GetErrorPtr();
+        if (error_ptr != NULL) {
+            printf("错误: JSON解析失败，位置: %s\n", error_ptr);
+        } else {
+            printf("错误: JSON解析失败\n");
+        }
         free(content);
         return 0;
     }
+
+    printf("JSON 解析完成，耗时: %.2f 秒\n", (double)(parse_end - parse_start) / CLOCKS_PER_SEC);
+    fflush(stdout);
 
     // 获取data数组
     cJSON *data_array = cJSON_GetObjectItem(root, "data");
@@ -327,8 +340,9 @@ int load_test_data_from_json(const char *filepath, TestDataArray *array) {
         add_test_data(array, test);
         count++;
 
-        if (count <= 5) {
-            printf("已加载 %d 条数据\n", count);
+        if (count <= 5 || count % 10000 == 0) {
+            printf("已加载 %d 条数据...\n", count);
+            fflush(stdout);
         }
     }
 
@@ -502,6 +516,10 @@ void run_accuracy_test(dfa_engine_t *engine, TestDataArray *tests,
             expected_tokens = (int *)malloc(sizeof(int) * expected_count);
             memcpy(expected_tokens, test->tokens_correct, sizeof(int) * expected_count);
         }
+
+        // libinjection 生成的 tokens
+        expected_count = 0;
+        expected_tokens = libinjection_tokenize_to_indices(input_uri, &expected_count);
 
         // 使用 DFA 生成实际的 tokens
         size_t actual_count = 0;
@@ -847,7 +865,8 @@ int main(void) {
 
     // 可以通过修改下面的参数来限制测试数量，例如：
     // int max_tests = 1000;  // 只测试前1000条
-    int max_tests = 0;  // 0表示测试所有数据
+    int max_tests = 1000000;  // 默认只测试前1000条，避免卡死
+    // int max_tests = 0;  // 0表示测试所有数据（需要很长时间）
 
     run_accuracy_test(engine, &test_array, &result, &result_array, 1, max_tests);
 

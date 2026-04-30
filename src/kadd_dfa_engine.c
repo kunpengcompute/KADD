@@ -138,14 +138,59 @@ static char *extract_json_str_fast(char **value_ptr, char *json_end) {
     }
     if (*p == '"') {
         p++;
-        char *end = strchr(p, '"');
-        if (end && end < json_end) {
-            size_t len = end - p;
+        // 扫描到结束引号，同时处理转义字符
+        char *write_ptr = p;
+        char *read_ptr = p;
+        while (read_ptr < json_end && *read_ptr != '"') {
+            if (*read_ptr == '\\' && read_ptr + 1 < json_end) {
+                // 处理转义序列
+                read_ptr++;
+                switch (*read_ptr) {
+                    case '"':  *write_ptr++ = '"'; break;
+                    case '\\': *write_ptr++ = '\\'; break;
+                    case '/':  *write_ptr++ = '/'; break;
+                    case 'b':  *write_ptr++ = '\b'; break;
+                    case 'f':  *write_ptr++ = '\f'; break;
+                    case 'n':  *write_ptr++ = '\n'; break;
+                    case 'r':  *write_ptr++ = '\r'; break;
+                    case 't':  *write_ptr++ = '\t'; break;
+                    case 'u': {
+                        // Unicode 转义 \uXXXX (简化处理，只处理基本字符)
+                        if (read_ptr + 4 < json_end) {
+                            // 对于简单的 ASCII 字符，尝试解析
+                            unsigned int codepoint = 0;
+                            for (int i = 1; i <= 4; i++) {
+                                char c = read_ptr[i];
+                                codepoint <<= 4;
+                                if (c >= '0' && c <= '9') codepoint |= (c - '0');
+                                else if (c >= 'a' && c <= 'f') codepoint |= (c - 'a' + 10);
+                                else if (c >= 'A' && c <= 'F') codepoint |= (c - 'A' + 10);
+                            }
+                            if (codepoint <= 0x7F) {
+                                *write_ptr++ = (char)codepoint;
+                            }
+                            read_ptr += 4;
+                        }
+                        break;
+                    }
+                    default:
+                        // 未知转义，保持原样
+                        *write_ptr++ = *read_ptr;
+                        break;
+                }
+                read_ptr++;
+            } else {
+                *write_ptr++ = *read_ptr++;
+            }
+        }
+
+        if (*read_ptr == '"') {
+            size_t len = write_ptr - p;
             result = malloc(len + 1);
             if (result) {
                 memcpy(result, p, len);
                 result[len] = '\0';
-                *value_ptr = end + 1;
+                *value_ptr = read_ptr + 1;
             }
             return result;
         }
@@ -659,21 +704,39 @@ static inline int can_continue_scanning(const kadd_dfa_engine_t *e, int state, u
     }
     /* 首先检查转移表（必须在状态名称检查之前） */
     const kadd_trans_entry_t *ent = &e->transitions[state][next_code];
+    if (getenv("DEBUG_CAN_CONTINUE")) {
+        fprintf(stderr, "[can_continue_scanning] state=%s next_code=%c (%d) ent->is_insn=%d ent->next_state=%d\n",
+                name ? name : "NULL", next_code, next_code, ent->is_insn, ent->next_state);
+    }
     if (ent->is_insn || ent->next_state == KADD_DFA_ID_ERROR) {
+        /* 特殊处理：对于BWORD状态遇到']'，即使转移无效，也继续扫描
+         * 这对于处理[identifier]等方括号标识符很重要 */
+        if (state >= 0 && state < (int)e->num_states) {
+            const char *state_name = e->state_names[state];
+            if (strcmp(state_name, "BWORD") == 0 && next_code == ']') {
+                return 1;  /* 继续扫描，包含']'到token中 */
+            }
+        }
         return 0;
     }
     /* 特殊处理：如果目标状态是特殊前缀字符串状态（BSTRING, XSTRING等），
      * 则继续扫描以包含前缀字符到字符串token中
      * 这对于处理 B'10101', X'FFA2' 等特殊字符串前缀很重要 */
     if (!ent->is_insn && ent->next_state < e->num_states && name != NULL) {
+        /* 对于QSTRING状态，检查下一个字符是否是引号，如果是则继续扫描
+         * 这对于处理q'(string)'等q-string格式很重要 */
+        if (strcmp(name, "QSTRING") == 0 && next_code == '\'') {
+            return 1;  /* 继续扫描q-string */
+        }
         if (strcmp(name, "WORD") == 0 || strcmp(name, "BWORD") == 0 ||
             strncmp(name, "WORD_", 5) == 0) {
             const char *next_state_name = e->state_names[ent->next_state];
             if (strcmp(next_state_name, "BSTRING") == 0 ||
                 strcmp(next_state_name, "XSTRING") == 0 ||
                 strcmp(next_state_name, "ESTRING") == 0 ||
-                strcmp(next_state_name, "NSTRING") == 0 ||
-                strcmp(next_state_name, "USTRING") == 0) {
+                strcmp(next_state_name, "NQSTRING") == 0 ||  /* N' 使用 NQSTRING */
+                strcmp(next_state_name, "USTRING") == 0 ||
+                strcmp(next_state_name, "USTRING_AMP") == 0) {
                 return 1;  /* 继续扫描，不发出token */
             }
         }
@@ -691,7 +754,9 @@ static inline int can_continue_scanning(const kadd_dfa_engine_t *e, int state, u
             (strcmp(name, "OPERATOR2_EQ") == 0 && next_code == '=') ||    /* = -> == */
             (strcmp(name, "OPERATOR2_NOT") == 0 && next_code == '=') ||   /* ! -> != */
             (strcmp(name, "OPERATOR2_NOT") == 0 && next_code == '!') ||   /* ! -> !! */
-            (strcmp(name, "OPERATOR2_LT") == 0 && (next_code == '=' || next_code == '<')) ||  /* < -> <=, << */
+            (strcmp(name, "OPERATOR2_LT") == 0 && (next_code == '=' || next_code == '<' || next_code == '>')) ||  /* < -> <=, <<, <> */
+            (strcmp(name, "OPERATOR2_LT_EQ") == 0 && next_code == '>') ||  /* <= -> <=> */
+            (strcmp(name, "OPERATOR2_LT_GT") == 0 && next_code == '=') ||  /* <> -> <=> */
             (strcmp(name, "OPERATOR2_GT") == 0 && (next_code == '=' || next_code == '>')) ||   /* > -> >=, >> */
             (strcmp(name, "OPERATOR2_COLON") == 0 && next_code == ':') ||  /* : -> :: */
             (strcmp(name, "PLUS") == 0 && next_code == '+') ||            /* + -> ++ */
@@ -723,7 +788,8 @@ static inline int can_continue_scanning(const kadd_dfa_engine_t *e, int state, u
             return 1;
         }
         /* For other operator states, don't continue scanning */
-        if (strstr(name, "DASH") != NULL || strstr(name, "SLASH") != NULL ||
+        if (strstr(name, "DASH") != NULL ||
+            (strstr(name, "SLASH") != NULL && strcmp(name, "BACKSLASH") != 0 && strcmp(name, "SLASH") != 0) ||
             strstr(name, "ANGLE") != NULL || strstr(name, "PLUS") != NULL || strstr(name, "STAR") != NULL ||
             (strstr(name, "OPERATOR") != NULL && strcmp(name, "OPERATOR2_PIPE") != 0 &&
              strcmp(name, "OPERATOR2_AMP") != 0 && strcmp(name, "OPERATOR2_NOT") != 0 &&
@@ -739,8 +805,9 @@ static inline int can_continue_scanning(const kadd_dfa_engine_t *e, int state, u
          * 特殊情况：对于STRING_SQ_QUOTE状态，如果下一个字符是'，则继续扫描（支持''转义语法）
          * 特殊情况：对于STRING_DQ_QUOTE状态，如果下一个字符是"，则继续扫描（支持""转义语法） */
         if (strstr(name, "STRING") != NULL) {
-            /* 对于STRING_*_QUOTE状态，检查是否可以继续扫描以支持转义语法 */
-            if (strstr(name, "QUOTE") != NULL) {
+            /* 对于STRING_*_QUOTE状态，检查是否可以继续扫描以支持转义语法
+             * 但排除 QSTRING_QUOTE 状态，因为 q-string 需要继续扫描 */
+            if (strstr(name, "QUOTE") != NULL && strncmp(name, "QSTRING", 7) != 0) {
                 /* 检查下一个字符是否是相同的引号字符 */
                 if ((strstr(name, "STRING_SQ_QUOTE") != NULL && next_code == '\'') ||
                     (strstr(name, "STRING_DQ_QUOTE") != NULL && next_code == '"')) {
@@ -757,10 +824,12 @@ static inline int can_continue_scanning(const kadd_dfa_engine_t *e, int state, u
                 return 0;  // 遇到引号，发出当前token
             }
         }
-        /* 检查下一个状态是否为STRING_*_QUOTE状态 */
+        /* 检查下一个状态是否为STRING_*_QUOTE状态
+         * 但排除 QSTRING_QUOTE 状态，因为 q-string 需要继续扫描 */
         if (ent->next_state >= 0 && ent->next_state < (int)e->num_states) {
             const char *next_state_name = e->state_names[ent->next_state];
-            if (strstr(next_state_name, "STRING") != NULL && strstr(next_state_name, "QUOTE") != NULL) {
+            if (strstr(next_state_name, "STRING") != NULL && strstr(next_state_name, "QUOTE") != NULL &&
+                strncmp(next_state_name, "QSTRING", 7) != 0) {  /* 排除 QSTRING_QUOTE */
                 return 0;
             }
         }
@@ -812,48 +881,17 @@ static int parse_token(const kadd_dfa_engine_t *e, const char *s, size_t len,
 
     #define STATE_IS_VALID(s) ((s) >= 0 && (s) < (int)e->num_states)
     #define ADD_CHAR_TO_BUF(c) do { if (buf_len < MAX_BUF_SIZE - 1) buf[buf_len++] = (c); } while(0)
-    #define TOKEN_DONE() do { should_finish = 1; break; } while(0)
+    #define TOKEN_DONE() do { if (debug_parse) fprintf(stderr, "[TOKEN_DONE at line %d]\n", __LINE__); should_finish = 1; should_consume_char = 0; break; } while(0)
+    int debug_parse = getenv("DEBUG_PARSE_TOKEN") != NULL;
+    int should_consume_char = 1;  // 控制是否消费当前字符
     while (pos < len && !should_finish) {
+        should_consume_char = 1;  // 默认消费字符，除非 TOKEN_DONE() 将其设为 0
         unsigned char ch = s[pos];
         int code = (int)ch;
 
-        // Special handling: Quote characters should end the current WORD/BAREWORD token
-        // and start a new STRING token
-        // Check this BEFORE the character is added to the buffer
-        // Special case: For B', X', E', N', U&' prefix strings, don't emit the WORD token
-        if ((ch == '\'' || ch == '"') && buf_len > 0 && STATE_IS_VALID(state)) {
-            state_type_t current_type = get_state_type(e, state);
-            if (current_type == STATE_TYPE_WORD || current_type == STATE_TYPE_BWORD ||
-                current_type == STATE_TYPE_WORD_KEYWORD) {
-                /* 检查是否是特殊前缀字符串的转换 */
-                const kadd_trans_entry_t *trans = &e->transitions[state][code];
-                if (!trans->is_insn && trans->next_state < e->num_states) {
-                    const char *next_state_name = e->state_names[trans->next_state];
-                    if (strcmp(next_state_name, "BSTRING") == 0 ||
-                        strcmp(next_state_name, "XSTRING") == 0 ||
-                        strcmp(next_state_name, "ESTRING") == 0 ||
-                        strcmp(next_state_name, "NSTRING") == 0 ||
-                        strcmp(next_state_name, "USTRING") == 0) {
-                        /* 不发出token，继续扫描以包含前缀字符 */
-                        /* 不做任何处理，让后续逻辑正常处理引号字符 */
-                    } else {
-                        // Emit the current WORD/BAREWORD token WITHOUT including the quote
-                        // The quote will be processed as the start of a new STRING token
-                        if (!type) type = 'n';  // Default to BAREWORD for WORD states
-                        // Don't add the quote to the buffer, just finish the token
-                        // Don't increment pos, so the quote will be processed again
-                        TOKEN_DONE();
-                    }
-                } else {
-                    // Emit the current WORD/BAREWORD token WITHOUT including the quote
-                    // The quote will be processed as the start of a new STRING token
-                    if (!type) type = 'n';  // Default to BAREWORD for WORD states
-                    // Don't add the quote to the buffer, just finish the token
-                    // Don't increment pos, so the quote will be processed again
-                    TOKEN_DONE();
-                }
-            }
-        }
+        // 注意：删除了引号提前发出 token 的逻辑
+        // 原因：这会打断状态转移链，导致特殊前缀字符串（B' X' E' N' U&'）被错误拆分
+        // 让 DFA 转移表自然处理这些情况
 
         if (unlikely(is_whitespace(ch))) {
             if (buf_len > 0) {
@@ -928,13 +966,41 @@ static int parse_token(const kadd_dfa_engine_t *e, const char *s, size_t len,
         }
         kadd_trans_entry_t *ent = &e->transitions[state][ch];
 
+        /* 对于QSTRING状态，如果遇到引号且是q-string格式，继续扫描
+         * 这对于处理q'(string)'等q-string格式很重要 */
+        state_type_t current_state_type = get_state_type(e, state);
+        if (current_state_type == STATE_TYPE_QSTRING && ch == '\'' && buf_len >= 4) {
+            /* 检查是否是q-string格式：q'(... */
+            if (buf[0] == 'q' && buf[1] == '\'') {
+                /* 继续扫描，包含引号到buffer中 */
+                ADD_CHAR_TO_BUF(s[pos]);
+                pos++;
+                /* 检查是否是完整的q-string格式 */
+                char open_delim = buf[2];
+                char close_delim = buf[buf_len - 2];
+                if ((open_delim == '(' && close_delim == ')') ||
+                    (open_delim == '[' && close_delim == ']') ||
+                    (open_delim == '{' && close_delim == '}') ||
+                    (open_delim == '<' && close_delim == '>')) {
+                    /* 完整的q-string，发出token */
+                    type = 's';
+                    TOKEN_DONE();
+                }
+                continue;
+            }
+        }
+
         /* 修复：科学计数法的E/e检查（在获取转移之后、使用转移之前）
          * 当当前状态是NUMBER且当前字符是E或e时，需要检查这是否真的是科学计数法
          * 如果E后面没有跟数字（或+/-），则应该停止扫描当前数字token
-         * 这处理URL百分号编码的情况，如%3E应该解析为3和E，而不是3E */
+         * 这处理URL百分号编码的情况，如%3E应该解析为3和E，而不是3E
+         * 注意：十六进制数字（如0x676d514e）中的e是有效字符，不应该触发此检查 */
         if (likely(!ent->is_insn) && state >= 0 && state < (int)e->num_states) {
             state_type_t current_type = get_state_type(e, state);
-            if (current_type == STATE_TYPE_NUMBER && buf_len > 0) {
+            const char *state_name_check = e->state_names[state];
+            /* 只有在非十六进制数字状态下的科学计数法才需要检查 */
+            int is_hex_state = (strstr(state_name_check, "NUM_HEX") != NULL);
+            if (current_type == STATE_TYPE_NUMBER && buf_len > 0 && !is_hex_state) {
                 if (ch == 'E' || ch == 'e') {
                     int should_stop = 0;
                     if (pos + 1 >= len) {
@@ -1024,7 +1090,9 @@ static int parse_token(const kadd_dfa_engine_t *e, const char *s, size_t len,
                         strcmp(state_name, "OPERATOR2_PIPE") == 0 ||    /* | -> || */
                         strcmp(state_name, "OPERATOR2_EQ") == 0 ||      /* = -> == */
                         strcmp(state_name, "OPERATOR2_NOT") == 0 ||     /* ! -> !=, !! */
-                        strcmp(state_name, "OPERATOR2_LT") == 0 ||      /* < -> <=, << */
+                        strcmp(state_name, "OPERATOR2_LT") == 0 ||      /* < -> <=, <<, <> */
+                        strcmp(state_name, "OPERATOR2_LT_EQ") == 0 ||   /* <= -> <=> */
+                        strcmp(state_name, "OPERATOR2_LT_GT") == 0 ||   /* <> -> <=> */
                         strcmp(state_name, "OPERATOR2_GT") == 0 ||      /* > -> >=, >> */
                         strcmp(state_name, "OPERATOR2_COLON") == 0 ||   /* : -> :: */
                         strcmp(state_name, "PLUS") == 0 ||              /* + -> ++ */
@@ -1137,7 +1205,7 @@ static int parse_token(const kadd_dfa_engine_t *e, const char *s, size_t len,
                             if (strcmp(next_state_name, "BSTRING") == 0 ||
                                 strcmp(next_state_name, "XSTRING") == 0 ||
                                 strcmp(next_state_name, "ESTRING") == 0 ||
-                                strcmp(next_state_name, "NSTRING") == 0 ||
+                                strcmp(next_state_name, "NQSTRING") == 0 ||  /* N' 使用 NQSTRING */
                                 strcmp(next_state_name, "USTRING") == 0) {
                                 /* 不发出token，继续扫描以包含前缀字符 */
                                 consume_current_char = 0;
@@ -1170,7 +1238,7 @@ static int parse_token(const kadd_dfa_engine_t *e, const char *s, size_t len,
                     }
                 }
                 if (consume_current_char) {
-                    /* 当前字符已经在主循环中被添加到缓冲区了（第1421行）
+                    /* 当前字符已经在主循环中被添加到缓冲区了
                      * 这里只需要增加pos即可，不需要再次添加字符 */
                     pos++;
                 } else {
@@ -1178,6 +1246,12 @@ static int parse_token(const kadd_dfa_engine_t *e, const char *s, size_t len,
                      * Python版本：pos -= 1，回退到添加字符之前
                      * 但C版本的字符已经添加了，所以不需要再添加
                      * 直接设置标志并break即可 */
+                }
+                /* 修复：当consume_current_char = 1时，pos已经被增加了
+                 * 需要回退pos，让当前字符被重新处理
+                 * 这对应Python版本中的pos -= 1逻辑 */
+                if (consume_current_char) {
+                    pos--;
                 }
                 TOKEN_DONE();
             }
@@ -1225,11 +1299,16 @@ static int parse_token(const kadd_dfa_engine_t *e, const char *s, size_t len,
         if (likely(STATE_IS_VALID(state)) && buf_len > 0 && !ent->is_insn) {
             state_type_t prev_type = get_state_type(e, state);
             if (prev_type == STATE_TYPE_WORD || prev_type == STATE_TYPE_WORD_KEYWORD) {
-                if (!is_identifier_char(code) && code != '.' && !is_whitespace(ch)) {
-                    kadd_state_meta_t *meta = &e->meta[state];
-                    if (!meta->token_type) {
-                        type = 'n';
-                        TOKEN_DONE();
+                /* 只有当转移到 WORD 状态时，才在非标识符字符处提前发出 token
+                 * 这对应 Python 版本第 346-356 行的逻辑
+                 * 如果转移到其他状态（如 BSTRING、XSTRING 等），则继续扫描 */
+                if (ent->next_state == e->id_word) {
+                    if (!is_identifier_char(code) && code != '.' && !is_whitespace(ch)) {
+                        kadd_state_meta_t *meta = &e->meta[state];
+                        if (!meta->token_type) {
+                            type = 'n';
+                            TOKEN_DONE();
+                        }
                     }
                 }
             }
@@ -1252,45 +1331,36 @@ static int parse_token(const kadd_dfa_engine_t *e, const char *s, size_t len,
         int old_state_for_debug = state;  // Remember old state before transition
         state = ent->next_state;
 
-        /* 特殊处理：如果刚转换到特殊前缀字符串BODY状态（BSTRING_BODY, XSTRING_BODY等），
-         * 需要立即发出token，包括前缀字符 */
-        if (state >= 0 && state < (int)e->num_states) {
-            const char *new_state_name = e->state_names[state];
-            /* 检查是否是特殊前缀字符串的BODY状态 */
-            if (strcmp(new_state_name, "BSTRING_BODY") == 0 ||
-                strcmp(new_state_name, "XSTRING_BODY") == 0 ||
-                strcmp(new_state_name, "ESTRING_BODY") == 0 ||
-                strcmp(new_state_name, "NSTRING_BODY") == 0 ||
-                strcmp(new_state_name, "USTRING_BODY") == 0) {
-                /* 对于B'和X'前缀，整个token应该是NUMBER类型（二进制/十六进制字面量）
-                 * 对于E', N', U&'前缀，整个token应该是STRING类型 */
-                if (strcmp(new_state_name, "BSTRING_BODY") == 0 ||
-                    strcmp(new_state_name, "XSTRING_BODY") == 0) {
-                    type = '8';  /* NUMBER */
-                } else {
-                    type = 'a';  /* STRING */
-                }
-                TOKEN_DONE();
-                /* TOKEN_DONE()会重置缓冲区，所以不需要手动清空 */
-            }
-        }
-
         int old_state = state;  // Keep track of old state for debug
     consume_char: {
-        ADD_CHAR_TO_BUF(s[pos]);
-        pos++;
-        if ((strstr(state_name, "QSTRING") != NULL || strstr(state_name, "NQSTRING") != NULL) &&
-            qstring_start_pos < 0) {
-            qstring_start_pos = (int)(pos - 1);
+        if (should_consume_char) {
+            ADD_CHAR_TO_BUF(s[pos]);
+            pos++;
+            if ((strstr(state_name, "QSTRING") != NULL || strstr(state_name, "NQSTRING") != NULL) &&
+                qstring_start_pos < 0) {
+                qstring_start_pos = (int)(pos - 1);
+            }
         }
     }
         if (likely(STATE_IS_VALID(state))) {
             state_name = e->state_names[state];
             kadd_state_meta_t *meta = &e->meta[state];
             state_type_t current_type = get_state_type(e, state);
+            /* 对于BWORD状态，检查是否可以继续扫描
+             * 这对于处理[identifier]等方括号标识符很重要 */
+            if (current_type == STATE_TYPE_BWORD && pos < len && s[pos] == ']' && buf_len > 0) {
+                continue;  /* 继续扫描，包含']'到token中 */
+            }
             if (meta->action == 3) { /* ACTION_DUP_PREPEND */
+                if (getenv("DEBUG_ACTION")) {
+                    fprintf(stderr, "[ACTION_DUP_PREPEND] state=%s pos=%zu/%zu next_char=%c\n",
+                            state_name, pos, len, pos < len ? s[pos] : '?');
+                }
                 int can_continue = can_continue_scanning(e, state, pos < len ? s[pos] : 0, pos < len);
                 if (can_continue) {
+                    if (getenv("DEBUG_ACTION")) {
+                        fprintf(stderr, "[ACTION_DUP_PREPEND] continuing scan\n");
+                    }
                     continue;
                 }
                 /* 对于WORD_*状态，额外检查下一个字符是否是标识符字符
@@ -1331,7 +1401,9 @@ static int parse_token(const kadd_dfa_engine_t *e, const char *s, size_t len,
                     else if (strcmp(state_name, "OPERATOR2_PIPE") == 0 && next_code == '|') can_form_multi_char = 1;
                     else if (strcmp(state_name, "OPERATOR2_EQ") == 0 && next_code == '=') can_form_multi_char = 1;
                     else if (strcmp(state_name, "OPERATOR2_NOT") == 0 && (next_code == '=' || next_code == '!')) can_form_multi_char = 1;
-                    else if (strcmp(state_name, "OPERATOR2_LT") == 0 && (next_code == '=' || next_code == '<')) can_form_multi_char = 1;
+                    else if (strcmp(state_name, "OPERATOR2_LT") == 0 && (next_code == '=' || next_code == '<' || next_code == '>')) can_form_multi_char = 1;
+                    else if (strcmp(state_name, "OPERATOR2_LT_EQ") == 0 && next_code == '>') can_form_multi_char = 1;  /* <= -> <=> */
+                    else if (strcmp(state_name, "OPERATOR2_LT_GT") == 0 && next_code == '=') can_form_multi_char = 1;  /* <> -> <=> */
                     else if (strcmp(state_name, "OPERATOR2_GT") == 0 && (next_code == '=' || next_code == '>')) can_form_multi_char = 1;
                     else if (strcmp(state_name, "OPERATOR2_COLON") == 0 && next_code == ':') can_form_multi_char = 1;
                     else if (strcmp(state_name, "PLUS") == 0 && next_code == '+') can_form_multi_char = 1;
@@ -1397,10 +1469,14 @@ static int parse_token(const kadd_dfa_engine_t *e, const char *s, size_t len,
                         pos--;
                         TOKEN_DONE();
                     } else if (meta->token_type && meta->token_type[0]) {
-                        /* For states like CHAR_LEFT_PAREN, BSTRING_BODY, XSTRING_BODY, etc. with token_type,
-                         * emit the token immediately */
-                        if (buf_len > 0) {
-                            break;
+                        /* For states like CHAR_LEFT_PAREN with token_type, emit the token immediately
+                         * But for BSTRING_BODY and XSTRING_BODY, continue scanning to include the full content */
+                        const char *current_state_name = e->state_names[state];
+                        if (strcmp(current_state_name, "BSTRING_BODY") != 0 &&
+                            strcmp(current_state_name, "XSTRING_BODY") != 0) {
+                            if (buf_len > 0) {
+                                break;
+                            }
                         }
                     }
                     /* For other cases, rely on the transition table to determine the next state */
@@ -1420,26 +1496,23 @@ static int parse_token(const kadd_dfa_engine_t *e, const char *s, size_t len,
                     }
                     /* 无法继续扫描，发出token */
                     break;
-                } else if (meta->action == 2) { /* ACTION_COPY - emit token immediately */
-                    /* For states like CHAR_LEFT_PAREN, CHAR_RIGHT_PAREN, etc. with action 2,
-                     * emit the token immediately with the specified token_type */
-                    if (buf_len > 0) {
-                        break;
-                    }
                 }
+                /* 注意：不处理 action == 2 的情况，让状态自然转移
+                 * Python 版本没有在 action == 2 时立即发出 token 的逻辑
+                 * 对于 BSTRING_BODY 等状态，应该继续扫描直到遇到结束条件 */
             }
         }
         /* 修复：对于BWORD状态，不应在非标识符字符处发出token
          * BWORD状态接受所有字符除了']'，应该继续扫描而不是提前发出token
          * 特殊处理：对于特殊前缀字符串（B', X', E', N', U&'），不应在这里发出token */
         if (likely(STATE_IS_VALID(state)) && pos < len && buf_len > 0) {
-            /* 检查是否是特殊前缀字符串状态（BSTRING, XSTRING, ESTRING, NSTRING, USTRING）
+            /* 检查是否是特殊前缀字符串状态（BSTRING, XSTRING, ESTRING, NQSTRING, USTRING）
              * 如果是，继续扫描而不发出token */
             const char *state_name_check = e->state_names[state];
             if (strcmp(state_name_check, "BSTRING") == 0 ||
                 strcmp(state_name_check, "XSTRING") == 0 ||
                 strcmp(state_name_check, "ESTRING") == 0 ||
-                strcmp(state_name_check, "NSTRING") == 0 ||
+                strcmp(state_name_check, "NQSTRING") == 0 ||  /* N' 使用 NQSTRING */
                 strcmp(state_name_check, "USTRING") == 0 ||
                 strcmp(state_name_check, "USTRING_AMP") == 0) {
                 /* 特殊前缀字符串状态：继续扫描而不发出token */
@@ -1479,6 +1552,15 @@ static int parse_token(const kadd_dfa_engine_t *e, const char *s, size_t len,
                         }
                     }
                     if (!is_special_prefix_string) {
+                        /* Python兼容性修复：检查下一个转移目标是否有效
+                         * 如果有效，则继续扫描而不是立即发出token
+                         * 对应Python版本line 441-443的逻辑 */
+                        const kadd_trans_entry_t *next_ent = &e->transitions[state][next_code];
+                        if (!next_ent->is_insn && next_ent->next_state != KADD_DFA_ID_ERROR &&
+                            next_ent->next_state < e->num_states) {
+                            /* 下一个转移目标有效，继续扫描 */
+                            continue;
+                        }
                         kadd_state_meta_t *meta = &e->meta[state];
                         if (!meta->token_type) {
                             type = 'n';
@@ -1692,6 +1774,7 @@ int kadd_dfa_engine_tokenize(const kadd_dfa_engine_t *e,
         // 因此我们让parse_token正常处理，即使引号未闭合也会继续解析
         kadd_token_t tok;
         size_t new_pos = 0;
+        int old_dfa_state = dfa_state;
         int parse_result = parse_token(e, input, input_length, pos, &tok, &new_pos, &dfa_state);
         if (likely(parse_result)) {
             char *temp_heap_ptr = NULL;
