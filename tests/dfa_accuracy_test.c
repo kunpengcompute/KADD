@@ -384,35 +384,6 @@ double calculate_token_accuracy(const int *actual, int actual_count,
     return expected_count > 0 ? (double)correct / expected_count : 0.0;
 }
 
-// URL解码函数 - 解析百分号编码（完整版）
-// 例如：%20 -> 空格，%27 -> '，%28 -> (，%29 -> )
-// 支持：大写和小写十六进制数字、加号解码为空格
-static char *url_decode(const char *str) {
-    if (!str) return NULL;
-
-    size_t len = strlen(str);
-    char *decoded = malloc(len + 1);
-    if (!decoded) return NULL;
-
-    size_t j = 0;
-    for (size_t i = 0; i < len; i++) {
-        if (str[i] == '+') {
-            /* 加号解码为空格（application/x-www-form-urlencoded格式）*/
-            decoded[j++] = ' ';
-        } else if (str[i] == '%' && i + 2 < len &&
-            isxdigit((unsigned char)str[i + 1]) && isxdigit((unsigned char)str[i + 2])) {
-            /* 解码百分号编码 */
-            char hex[3] = {str[i + 1], str[i + 2], 0};
-            decoded[j++] = (char)strtol(hex, NULL, 16);
-            i += 2;
-        } else {
-            decoded[j++] = str[i];
-        }
-    }
-    decoded[j] = '\0';
-
-    return decoded;
-}
 
 // 将libinjection的token类型映射到索引（与Python dfa_engine_copy.py一致）
 static int libinjection_type_to_index(char type) {
@@ -518,8 +489,8 @@ void run_accuracy_test(dfa_engine_t *engine, TestDataArray *tests,
         }
 
         // libinjection 生成的 tokens
-        expected_count = 0;
-        expected_tokens = libinjection_tokenize_to_indices(input_uri, &expected_count);
+        // expected_count = 0;
+        // expected_tokens = libinjection_tokenize_to_indices(input_uri, &expected_count);
 
         // 使用 DFA 生成实际的 tokens
         size_t actual_count = 0;

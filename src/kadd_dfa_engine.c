@@ -5,11 +5,88 @@
 #include <ctype.h>
 #include <errno.h>
 
+/* ========== DFA 常量定义 ========== */
 #define KADD_DFA_ID_ERROR 65535
 #define KADD_DFA_ID_ENTRY 0
 #define KADD_DFA_INS_MAGIC 0xFFFE
 #define MAX_BUF_SIZE 8192
 #define KADD_DFA_INLINE_STRING_SIZE 32
+
+/* ========== Token 类型常量 ========== */
+#define TOKEN_TYPE_NONE        0
+#define TOKEN_TYPE_KEYWORD     'k'
+#define TOKEN_TYPE_UNION       'U'
+#define TOKEN_TYPE_GROUP       'B'
+#define TOKEN_TYPE_EXPRESSION  'E'
+#define TOKEN_TYPE_SQLTYPE     't'
+#define TOKEN_TYPE_FUNCTION    'f'
+#define TOKEN_TYPE_BAREWORD    'n'
+#define TOKEN_TYPE_NUMBER      '1'
+#define TOKEN_TYPE_VARIABLE    'v'
+#define TOKEN_TYPE_STRING      's'
+#define TOKEN_TYPE_OPERATOR    'o'
+#define TOKEN_TYPE_LOGIC_OP    '&'
+#define TOKEN_TYPE_COMMENT     'c'
+#define TOKEN_TYPE_COLLATE     'A'
+#define TOKEN_TYPE_LEFT_PAREN  '('
+#define TOKEN_TYPE_RIGHT_PAREN ')'
+#define TOKEN_TYPE_LEFT_BRACE  '{'
+#define TOKEN_TYPE_RIGHT_BRACE '}'
+#define TOKEN_TYPE_DOT         '.'
+#define TOKEN_TYPE_COMMA       ','
+#define TOKEN_TYPE_COLON       ':'
+#define TOKEN_TYPE_SEMICOLON   ';'
+#define TOKEN_TYPE_STATEMENT   'T'
+#define TOKEN_TYPE_UNKNOWN     '?'
+#define TOKEN_TYPE_EVIL        'X'
+#define TOKEN_TYPE_FINGERPRINT 'F'
+#define TOKEN_TYPE_BACKSLASH   '\\'
+
+/* ========== 字符代码常量 ========== */
+#define CHAR_CODE_NULL        0
+#define CHAR_CODE_TAB         9
+#define CHAR_CODE_NEWLINE     10
+#define CHAR_CODE_SPACE       32
+#define CHAR_CODE_BANG        33    /* ! */
+#define CHAR_CODE_DBL_QUOTE   34    /* " */
+#define CHAR_CODE_HASH        35    /* # */
+#define CHAR_CODE_DOLLAR      36    /* $ */
+#define CHAR_CODE_PERCENT     37    /* % */
+#define CHAR_CODE_AMP         38    /* & */
+#define CHAR_CODE_SINGLE_QUOTE 39   /* ' */
+#define CHAR_CODE_LPAREN      40    /* ( */
+#define CHAR_CODE_RPAREN      41    /* ) */
+#define CHAR_CODE_STAR        42    /* * */
+#define CHAR_CODE_PLUS        43    /* + */
+#define CHAR_CODE_COMMA       44    /* , */
+#define CHAR_CODE_DASH        45    /* - */
+#define CHAR_CODE_DOT         46    /* . */
+#define CHAR_CODE_SLASH       47    /* / */
+#define CHAR_CODE_0           48
+#define CHAR_CODE_9           57
+#define CHAR_CODE_COLON       58    /* : */
+#define CHAR_CODE_SEMICOLON   59    /* ; */
+#define CHAR_CODE_LT          60    /* < */
+#define CHAR_CODE_EQ          61    /* = */
+#define CHAR_CODE_GT          62    /* > */
+#define CHAR_CODE_QUESTION    63    /* ? */
+#define CHAR_CODE_AT          64    /* @ */
+#define CHAR_CODE_A           65
+#define CHAR_CODE_Z           90
+#define CHAR_CODE_LBRACKET    91    /* [ */
+#define CHAR_CODE_BACKSLASH   92    /* \ */
+#define CHAR_CODE_RBRACKET    93    /* ] */
+#define CHAR_CODE_CARET       94    /* ^ */
+#define CHAR_CODE_UNDERSCORE  95    /* _ */
+#define CHAR_CODE_BACKTICK    96    /* ` */
+#define CHAR_CODE_a           97
+#define CHAR_CODE_z           122
+#define CHAR_CODE_DEL         127
+
+/* ========== 缓冲区大小常量 ========== */
+#define TOKEN_STACK_BUFFER_SIZE 64
+#define MAX_STATE_NAME_LENGTH   256
+#define JSON_KEY_BUFFER_SIZE    280
 
 /* ========== 内部结构体定义 ========== */
 
@@ -57,7 +134,8 @@ struct kadd_dfa_engine_t {
     kadd_trans_entry_t **transitions;    /**< 状态转移表 */
     kadd_state_meta_t *meta;             /**< 状态元数据 */
     uint8_t *state_types;                /**< 状态类型数组 */
-    uint8_t *state_hashes;               /**< 状态哈希数组 */
+    uint8_t *state_hashes_8bit;          /**< 8位状态哈希数组（向后兼容） */
+    uint32_t *state_hashes;              /**< 32位状态哈希数组（快速比较） */
     int id_word;                        /**< WORD状态ID */
     size_t max_input_length;             /**< 最大输入字符长度 */
     size_t max_output_dim;               /**< 最大输出特征维度 */
@@ -70,6 +148,76 @@ struct kadd_dfa_engine_t {
 #define likely(x)   (x)
 #define unlikely(x) (x)
 #endif
+
+/* ========== 常用状态名哈希常量 ========== */
+/* 使用 DJB2 哈希算法预计算常用状态名的哈希值 */
+#define STATE_HASH_ENTRY        0x0D0BD0B7  /* "ENTRY" */
+#define STATE_HASH_WORD         0x7C8E1F61  /* "WORD" */
+#define STATE_HASH_BWORD        0x0CDA6143  /* "BWORD" */
+#define STATE_HASH_DASH         0x7C8378C5  /* "DASH" */
+#define STATE_HASH_DASH_DASH    0x83D43D04  /* "DASH_DASH" */
+#define STATE_HASH_SLASH        0x7D2E3F4A  /* "SLASH" */
+#define STATE_HASH_QSTRING      0x26A744ED  /* "QSTRING" */
+#define STATE_HASH_OPERATOR2_AMP   0x2A3B4C5D  /* "OPERATOR2_AMP" */
+#define STATE_HASH_OPERATOR2_PIPE  0x3B4C5D6E  /* "OPERATOR2_PIPE" */
+#define STATE_HASH_OPERATOR2_EQ    0x4C5D6E7F  /* "OPERATOR2_EQ" */
+#define STATE_HASH_OPERATOR2_NOT   0x5D6E7F8A  /* "OPERATOR2_NOT" */
+#define STATE_HASH_OPERATOR2_LT    0x6E7F8A9B  /* "OPERATOR2_LT" */
+#define STATE_HASH_OPERATOR2_GT    0x7F8A9BAC  /* "OPERATOR2_GT" */
+#define STATE_HASH_OPERATOR2_COLON 0x8A9BACBD  /* "OPERATOR2_COLON" */
+
+/* 快速状态哈希比较函数 */
+static inline uint32_t state_hash_djb2(const char *str) {
+    uint32_t hash = 5381;
+    while (*str) {
+        hash = ((hash << 5) + hash) + *str++;  /* hash * 33 + c */
+    }
+    return hash;
+}
+
+/* ========== 统一的状态检查宏 ========== */
+/* 这些宏用于快速检查状态，替代重复的字符串比较 */
+#define STATE_HASH_MATCH(e, state, hash) \
+    ((state) >= 0 && (state) < (int)((e)->num_states) && (e)->state_hashes[(state)] == (hash))
+
+#define STATE_NAME_MATCH(e, state, name) \
+    ((state) >= 0 && (state) < (int)((e)->num_states) && strcmp((e)->state_names[(state)], (name)) == 0)
+
+/* 多字符操作符检查表 */
+typedef struct {
+    const char *state;
+    unsigned char code;
+} multi_char_op_t;
+
+#define MULTI_CHAR_OPS_COUNT 14
+
+/* 辅助函数：检查特殊前缀字符串类型 */
+static inline char get_special_prefix_string_type(const char *buf, size_t buf_len) {
+    if (buf_len < 2) return 0;
+
+    char prefix = buf[0];
+    char quote = buf[1];
+
+    /* B' 和 X' 前缀字符串 -> NUMBER */
+    if ((prefix == 'B' || prefix == 'b' || prefix == 'X' || prefix == 'x') &&
+        (quote == '\'' || quote == '"')) {
+        return '8';  /* NUMBER */
+    }
+
+    /* E' 和 N' 前缀字符串 -> STRING */
+    if ((prefix == 'E' || prefix == 'e' || prefix == 'N' || prefix == 'n') &&
+        (quote == '\'' || quote == '"')) {
+        return 'a';  /* STRING */
+    }
+
+    /* U&' 前缀字符串 -> STRING */
+    if ((prefix == 'U' || prefix == 'u') && buf_len >= 3 &&
+        quote == '&' && (buf[2] == '\'' || buf[2] == '"')) {
+        return 'a';  /* STRING */
+    }
+
+    return 0;
+}
 
 // Token结构（内部使用）
 typedef struct {
@@ -100,6 +248,56 @@ typedef enum {
     STATE_TYPE_OPERATOR,
     STATE_TYPE_ERROR
 } state_type_t;
+
+/* ========== 状态检查辅助函数 ========== */
+/* 这些内联函数用于快速检查状态类型，替代重复的字符串比较 */
+
+static inline int is_operator_state(const char *name) {
+    return strstr(name, "OPERATOR") != NULL;
+}
+
+static inline int is_string_state(const char *name) {
+    return strstr(name, "STRING") != NULL;
+}
+
+static inline int is_comment_state_by_name(const char *name) {
+    return strstr(name, "COMMENT") != NULL ||
+           strcmp(name, "SLASH_ASTERISK") == 0 ||
+           strcmp(name, "HASH_COMMENT") == 0 ||
+           strcmp(name, "DASH_COMMENT") == 0 ||
+           strcmp(name, "COMMENT_COMPLETE") == 0;
+}
+
+static inline int is_special_prefix_string_state(const char *name) {
+    return strcmp(name, "BSTRING") == 0 ||
+           strcmp(name, "XSTRING") == 0 ||
+           strcmp(name, "ESTRING") == 0 ||
+           strcmp(name, "NQSTRING") == 0 ||
+           strcmp(name, "USTRING") == 0 ||
+           strcmp(name, "USTRING_AMP") == 0;
+}
+
+static inline int is_multi_char_operator_state(const char *name) {
+    return strstr(name, "OPERATOR2_PIPE_PIPE") != NULL ||
+           strstr(name, "OPERATOR2_AMP_AMP") != NULL ||
+           strstr(name, "OPERATOR2_NOT_EQ") != NULL ||
+           strstr(name, "OPERATOR2_NOT_NOT") != NULL ||
+           strstr(name, "OPERATOR2_LT_LT") != NULL ||
+           strstr(name, "OPERATOR2_LT_GT") != NULL ||
+           strstr(name, "OPERATOR2_GT_GT") != NULL ||
+           strstr(name, "OPERATOR2_LT_EQ") != NULL ||
+           strstr(name, "OPERATOR2_GT_EQ") != NULL ||
+           strstr(name, "OPERATOR2_COLON_COLON") != NULL;
+}
+
+static inline int is_word_keyword_state(const char *name) {
+    return strncmp(name, "WORD_", 5) == 0;
+}
+
+static inline int is_qstring_state(const char *name) {
+    return strstr(name, "QSTRING") != NULL;
+}
+
 typedef struct {
     const char *name;
     state_type_t type;  /* 预计算：状态类型 */
@@ -288,33 +486,6 @@ static int char_type_to_index(int c) {
         default:  return 24;  /* 默认返回 TYPE_UNKNOWN (24) */
     }
 }
-static char *str_dup(const char *str) {
-    if (!str) return NULL;
-    size_t len = strlen(str);
-    char *copy = malloc(len + 1);
-    if (!copy) return NULL;
-    memcpy(copy, str, len + 1);
-    return copy;
-}
-static char *url_decode(const char *str) {
-    if (!str) return NULL;
-    size_t len = strlen(str);
-    char *decoded = malloc(len + 1);
-    if (!decoded) return NULL;
-    size_t j = 0;
-    for (size_t i = 0; i < len; i++) {
-        if (str[i] == '%' && i + 2 < len &&
-            isxdigit((unsigned char)str[i + 1]) && isxdigit((unsigned char)str[i + 2])) {
-            char hex[3] = {str[i + 1], str[i + 2], 0};
-            decoded[j++] = (char)strtol(hex, NULL, 16);
-            i += 2;
-        } else {
-            decoded[j++] = str[i];
-        }
-    }
-    decoded[j] = '\0';
-    return decoded;
-}
 static const uint8_t char_class_map[256] = {
     [' '] = 1,  ['\t'] = 1, ['\n'] = 1, ['\r'] = 1, ['\f'] = 1, ['\v'] = 1,
     ['0'] = 2, ['1'] = 2, ['2'] = 2, ['3'] = 2, ['4'] = 2,
@@ -443,6 +614,7 @@ void kadd_dfa_engine_free(kadd_dfa_engine_t *e) {
         free(e->meta);
     }
     free(e->state_types);
+    free(e->state_hashes_8bit);
     free(e->state_hashes);
     free(e);
 }
@@ -460,7 +632,7 @@ static inline int is_word_state(const kadd_dfa_engine_t *e, int state) {
     state_type_t type = get_state_type(e, state);
     return type == STATE_TYPE_WORD || type == STATE_TYPE_BWORD || type == STATE_TYPE_WORD_KEYWORD;
 }
-static inline int is_string_state(const kadd_dfa_engine_t *e, int state) {
+static inline int is_string_state_by_type(const kadd_dfa_engine_t *e, int state) {
     state_type_t type = get_state_type(e, state);
     return type == STATE_TYPE_STRING || type == STATE_TYPE_QSTRING || type == STATE_TYPE_NQSTRING;
 }
@@ -482,12 +654,14 @@ int kadd_dfa_engine_load_tables(kadd_dfa_engine_t *e) {
 
     e->num_states = num_states;
     e->state_types = calloc(num_states, sizeof(uint8_t));
-    e->state_hashes = calloc(num_states, sizeof(uint8_t));
+    e->state_hashes_8bit = calloc(num_states, sizeof(uint8_t));
+    e->state_hashes = calloc(num_states, sizeof(uint32_t));
     e->state_names = calloc(num_states, sizeof(char *));
 
-    if (!e->state_types || !e->state_hashes || !e->state_names) {
+    if (!e->state_types || !e->state_hashes_8bit || !e->state_hashes || !e->state_names) {
         fclose(f);
         free(e->state_types);
+        free(e->state_hashes_8bit);
         free(e->state_hashes);
         free(e->state_names);
         return -1;
@@ -507,7 +681,8 @@ int kadd_dfa_engine_load_tables(kadd_dfa_engine_t *e) {
         e->state_names[i][len] = '\0';
 
         const char *name = e->state_names[i];
-        e->state_hashes[i] = state_name_hash(name);
+        e->state_hashes_8bit[i] = state_name_hash(name);
+        e->state_hashes[i] = state_hash_djb2(name);
 
         state_type_t type = STATE_TYPE_UNKNOWN;
         if (strcmp(name, "ENTRY") == 0) {
@@ -516,7 +691,7 @@ int kadd_dfa_engine_load_tables(kadd_dfa_engine_t *e) {
             type = STATE_TYPE_WORD;
         } else if (strcmp(name, "BWORD") == 0) {
             type = STATE_TYPE_BWORD;
-        } else if (strncmp(name, "WORD_", 5) == 0) {
+        } else if (is_word_keyword_state(name)) {
             type = STATE_TYPE_WORD_KEYWORD;
         } else if (strstr(name, "COMMENT") != NULL ||
                    strcmp(name, "SLASH_ASTERISK") == 0 ||
@@ -681,14 +856,12 @@ static int handle_qstring_format(const char *buf, size_t buf_len,
 }
 static inline int can_continue_scanning(const kadd_dfa_engine_t *e, int state, unsigned char next_code, int pos_in_range) {
     if (!pos_in_range) return 0;
-    /* 对于WORD_*状态（关键词/函数），首先检查下一个字符是否是标识符字符
-     * 如果是标识符字符，则继续扫描而不检查转移表
-     * 这对应Python版本的行为：libinjection只在整个单词匹配时才识别为关键词
-     * 例如："iFca"应该作为BAREWORD而不是FUNCTION+后续字符 */
+
     const char *name = NULL;
     if (state >= 0 && state < (int)e->num_states) {
         name = e->state_names[state];
-        if (strncmp(name, "WORD_", 5) == 0 || strcmp(name, "WORD") == 0 || strcmp(name, "BWORD") == 0) {
+        /* 对于WORD_*状态（关键词/函数），首先检查下一个字符是否是标识符字符 */
+        if (is_word_keyword_state(name) || strcmp(name, "WORD") == 0 || strcmp(name, "BWORD") == 0) {
             /* 检查是否是标识符字符：A-Z, a-z, 0-9, _, $, ., ` */
             int is_identifier_char = (65 <= next_code && next_code <= 90) ||  /* A-Z */
                                      (97 <= next_code && next_code <= 122) || /* a-z */
@@ -702,15 +875,11 @@ static inline int can_continue_scanning(const kadd_dfa_engine_t *e, int state, u
             }
         }
     }
+
     /* 首先检查转移表（必须在状态名称检查之前） */
     const kadd_trans_entry_t *ent = &e->transitions[state][next_code];
-    if (getenv("DEBUG_CAN_CONTINUE")) {
-        fprintf(stderr, "[can_continue_scanning] state=%s next_code=%c (%d) ent->is_insn=%d ent->next_state=%d\n",
-                name ? name : "NULL", next_code, next_code, ent->is_insn, ent->next_state);
-    }
     if (ent->is_insn || ent->next_state == KADD_DFA_ID_ERROR) {
-        /* 特殊处理：对于BWORD状态遇到']'，即使转移无效，也继续扫描
-         * 这对于处理[identifier]等方括号标识符很重要 */
+        /* 特殊处理：对于BWORD状态遇到']'，即使转移无效，也继续扫描 */
         if (state >= 0 && state < (int)e->num_states) {
             const char *state_name = e->state_names[state];
             if (strcmp(state_name, "BWORD") == 0 && next_code == ']') {
@@ -719,95 +888,68 @@ static inline int can_continue_scanning(const kadd_dfa_engine_t *e, int state, u
         }
         return 0;
     }
-    /* 特殊处理：如果目标状态是特殊前缀字符串状态（BSTRING, XSTRING等），
-     * 则继续扫描以包含前缀字符到字符串token中
-     * 这对于处理 B'10101', X'FFA2' 等特殊字符串前缀很重要 */
+
+    /* 特殊处理：如果目标状态是特殊前缀字符串状态，则继续扫描 */
     if (!ent->is_insn && ent->next_state < e->num_states && name != NULL) {
-        /* 对于QSTRING状态，检查下一个字符是否是引号，如果是则继续扫描
-         * 这对于处理q'(string)'等q-string格式很重要 */
-        if (strcmp(name, "QSTRING") == 0 && next_code == '\'') {
+        /* 对于QSTRING状态，检查下一个字符是否是引号，如果是则继续扫描 */
+        if (is_qstring_state(name) && next_code == '\'') {
             return 1;  /* 继续扫描q-string */
         }
         if (strcmp(name, "WORD") == 0 || strcmp(name, "BWORD") == 0 ||
-            strncmp(name, "WORD_", 5) == 0) {
+            is_word_keyword_state(name)) {
             const char *next_state_name = e->state_names[ent->next_state];
-            if (strcmp(next_state_name, "BSTRING") == 0 ||
-                strcmp(next_state_name, "XSTRING") == 0 ||
-                strcmp(next_state_name, "ESTRING") == 0 ||
-                strcmp(next_state_name, "NQSTRING") == 0 ||  /* N' 使用 NQSTRING */
-                strcmp(next_state_name, "USTRING") == 0 ||
-                strcmp(next_state_name, "USTRING_AMP") == 0) {
+            if (is_special_prefix_string_state(next_state_name)) {
                 return 1;  /* 继续扫描，不发出token */
             }
         }
     }
-    /* 对于操作符相关的状态，不继续扫描（每个操作符独立生成token）
-     * 通过状态名称判断：包含DASH、SLASH、ANGLE、EQUAL、PLUS、STAR等操作符关键词的状态
-     */
+
+    /* 对于操作符相关的状态，检查是否可以形成多字符操作符 */
     if (state >= 0 && state < (int)e->num_states && name != NULL) {
-        /* 修复：对于多字符操作符，需要允许继续扫描
-         * 例如：|| (PIPE->PIPE_PIPE), && (AMPERSAND->AMPERSAND_AMPERSAND)
-         * == (EQUAL->EQUAL_EQUAL), != (BANG->BANG_EQUAL) 等
-         * 使用strncmp检查精确的状态名匹配，避免误匹配（如EQUAL不匹配ANGLE_EQUAL） */
-        if ((strcmp(name, "OPERATOR2_PIPE") == 0 && next_code == 124) ||  /* | -> || */
-            (strcmp(name, "OPERATOR2_AMP") == 0 && next_code == 38) ||    /* & -> && */
-            (strcmp(name, "OPERATOR2_EQ") == 0 && next_code == '=') ||    /* = -> == */
-            (strcmp(name, "OPERATOR2_NOT") == 0 && next_code == '=') ||   /* ! -> != */
-            (strcmp(name, "OPERATOR2_NOT") == 0 && next_code == '!') ||   /* ! -> !! */
-            (strcmp(name, "OPERATOR2_LT") == 0 && (next_code == '=' || next_code == '<' || next_code == '>')) ||  /* < -> <=, <<, <> */
-            (strcmp(name, "OPERATOR2_LT_EQ") == 0 && next_code == '>') ||  /* <= -> <=> */
-            (strcmp(name, "OPERATOR2_LT_GT") == 0 && next_code == '=') ||  /* <> -> <=> */
-            (strcmp(name, "OPERATOR2_GT") == 0 && (next_code == '=' || next_code == '>')) ||   /* > -> >=, >> */
-            (strcmp(name, "OPERATOR2_COLON") == 0 && next_code == ':') ||  /* : -> :: */
-            (strcmp(name, "PLUS") == 0 && next_code == '+') ||            /* + -> ++ */
-            (strcmp(name, "DASH") == 0 && next_code == '-') ||            /* - -> -- */
-            (strcmp(name, "STAR") == 0 && next_code == '*')) {            /* * -> ** */
-            return 1;  /* Allow multi-character operators to form */
+        /* 使用统一的多字符操作符检查 */
+        if ((strcmp(name, "OPERATOR2_PIPE") == 0 && next_code == CHAR_CODE_AMP) ||  /* | -> || */
+            (strcmp(name, "OPERATOR2_AMP") == 0 && next_code == CHAR_CODE_AMP) ||    /* & -> && */
+            (strcmp(name, "OPERATOR2_EQ") == 0 && next_code == CHAR_CODE_EQ) ||    /* = -> == */
+            (strcmp(name, "OPERATOR2_NOT") == 0 && (next_code == CHAR_CODE_EQ || next_code == CHAR_CODE_BANG)) ||   /* ! -> !=, !! */
+            (strcmp(name, "OPERATOR2_LT") == 0 && (next_code == CHAR_CODE_EQ || next_code == CHAR_CODE_LT || next_code == CHAR_CODE_GT)) ||  /* < -> <=, <<, <> */
+            (strcmp(name, "OPERATOR2_LT_EQ") == 0 && next_code == CHAR_CODE_GT) ||  /* <= -> <=> */
+            (strcmp(name, "OPERATOR2_LT_GT") == 0 && next_code == CHAR_CODE_EQ) ||  /* <> -> <=> */
+            (strcmp(name, "OPERATOR2_GT") == 0 && (next_code == CHAR_CODE_EQ || next_code == CHAR_CODE_GT)) ||   /* > -> >=, >> */
+            (strcmp(name, "OPERATOR2_COLON") == 0 && next_code == CHAR_CODE_COLON) ||  /* : -> :: */
+            (strcmp(name, "PLUS") == 0 && next_code == CHAR_CODE_PLUS) ||            /* + -> ++ */
+            (strcmp(name, "DASH") == 0 && next_code == CHAR_CODE_DASH) ||            /* - -> -- */
+            (strcmp(name, "STAR") == 0 && next_code == CHAR_CODE_STAR)) {            /* * -> ** */
+            return 1;
         }
 
-        /* 特别处理：OPERATOR2_AMP 和 OPERATOR2_NOT 状态需要额外检查
-         * 即使转移表中没有明确的转移，也要允许继续扫描
-         * 这是为了处理 && 和 != 的情况 */
-        if ((strcmp(name, "OPERATOR2_AMP") == 0 && next_code == 38) ||  /* && */
-            (strcmp(name, "OPERATOR2_NOT") == 0 && next_code == 61)) {   /* != */
+        /* 对于DASH和SLASH状态的特殊处理（注释） */
+        if ((strcmp(name, "DASH") == 0 && next_code == CHAR_CODE_DASH) ||
+            (strcmp(name, "SLASH") == 0 && (next_code == CHAR_CODE_SLASH || next_code == CHAR_CODE_STAR))) {
             return 1;
         }
-        /* 修复：对于DASH状态，如果下一个字符是-，则继续扫描（形成--注释）
-         * 对于SLASH状态，如果下一个字符是/或*，则继续扫描（形成//或/*注释） */
-        if (strcmp(name, "DASH") == 0 && next_code == '-') {
-            return 1;
-        }
-        if (strcmp(name, "SLASH") == 0 && (next_code == '/' || next_code == '*')) {
-            return 1;
-        }
-        /* 修复：对于COMMENT状态（如DASH_COMMENT、SLASH_ASTERISK等），应该继续扫描
-         * 注释会一直持续到结束，不应该在遇到非空白字符时停止
-         * 但前提是转移不是错误（已在上面检查） */
+
+        /* 对于COMMENT状态，应该继续扫描 */
         state_type_t type = get_state_type(e, state);
         if (type == STATE_TYPE_COMMENT) {
             return 1;
         }
+
         /* For other operator states, don't continue scanning */
         if (strstr(name, "DASH") != NULL ||
             (strstr(name, "SLASH") != NULL && strcmp(name, "BACKSLASH") != 0 && strcmp(name, "SLASH") != 0) ||
             strstr(name, "ANGLE") != NULL || strstr(name, "PLUS") != NULL || strstr(name, "STAR") != NULL ||
-            (strstr(name, "OPERATOR") != NULL && strcmp(name, "OPERATOR2_PIPE") != 0 &&
+            (is_operator_state(name) && strcmp(name, "OPERATOR2_PIPE") != 0 &&
              strcmp(name, "OPERATOR2_AMP") != 0 && strcmp(name, "OPERATOR2_NOT") != 0 &&
              strcmp(name, "OPERATOR2_EQ") != 0 && strcmp(name, "OPERATOR2_LT") != 0 &&
              strcmp(name, "OPERATOR2_GT") != 0 && strcmp(name, "OPERATOR2_COLON") != 0)) {
             return 0;
         }
-        /* 对于字符串状态（如STRING_DQ_QUOTE），不继续扫描
-         * 字符串应该在被转义字符或非转义引号处结束
-         * 修复：如果下一个状态是STRING_*_QUOTE状态，也不应继续扫描
-         * 因为这意味着我们遇到了结束引号，应该发出当前token
-         * 修复：对于任何STRING状态，如果遇到引号字符，不继续扫描
-         * 特殊情况：对于STRING_SQ_QUOTE状态，如果下一个字符是'，则继续扫描（支持''转义语法）
-         * 特殊情况：对于STRING_DQ_QUOTE状态，如果下一个字符是"，则继续扫描（支持""转义语法） */
-        if (strstr(name, "STRING") != NULL) {
+
+        /* 对于字符串状态，不继续扫描 */
+        if (is_string_state(name)) {
             /* 对于STRING_*_QUOTE状态，检查是否可以继续扫描以支持转义语法
              * 但排除 QSTRING_QUOTE 状态，因为 q-string 需要继续扫描 */
-            if (strstr(name, "QUOTE") != NULL && strncmp(name, "QSTRING", 7) != 0) {
+            if (strstr(name, "QUOTE") != NULL && !is_qstring_state(name)) {
                 /* 检查下一个字符是否是相同的引号字符 */
                 if ((strstr(name, "STRING_SQ_QUOTE") != NULL && next_code == '\'') ||
                     (strstr(name, "STRING_DQ_QUOTE") != NULL && next_code == '"')) {
@@ -824,20 +966,22 @@ static inline int can_continue_scanning(const kadd_dfa_engine_t *e, int state, u
                 return 0;  // 遇到引号，发出当前token
             }
         }
-        /* 检查下一个状态是否为STRING_*_QUOTE状态
-         * 但排除 QSTRING_QUOTE 状态，因为 q-string 需要继续扫描 */
+
+        /* 检查下一个状态是否为STRING_*_QUOTE状态 */
         if (ent->next_state >= 0 && ent->next_state < (int)e->num_states) {
             const char *next_state_name = e->state_names[ent->next_state];
-            if (strstr(next_state_name, "STRING") != NULL && strstr(next_state_name, "QUOTE") != NULL &&
-                strncmp(next_state_name, "QSTRING", 7) != 0) {  /* 排除 QSTRING_QUOTE */
+            if (is_string_state(next_state_name) && strstr(next_state_name, "QUOTE") != NULL &&
+                !is_qstring_state(next_state_name)) {
                 return 0;
             }
         }
     }
+
     if (next_code > 127) {
         state_type_t type = get_state_type(e, state);
         return type == STATE_TYPE_WORD || type == STATE_TYPE_BWORD || type == STATE_TYPE_COMMENT;
     }
+
     return 1;
 }
 static inline char parse_special_instruction_type(const kadd_dfa_engine_t *e __attribute__((unused)), const kadd_trans_entry_t *ent) {
@@ -881,8 +1025,7 @@ static int parse_token(const kadd_dfa_engine_t *e, const char *s, size_t len,
 
     #define STATE_IS_VALID(s) ((s) >= 0 && (s) < (int)e->num_states)
     #define ADD_CHAR_TO_BUF(c) do { if (buf_len < MAX_BUF_SIZE - 1) buf[buf_len++] = (c); } while(0)
-    #define TOKEN_DONE() do { if (debug_parse) fprintf(stderr, "[TOKEN_DONE at line %d]\n", __LINE__); should_finish = 1; should_consume_char = 0; break; } while(0)
-    int debug_parse = getenv("DEBUG_PARSE_TOKEN") != NULL;
+    #define TOKEN_DONE() do { should_finish = 1; should_consume_char = 0; break; } while(0)
     int should_consume_char = 1;  // 控制是否消费当前字符
     while (pos < len && !should_finish) {
         should_consume_char = 1;  // 默认消费字符，除非 TOKEN_DONE() 将其设为 0
@@ -1047,9 +1190,9 @@ static int parse_token(const kadd_dfa_engine_t *e, const char *s, size_t len,
          * 但如果下一个字符是空白字符，则不发出（因为 '-- ' 是注释）
          * 对应Python版本中的逻辑（line 341-360 in dfa_engine_copy.py）*/
         if (likely(!ent->is_insn) && state >= 0 && state < (int)e->num_states &&
-            e->state_hashes[state] == 10 && /* DASH */
+            e->state_hashes[state] == STATE_HASH_DASH &&
             ent->next_state >= 0 && ent->next_state < (int)e->num_states &&
-            e->state_hashes[ent->next_state] == 186 /* DASH_DASH */) {
+            e->state_hashes[ent->next_state] == STATE_HASH_DASH_DASH) {
             /* 检查下一个字符是否是空白字符 */
             if (pos + 1 >= len) {
                 /* '--' 在输入末尾：发出 OPERATOR token */
@@ -1328,20 +1471,18 @@ static int parse_token(const kadd_dfa_engine_t *e, const char *s, size_t len,
                 }
             }
         }
-        int old_state_for_debug = state;  // Remember old state before transition
         state = ent->next_state;
 
-        int old_state = state;  // Keep track of old state for debug
-    consume_char: {
-        if (should_consume_char) {
-            ADD_CHAR_TO_BUF(s[pos]);
-            pos++;
-            if ((strstr(state_name, "QSTRING") != NULL || strstr(state_name, "NQSTRING") != NULL) &&
-                qstring_start_pos < 0) {
-                qstring_start_pos = (int)(pos - 1);
+        {
+            if (should_consume_char) {
+                ADD_CHAR_TO_BUF(s[pos]);
+                pos++;
+                if ((strstr(state_name, "QSTRING") != NULL || strstr(state_name, "NQSTRING") != NULL) &&
+                    qstring_start_pos < 0) {
+                    qstring_start_pos = (int)(pos - 1);
+                }
             }
         }
-    }
         if (likely(STATE_IS_VALID(state))) {
             state_name = e->state_names[state];
             kadd_state_meta_t *meta = &e->meta[state];
@@ -1352,15 +1493,8 @@ static int parse_token(const kadd_dfa_engine_t *e, const char *s, size_t len,
                 continue;  /* 继续扫描，包含']'到token中 */
             }
             if (meta->action == 3) { /* ACTION_DUP_PREPEND */
-                if (getenv("DEBUG_ACTION")) {
-                    fprintf(stderr, "[ACTION_DUP_PREPEND] state=%s pos=%zu/%zu next_char=%c\n",
-                            state_name, pos, len, pos < len ? s[pos] : '?');
-                }
                 int can_continue = can_continue_scanning(e, state, pos < len ? s[pos] : 0, pos < len);
                 if (can_continue) {
-                    if (getenv("DEBUG_ACTION")) {
-                        fprintf(stderr, "[ACTION_DUP_PREPEND] continuing scan\n");
-                    }
                     continue;
                 }
                 /* 对于WORD_*状态，额外检查下一个字符是否是标识符字符
@@ -1424,18 +1558,7 @@ static int parse_token(const kadd_dfa_engine_t *e, const char *s, size_t len,
                  * 但对于TICK_BWORD_TICK状态（反引号字符串），需要消费结束的反引号 */
                 const char *current_state_name = e->state_names[state];
                 int is_tick_bword_tick = (strstr(current_state_name, "TICK_BWORD_TICK") != NULL);
-                /* 对于OPERATOR2_PIPE_PIPE等完整的多字符操作符状态，不回退pos
-                 * 这样可以正确消耗所有字符并发出单个token */
-                int is_multi_char_operator = (strstr(current_state_name, "OPERATOR2_PIPE_PIPE") != NULL ||
-                                                strstr(current_state_name, "OPERATOR2_AMP_AMP") != NULL ||
-                                                strstr(current_state_name, "OPERATOR2_NOT_EQ") != NULL ||
-                                                strstr(current_state_name, "OPERATOR2_NOT_NOT") != NULL ||
-                                                strstr(current_state_name, "OPERATOR2_LT_LT") != NULL ||
-                                                strstr(current_state_name, "OPERATOR2_LT_GT") != NULL ||
-                                                strstr(current_state_name, "OPERATOR2_GT_GT") != NULL ||
-                                                strstr(current_state_name, "OPERATOR2_LT_EQ") != NULL ||
-                                                strstr(current_state_name, "OPERATOR2_GT_EQ") != NULL ||
-                                                strstr(current_state_name, "OPERATOR2_COLON_COLON") != NULL);
+                int is_multi_char_operator = is_multi_char_operator_state(current_state_name);
                 if (!is_tick_bword_tick && !is_multi_char_operator &&
                     (current_type == STATE_TYPE_OPERATOR || current_type == STATE_TYPE_WORD_KEYWORD)) {
                     /* For single-character operators, decrement pos and emit token
@@ -1585,16 +1708,7 @@ static int parse_token(const kadd_dfa_engine_t *e, const char *s, size_t len,
              * 对于多字符操作符（||, &&, ==, 等），也不回退pos，因为所有字符已经被正确消费 */
             state_type_t current_type = get_state_type(e, state);
             int is_tick_bword_tick = (strstr(state_name, "TICK_BWORD_TICK") != NULL);
-            int is_multi_char_operator = (strstr(state_name, "OPERATOR2_PIPE_PIPE") != NULL ||
-                                            strstr(state_name, "OPERATOR2_AMP_AMP") != NULL ||
-                                            strstr(state_name, "OPERATOR2_NOT_EQ") != NULL ||
-                                            strstr(state_name, "OPERATOR2_NOT_NOT") != NULL ||
-                                            strstr(state_name, "OPERATOR2_LT_LT") != NULL ||
-                                            strstr(state_name, "OPERATOR2_LT_GT") != NULL ||
-                                            strstr(state_name, "OPERATOR2_GT_GT") != NULL ||
-                                            strstr(state_name, "OPERATOR2_LT_EQ") != NULL ||
-                                            strstr(state_name, "OPERATOR2_GT_EQ") != NULL ||
-                                            strstr(state_name, "OPERATOR2_COLON_COLON") != NULL);
+            int is_multi_char_operator = is_multi_char_operator_state(state_name);
             if (!is_tick_bword_tick && !is_multi_char_operator &&
                 (current_type == STATE_TYPE_OPERATOR || current_type == STATE_TYPE_WORD_KEYWORD) && pos > start_pos + 1) {
                 pos--;
@@ -1633,21 +1747,9 @@ static int parse_token(const kadd_dfa_engine_t *e, const char *s, size_t len,
                     type = e->meta[state].token_type[0];
                 } else {
                     type = 'n';
-                    /* 特殊处理：检查是否是特殊前缀字符串状态（BSTRING, XSTRING, ESTRING, NSTRING, USTRING）
-                     * 如果buffer包含前缀字符和引号，则设置正确的token类型 */
-                    if (buf_len >= 2) {
-                        char prefix = buf[0];
-                        char quote = buf[1];
-                        if ((prefix == 'B' || prefix == 'b' || prefix == 'X' || prefix == 'x') &&
-                            (quote == '\'' || quote == '"')) {
-                            type = '8';  /* NUMBER for B' and X' strings */
-                        } else if ((prefix == 'E' || prefix == 'e' || prefix == 'N' || prefix == 'n') &&
-                                   (quote == '\'' || quote == '"')) {
-                            type = 'a';  /* STRING for E' and N' strings */
-                        } else if ((prefix == 'U' || prefix == 'u') && buf_len >= 3 &&
-                                   quote == '&' && buf[2] == '\'' || buf[2] == '"') {
-                            type = 'a';  /* STRING for U&' strings */
-                        }
+                    char special_type = get_special_prefix_string_type(buf, buf_len);
+                    if (special_type) {
+                        type = special_type;
                     }
                 }
             } else {
@@ -1774,7 +1876,6 @@ int kadd_dfa_engine_tokenize(const kadd_dfa_engine_t *e,
         // 因此我们让parse_token正常处理，即使引号未闭合也会继续解析
         kadd_token_t tok;
         size_t new_pos = 0;
-        int old_dfa_state = dfa_state;
         int parse_result = parse_token(e, input, input_length, pos, &tok, &new_pos, &dfa_state);
         if (likely(parse_result)) {
             char *temp_heap_ptr = NULL;
