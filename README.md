@@ -4,8 +4,6 @@
 
 ## ✨ 特性
 
-- 🔍 **准确检测** - 99.77% 准确率，100% 精确率
-- 🚀 **高性能** - 单样本推理 ~100,000 ops/sec
 - 📦 **模块化设计** - DFA、特征、ML 引擎独立可用
 - 🎯 **ARM 优化** - 支持 NEON 和 ARMv9-A SVE 向量化
 - 🔧 **易于集成** - 简洁的 C API，仅依赖 ONNX Runtime
@@ -14,7 +12,7 @@
 
 ### 前置要求
 
-- **系统**: ARM Linux (aarch64/armv7l)
+- **系统**: ARM Linux 
 - **编译器**: GCC 10+ 
 - **CMake**: 3.16+
 - **依赖**: ONNX Runtime（必需）、cJSON（可选）、Google Test（可选）
@@ -40,7 +38,7 @@ sudo apt-get install libcjson-dev libgtest-dev
 ```bash
 # 标准构建
 mkdir build && cd build
-cmake -G "Unix Makefiles" ..
+cmake ..
 cmake --build .
 
 # 启用优化和 SVE 加速
@@ -53,7 +51,7 @@ ctest --verbose
 # 代码覆盖率报告（需要重新编译）
 rm -rf build
 mkdir build && cd build
-cmake -DENABLE_CODE_COVERAGE=ON -G "Unix Makefiles" ..
+cmake -DENABLE_CODE_COVERAGE=ON ..
 make
 ctest --verbose
 make coverage
@@ -61,13 +59,12 @@ make coverage
 
 ## 📦 模块说明
 
-| 模块 | 库文件 | 说明 | 依赖 |
-|------|--------|------|------|
-| DFA 引擎 | `libkadd_dfa_engine.so` | 字符串分词 | 无 |
-| 特征引擎 | `libkadd_feature_engine.so` | 序列转特征向量 | 无 |
-| ML 引擎 | `libkadd_ml_engine.so` | ONNX 模型推理 | ONNX Runtime |
-| DFA Pro 引擎 | `libkadd_dfa_engine_pro.so` | 增强型 DFA 分词 | cJSON |
-| SQLi 引擎 | `libkadd_sqli_engine.so` | 完整检测 API | ONNX Runtime + cJSON |
+| 模块 | 说明 | 依赖 |
+|------|------|------|
+| DFA 引擎 | 字符串分词 | 无 |
+| 特征引擎 | 序列转特征向量 | 无 |
+| ML 引擎 | ONNX 模型推理 | ONNX Runtime |
+| SQLi 引擎 | 完整检测 API | DFA + 特征 + ML + cJSON |
 
 ## 💡 快速示例
 
@@ -99,7 +96,7 @@ int main() {
 - [第三方库安装指南](docs/DEPENDENCIES.md) - ONNX Runtime、cJSON、Google Test 安装
 - [KADD API 参考](docs/API.md) - 完整的 API 使用手册
 - [CMake 构建指南](docs/CMAKE.md) - 构建系统和覆盖率测试说明
-- [ARM 故障排除](demo/README_ARM_TROUBLESHOOTING.md) - ARM 特定问题
+- [使用指南](demo/README.md) - 演示程序说明
 
 ## 🏗️ 架构
 
@@ -111,9 +108,6 @@ int main() {
 
 | 指标 | 数值 |
 |------|------|
-| 准确率 | 99.77% |
-| 精确率 | 100% |
-| 召回率 | 99.77% |
 | 单样本推理 | ~100,000 ops/sec |
 
 ## 🔧 编译选项
@@ -125,7 +119,7 @@ int main() {
 | `-DENABLE_ARM_SVE2=ON` | OFF | 启用 ARM SVE2 加速（ARMv9.2-A+） |
 | `-DENABLE_CODE_COVERAGE=ON` | OFF | 启用代码覆盖率 |
 | `-DBUILD_TESTS=ON` | ON | 构建测试程序 |
-| `-DUSE_SYSTEM_LIBS=OFF` | ON | 强制使用 third_party |
+| `-DUSE_SYSTEM_LIBS=ON` | ON | 优先使用系统库，失败时使用 third_party |
 
 ### Assets 目录自动检测
 
@@ -157,29 +151,8 @@ KADD/
 | 平台 | 架构 | 状态 | 优化 |
 |------|------|------|------|
 | ARM Linux | aarch64 | ✅ 完全支持 | NEON |
-| ARM Linux | armv7l | ✅ 支持 | - |
 | ARMv9-A Linux | aarch64 | ✅ 完全支持 | SVE |
 | ARMv9.2-A+ Linux | aarch64 | ✅ 完全支持 | SVE2 |
-
-### ARM SVE 加速
-
-**SVE（Scalable Vector Extension）** 是 ARMv9-A 架构的向量指令集，可显著提升性能。
-
-| 配置 | 性能提升 | 架构要求 |
-|------|----------|----------|
-| 标量实现 | 1.0x（基准） | 任意 |
-| NEON 优化 | 2-3x | ARMv8-A |
-| SVE 优化 | 3-5x | ARMv9-A |
-| SVE2 优化 | 4-6x | ARMv9.2-A+ |
-
-**启用方法：**
-```bash
-# SVE
-cmake -DENABLE_ARM_SVE=ON ..
-
-# SVE2（推荐）
-cmake -DENABLE_ARM_SVE2=ON ..
-```
 
 ## 📄 许可证
 

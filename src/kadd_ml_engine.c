@@ -8,15 +8,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef _WIN32
-#ifdef __GNUC__
+// MinGW 环境需要临时取消 _WIN32 宏避免与 onnxruntime 头文件冲突
+#if defined(_WIN32) && defined(__GNUC__)
 #undef _WIN32
 #define _ONNX_TEMP_WIN32_UNDEF_
 #include "onnxruntime/onnxruntime_c_api.h"
 #define _WIN32
-#else
-#include "onnxruntime/onnxruntime_c_api.h"
-#endif
 #else
 #include "onnxruntime/onnxruntime_c_api.h"
 #endif
