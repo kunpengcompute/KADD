@@ -23,10 +23,10 @@ typedef enum {
     KADD_SQLI_OK = 0,                   /**< 成功 */
     KADD_SQLI_ERROR_MEMORY = -1,         /**< 内存分配失败 */
     KADD_SQLI_ERROR_INVALID_INPUT = -2,  /**< 输入参数无效 */
-    KADD_SQLI_ERROR_DFA = -3,            /**< DFA引擎错误 */
+    KADD_SQLI_ERROR_DFA = -3,            /**< DFA 引擎错误 */
     KADD_SQLI_ERROR_FEATURE = -4,        /**< 特征提取错误 */
-    KADD_SQLI_ERROR_ML = -5,             /**< ML推理错误 */
-    KADD_SQLI_ERROR_CONFIG = -6,         /**< 配置错误 */
+    KADD_SQLI_ERROR_ML = -5,             /**< ML 推理错误 */
+    KADD_SQLI_ERROR_CONFIG = -6,         /**< 配置文件错误或缺失必需字段 */
 } kadd_sqli_error_code_t;
 
 /**
@@ -42,8 +42,20 @@ typedef struct kadd_sqli_engine_t kadd_sqli_engine_t;
  *
  * @return KADD_SQLI_OK 成功, 其他值表示失败
  *
- * @note 配置文件需包含 kadd_dfa_engine、kadd_ml_engine、kadd_feature_engine、kadd_sqli_engine 等字段
- * @note 引擎句柄由函数分配，使用完毕后需调用 kadd_sqli_engine_free 释放
+ * @note 配置文件格式：
+ *       {
+ *         "kadd_dfa_engine": {
+ *           "table_path": "path/to/transition_table.bin",
+ *           "state_path": "path/to/states_meta.json",
+ *           "max_input_length": 8192,    // 可选，默认 8192
+ *           "max_output_dim": 8192       // 可选，默认 8192
+ *         },
+ *         "kadd_ml_engine": {
+ *           "model_path": "path/to/model.onnx",
+ *           "feature_dim": 28,            // 可选，默认 28
+ *           "window_size": 5              // 可选，默认 5
+ *         }
+ *       }
  *
  * @example
  * @code
@@ -51,9 +63,7 @@ typedef struct kadd_sqli_engine_t kadd_sqli_engine_t;
  * if (kadd_sqli_engine_create_from_file(&engine, "config.json") == KADD_SQLI_OK) {
  *     float probability;
  *     if (kadd_sqli_detect(engine, "id=1' OR '1'='1", &probability) == KADD_SQLI_OK) {
- *         if (probability >= 0.5f) {
- *             printf("SQL 注入 detected! Probability: %.2f\n", probability);
- *         }
+ *         printf("SQL注入概率: %.2f%%\n", probability * 100);
  *     }
  *     kadd_sqli_engine_free(engine);
  * }
@@ -70,13 +80,15 @@ int kadd_sqli_engine_create_from_file(kadd_sqli_engine_t **engine, const char *c
  *
  * @return KADD_SQLI_OK 成功, 其他值表示失败
  *
- * @note 概率值 >= 0.5 时通常判定为 SQL 注入（可通过配置文件调整阈值）
+ * @note 返回 SQL 注入概率值，调用方根据业务需求判断阈值
  *
  * @example
  * @code
  * float probability;
  * if (kadd_sqli_detect(engine, "id=1' OR '1'='1", &probability) == KADD_SQLI_OK) {
- *     printf("Probability: %.2f%%\n", probability * 100);
+ *     if (probability >= 0.5f) {
+ *         printf("检测到 SQL 注入，概率: %.2f%%\n", probability * 100);
+ *     }
  * }
  * @endcode
  */

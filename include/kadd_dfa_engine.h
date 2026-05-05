@@ -4,6 +4,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
  * @brief DFA 引擎结构
  */
@@ -47,5 +51,9 @@ int kadd_dfa_engine_tokenize(const kadd_dfa_engine_t *e,
                              size_t input_length,
                              int *output,
                              int *dim);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* KADD_DFA_ENGINE_H */

@@ -19,6 +19,15 @@ function(add_kadd_library NAME)
         VERSION "${ARG_VERSION}"
         SOVERSION 1
     )
+
+    # Windows 上自动导出所有符号
+    if(WIN32)
+        set_target_properties(${NAME} PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS TRUE)
+        # MinGW 需要显式导出
+        target_compile_definitions(${NAME} PRIVATE KADD_EXPORT=__declspec(dllexport))
+    else()
+        target_compile_definitions(${NAME} PUBLIC KADD_EXPORT=)
+    endif()
     target_include_directories(${NAME} PUBLIC ${CMAKE_SOURCE_DIR}/include)
 
     # cJSON 依赖处理
@@ -71,12 +80,12 @@ add_kadd_library(kadd_ml_engine
 # ============================================================================
 
 if(CJSON_FOUND)
-    # DFA Pro 引擎
-    add_kadd_library(kadd_dfa_engine_pro
-        VERSION 1.0.0
-        SOURCES kadd_dfa_engine_pro.c
-        NEED_CJSON
-    )
+    # DFA Pro 引擎（暂时注释掉，源文件不存在）
+    # add_kadd_library(kadd_dfa_engine_pro
+    #     VERSION 1.0.0
+    #     SOURCES kadd_dfa_engine_pro.c
+    #     NEED_CJSON
+    # )
 
     # SQL 注入检测引擎
     add_kadd_library(kadd_sqli_engine
@@ -91,6 +100,7 @@ endif()
 # 测试用综合静态库
 # ============================================================================
 set(OTHER_ENGINE_SOURCES
+    kadd_dfa_engine.c
     kadd_feature_engine.c
     kadd_ml_engine.c
 )

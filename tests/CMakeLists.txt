@@ -6,7 +6,11 @@
 function(add_kadd_gtest TEST_NAME SOURCE_FILE)
     add_executable(${TEST_NAME} ${SOURCE_FILE})
     target_compile_features(${TEST_NAME} PRIVATE cxx_std_17)
+
+    # 链接必要的引擎库
+    # 所有测试都使用静态库，避免 Windows DLL 符号导出问题
     target_link_libraries(${TEST_NAME} PRIVATE kadd_other_engines)
+
     target_include_directories(${TEST_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/include)
 
     # Google Test
@@ -67,10 +71,19 @@ endif()
 # 测试程序
 # ============================================================================
 
+# DFA 引擎测试
+add_kadd_gtest(dfa_engine_test test_dfa_engine_gtest.cpp)
+
+# ML 引擎测试
 add_kadd_gtest(ml_engine_test test_ml_engine_gtest.cpp)
+
+# Feature 引擎测试
 add_kadd_gtest(feature_engine_test test_feature_engine_gtest.cpp)
 
-message(STATUS "Tests configured: ml_engine_test, feature_engine_test")
+# SQLi 引擎测试
+add_kadd_gtest(sqli_engine_test test_sqli_engine_gtest.cpp)
+
+message(STATUS "Tests configured: dfa_engine_test, ml_engine_test, feature_engine_test, sqli_engine_test")
 if(ENABLE_CODE_COVERAGE)
     message(STATUS "  Run 'make coverage' after tests to generate report")
 endif()

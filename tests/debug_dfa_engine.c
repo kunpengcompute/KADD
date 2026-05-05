@@ -385,6 +385,12 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < num_tests; i++) {
         const char *input = test_cases[i].input;
 
+        /* 显示进度 */
+        if ((i + 1) % 10 == 0) {
+            printf("进度: %d/%d...\n", i + 1, num_tests);
+            fflush(stdout);
+        }
+
         /* DFA 分词 */
         int dfa_tokens[1000];
         int dfa_count = 0;

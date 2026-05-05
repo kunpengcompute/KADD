@@ -16,7 +16,8 @@ class Config:
     """训练配置参数"""
     # 数据路径
     SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-    DATA_PATH = os.path.join(os.path.dirname(SCRIPT_DIR), "assets", "data", "parsed_results_fixed.json")
+    DATA_PATH = os.path.join(os.path.dirname(SCRIPT_DIR), "assets", "data", "full_dfa_tokenize_results.json")
+    CSV_PATH = os.path.join(os.path.dirname(SCRIPT_DIR), "assets", "data", "Modified_SQL_Dataset.csv")
 
     # 特征提取参数
     WINDOW_SIZE = 5
@@ -97,6 +98,128 @@ def feature_vector_single(tokens: np.ndarray, window_size: int = 5) -> np.ndarra
 
 
 # ==================== 数据加载 ====================
+def load_csv_data(csv_path: str) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    从 CSV 文件加载数据
+
+    Args:
+        csv_path: CSV 文件路径
+
+    Returns:
+        (queries, labels) 查询列表和标签列表
+    """
+    import pandas as pd
+
+    df = pd.read_csv(csv_path)
+    queries = df['Query'].tolist()
+    labels = df['Label'].tolist()
+
+    print(f"CSV 数据加载完成:")
+    print(f"  总样本数: {len(queries)}")
+    print(f"  标签分布: 0={labels.count(0)}, 1={labels.count(1)}")
+
+    return queries, np.array(labels, dtype=np.int32)
+
+
+def tokenize_queries(queries: list) -> list:
+    """
+    对查询列表进行 DFA 分词（使用 Python DFA 引擎）
+
+    Args:
+        queries: 查询字符串列表
+
+    Returns:
+        token 列表
+    """
+    import sys
+    import os
+
+    # 添加 tools 目录到路径
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    dfa_dir = os.path.join(project_root, 'tools', 'profile_data')
+    sys.path.insert(0, dfa_dir)
+
+    # 导入 Python DFA 引擎
+    import dfa_engine
+
+    # 创建 DFA 引擎
+    engine = dfa_engine.DFAEngine()
+
+    token_lists = []
+
+    for query in queries:
+        try:
+            tokens = engine.tokenize(query)
+            token_ids = [dfa_engine.DFAEngine.char_type_to_index(t.type) for t in tokens]
+            token_lists.append(token_ids)
+        except Exception as e:
+            print(f"警告: 分词失败 - {query[:50]}... ({e})")
+            token_lists.append([])
+
+    return token_lists
+
+    table_path = os.path.join(project_root, 'tools', 'profile_data', 'transition_table.bin')
+    state_path = os.path.join(project_root, 'tools', 'profile_data', 'states_meta.json')
+
+    # 创建 DFA 引擎
+    engine = dfa_engine.DFAEngine(table_path, state_path)
+
+    token_lists = []
+
+    for query in queries:
+        try:
+            tokens = engine.tokenize(query)
+            token_ids = [dfa_engine.TOKEN_TYPE_INDEX.get(t.type, 24) for t in tokens]
+            token_lists.append(token_ids)
+        except Exception as e:
+            print(f"警告: 分词失败 - {query[:50]}... ({e})")
+            token_lists.append([])
+
+    return token_lists
+
+
+def load_data_from_csv(csv_path: str, window_size: int = 5) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    从 CSV 文件加载并预处理数据
+
+    Args:
+        csv_path: CSV 文件路径
+        window_size: 滑动窗口大小
+
+    Returns:
+        (X, y) 特征矩阵和标签
+    """
+    # 1. 加载 CSV 数据
+    queries, labels = load_csv_data(csv_path)
+
+    # 2. DFA 分词
+    print("\n正在进行 DFA 分词...")
+    token_lists = tokenize_queries(queries)
+
+    # 3. 提取特征
+    X = []
+    y = []
+
+    for tokens, label in zip(token_lists, labels):
+        if len(tokens) == 0:
+            continue
+
+        features = feature_vector_single(
+            np.array(tokens, dtype=np.int32),
+            window_size
+        )
+
+        X.append(features)
+        y.append(label)
+
+    from collections import Counter
+    print(f"\n特征提取完成:")
+    print(f"  有效样本数: {len(X)}")
+    print(f"  标签分布: {Counter(y)}")
+
+    return np.array(X, dtype=np.int32), np.array(y, dtype=np.int32)
+
+
 def load_data(data_path: str, window_size: int = 5,
               dedup_strategy: str = "balanced") -> Tuple[np.ndarray, np.ndarray]:
     """
@@ -127,16 +250,15 @@ def load_data(data_path: str, window_size: int = 5,
 
         for item in data['data']:
             label = item['label']
-            tokens_tuple = tuple(item['tokens'])
+            tokens_tuple = tuple(item['tokens_correct'])
 
             # 只对攻击样本去重
-            if label == 1:
-                if tokens_tuple in seen_attack_tokens:
-                    continue
-                seen_attack_tokens.add(tokens_tuple)
+            if tokens_tuple in seen_attack_tokens:
+                continue
+            seen_attack_tokens.add(tokens_tuple)
 
             features = feature_vector_single(
-                np.array(item['tokens'], dtype=np.int32),
+                np.array(item['tokens_correct'], dtype=np.int32),
                 window_size
             )
 
@@ -531,14 +653,34 @@ def save_model(
 # ==================== 主流程 ====================
 def main():
     """主训练流程"""
-    print("Loading data...")
+    import argparse
 
-    # 1. 加载数据（使用平衡去重策略）
-    # 对于 SQL 注入检测场景：
-    # - 正常请求确实很固定和重复（这是正常流量的特征）
-    # - 攻击请求有很多变种
-    # - 只对攻击样本去重，保留正常样本的重复
-    X, y = load_data(Config.DATA_PATH, Config.WINDOW_SIZE, dedup_strategy="balanced")
+    parser = argparse.ArgumentParser(description='训练 SQL 注入检测模型')
+    parser.add_argument('--csv', type=str, help='使用 CSV 数据集训练')
+    parser.add_argument('--json', type=str, help='使用 JSON 数据集训练')
+    args = parser.parse_args()
+
+    # 确定数据源
+    if args.csv:
+        data_path = args.csv
+        use_csv = True
+        print(f"使用 CSV 数据集: {data_path}")
+    elif args.json:
+        data_path = args.json
+        use_csv = False
+        print(f"使用 JSON 数据集: {data_path}")
+    else:
+        # 默认使用 CSV
+        data_path = Config.CSV_PATH
+        use_csv = True
+        print(f"使用默认 CSV 数据集: {data_path}")
+
+    # 1. 加载数据
+    if use_csv:
+        X, y = load_data_from_csv(data_path, Config.WINDOW_SIZE)
+    else:
+        X, y = load_data(data_path, Config.WINDOW_SIZE, dedup_strategy="balanced")
+
     print(f"Data shape: X={X.shape}, y={y.shape}")
     print(f"Label distribution:  0={sum(y==0)}, 1={sum(y==1)}")
 
