@@ -1,19 +1,19 @@
 # KADD SQL 注入检测引擎
 
-基于 ONNX Runtime 的轻量级 SQL 注入检测引擎，专为 ARM Linux 平台优化。
+基于 ONNX Runtime 的轻量级 SQL 注入检测引擎，支持多平台部署。
 
 ## ✨ 特性
 
 - 📦 **模块化设计** - DFA、特征、ML 引擎独立可用
-- 🎯 **ARM 优化** - 支持 NEON 和 ARMv9-A SVE 向量化
+- 🎯 **高性能** - 支持 ARM NEON/SVE/SVE2 向量化加速
 - 🔧 **易于集成** - 简洁的 C API，仅依赖 ONNX Runtime
+- 🌍 **跨平台** - 支持 Linux、Windows (MinGW/MSVC)
 
 ## 🚀 快速开始
 
 ### 前置要求
 
-- **系统**: ARM Linux 
-- **编译器**: GCC 10+ 
+- **编译器**: GCC 10+ / Clang / MSVC
 - **CMake**: 3.16+
 - **依赖**: ONNX Runtime（必需）、cJSON（可选）、Google Test（可选）
 
@@ -41,20 +41,12 @@ mkdir build && cd build
 cmake ..
 cmake --build .
 
-# 启用优化和 SVE 加速
-cmake -DKADD_OPTIMIZE=ON -DENABLE_ARM_SVE2=ON -DCMAKE_BUILD_TYPE=Release ..
+# 启用优化
+cmake -DKADD_OPTIMIZE=ON -DCMAKE_BUILD_TYPE=Release ..
 cmake --build .
 
 # 运行测试
 ctest --verbose
-
-# 代码覆盖率报告（需要重新编译）
-rm -rf build
-mkdir build && cd build
-cmake -DENABLE_CODE_COVERAGE=ON ..
-make
-ctest --verbose
-make coverage
 ```
 
 ## 📦 模块说明
@@ -73,17 +65,21 @@ make coverage
 
 int main() {
     // 创建检测引擎
-    kadd_sqli_engine_t *engine = kadd_sqli_engine_create_from_file("config.json");
+    kadd_sqli_engine_t *engine = NULL;
+    if (kadd_sqli_engine_create_from_file(&engine, "config.json") != KADD_SQLI_OK) {
+        return 1;
+    }
     
     // 检测 SQL 注入
-    kadd_sqli_result_t result;
     const char *input = "id=1' OR '1'='1";
+    float probability = 0.0f;
     
-    if (kadd_sqli_detect(engine, input, &result) == 0) {
-        if (result.is_sqli) {
-            printf("SQL 注入! 概率: %.2f%%\n", result.probability * 100);
+    if (kadd_sqli_detect(engine, input, &probability) == KADD_SQLI_OK) {
+        if (probability >= 0.5f) {
+            printf("SQL 注入! 概率: %.2f%%\n", probability * 100);
+        } else {
+            printf("安全输入\n");
         }
-        kadd_sqli_result_free(&result);
     }
     
     kadd_sqli_engine_free(engine);
@@ -93,10 +89,11 @@ int main() {
 
 ## 📚 文档
 
-- [第三方库安装指南](docs/DEPENDENCIES.md) - ONNX Runtime、cJSON、Google Test 安装
-- [KADD API 参考](docs/API.md) - 完整的 API 使用手册
-- [CMake 构建指南](docs/CMAKE.md) - 构建系统和覆盖率测试说明
-- [使用指南](demo/README.md) - 演示程序说明
+- [API 参考手册](docs/API.md) - 完整的 API 使用手册
+- [架构设计文档](docs/DESIGN.md) - 系统架构和模块设计
+- [CMake 构建指南](docs/CMAKE.md) - 构建系统说明
+- [第三方库安装指南](docs/DEPENDENCIES.md) - 依赖安装说明
+- [演示程序说明](demo/README.md) - Demo 使用指南
 
 ## 🏗️ 架构
 
@@ -104,28 +101,30 @@ int main() {
 输入字符串 → DFA 分词 → Token 序列 → 特征提取 → 特征向量 → ML 推理 → 概率
 ```
 
-## 📊 性能指标
+## 🌍 平台支持
 
-| 指标 | 数值 |
-|------|------|
-| 单样本推理 | ~100,000 ops/sec |
+| 平台 | 架构 | 状态 |
+|------|------|------|
+| Linux | x86_64 | ✅ 支持 |
+| Linux | aarch64 | ✅ 支持 (NEON) |
+| Linux | ARMv9-A | ✅ 支持 (SVE/SVE2) |
 
 ## 🔧 编译选项
 
 | 选项 | 默认值 | 说明 |
 |------|--------|------|
 | `-DKADD_OPTIMIZE=ON` | OFF | 启用 -O3 优化 |
-| `-DENABLE_ARM_SVE=ON` | OFF | 启用 ARM SVE 加速（ARMv9-A） |
-| `-DENABLE_ARM_SVE2=ON` | OFF | 启用 ARM SVE2 加速（ARMv9.2-A+） |
+| `-DENABLE_ARM_SVE=ON` | OFF | 启用 ARM SVE 加速 |
+| `-DENABLE_ARM_SVE2=ON` | OFF | 启用 ARM SVE2 加速 |
 | `-DENABLE_CODE_COVERAGE=ON` | OFF | 启用代码覆盖率 |
 | `-DBUILD_TESTS=ON` | ON | 构建测试程序 |
-| `-DUSE_SYSTEM_LIBS=ON` | ON | 优先使用系统库，失败时使用 third_party |
+| `-DUSE_SYSTEM_LIBS=ON` | ON | 优先使用系统库 |
 
 ### Assets 目录自动检测
 
 构建系统会自动检测 assets 目录位置：
-1. **优先**：项目根目录的 `assets/`（与 `CMakeLists.txt` 同级）
-2. **其次**：构建目录的 `assets/`（与 `build/` 同级）
+1. **优先**：项目根目录的 `assets/`
+2. **其次**：构建目录的 `assets/`
 3. **默认**：相对路径 `assets`
 
 ```bash
@@ -136,23 +135,7 @@ KADD/
 │       └── model_tokens_rf.onnx
 ├── build/           ← 构建目录
 └── CMakeLists.txt
-
-# 替代结构
-KADD/
-├── build/
-│   └── assets/      ← 模型文件也可以在这里
-│       └── model/
-│           └── model_tokens_rf.onnx
-└── CMakeLists.txt
 ```
-
-## 🌍 平台支持
-
-| 平台 | 架构 | 状态 | 优化 |
-|------|------|------|------|
-| ARM Linux | aarch64 | ✅ 完全支持 | NEON |
-| ARMv9-A Linux | aarch64 | ✅ 完全支持 | SVE |
-| ARMv9.2-A+ Linux | aarch64 | ✅ 完全支持 | SVE2 |
 
 ## 📄 许可证
 

@@ -27,7 +27,7 @@ static void detect_and_print(kadd_sqli_engine_t *engine, const char *input) {
     float probability = 0.0f;
 
     int ret = kadd_sqli_detect(engine, input, &probability);
-
+ 
     if (ret == KADD_SQLI_OK) {
         int is_sqli = (probability >= 0.5f) ? 1 : 0;
         const char *icon = is_sqli ? "⚠"  : "✓";
