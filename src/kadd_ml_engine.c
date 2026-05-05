@@ -150,6 +150,10 @@ static int create_session(kadd_model_handle_t *handle, const char *model_path) {
                     if (strstr(name, "probability")) {
                         handle->output_name = strdup(name);
                         handle->api->AllocatorFree(allocator, name);
+                        if (!handle->output_name) {
+                            handle->api->ReleaseStatus(count_status);
+                            return -1;
+                        }
                         break;
                     }
                     handle->api->AllocatorFree(allocator, name);
@@ -166,6 +170,9 @@ static int create_session(kadd_model_handle_t *handle, const char *model_path) {
 
     if (!handle->output_name) {
         handle->output_name = strdup("probabilities");
+        if (!handle->output_name) {
+            return -1;
+        }
     }
 
     return 0;

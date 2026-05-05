@@ -268,13 +268,17 @@ int kadd_sqli_detect_batch(kadd_sqli_engine_t *engine, const char **inputs, int 
 
         for (int i = 0; i < current_batch; i++) {
             all_token_outputs[i] = (int *)malloc(engine->max_output_dim * sizeof(int));
-            if (all_token_outputs[i]) {
-                if (kadd_dfa_engine_tokenize(engine->dfa_engine, inputs[batch_start + i],
-                                             strlen(inputs[batch_start + i]),
-                                             all_token_outputs[i], &token_counts[i]) != 0) {
-                    free(all_token_outputs[i]);
-                    all_token_outputs[i] = NULL;
-                }
+            if (!all_token_outputs[i]) {
+                // 内存分配失败，标记此样本失败
+                token_counts[i] = -1;
+                continue;
+            }
+            if (kadd_dfa_engine_tokenize(engine->dfa_engine, inputs[batch_start + i],
+                                         strlen(inputs[batch_start + i]),
+                                         all_token_outputs[i], &token_counts[i]) != 0) {
+                free(all_token_outputs[i]);
+                all_token_outputs[i] = NULL;
+                token_counts[i] = -1;
             }
         }
 
@@ -288,37 +292,45 @@ int kadd_sqli_detect_batch(kadd_sqli_engine_t *engine, const char **inputs, int 
             continue;
         }
 
+        // 统计有效样本数量并压缩到数组开头
+        int valid_count = 0;
         for (int i = 0; i < current_batch; i++) {
-            if (all_token_outputs[i]) {
+            if (all_token_outputs[i] && token_counts[i] >= 0) {
                 kadd_seq_to_feature(all_token_outputs[i], token_counts[i], engine->window_size,
-                                   &all_features[i * engine->feature_dim], engine->feature_dim);
+                                   &all_features[valid_count * engine->feature_dim], engine->feature_dim);
+                valid_count++;
             }
         }
 
-        int total_features = current_batch * engine->feature_dim;
-        float *float_features = NULL;
-#if defined(_WIN32)
-        float_features = (float *)malloc(total_features * sizeof(float));
-#else
-        posix_memalign((void **)&float_features, 16, total_features * sizeof(float));
-#endif
+        // 只处理有效的样本
+        if (valid_count > 0) {
+            int total_features = valid_count * engine->feature_dim;
+            float *float_features = NULL;
+    #if defined(_WIN32)
+            float_features = (float *)malloc(total_features * sizeof(float));
+    #else
+            posix_memalign((void **)&float_features, 16, total_features * sizeof(float));
+    #endif
 
-        if (float_features) {
-            for (int i = 0; i < total_features; i++) {
-                float_features[i] = (float)all_features[i];
-            }
-
-            float batch_probs[1024];
-            int ml_result = kadd_model_predict_batch(engine->ml_model, float_features, current_batch, batch_probs, 64);
-
-            if (ml_result > 0) {
-                for (int i = 0; i < ml_result; i++) {
-                    probabilities[batch_start + i] = batch_probs[i];
-                    success_count++;
+            if (float_features) {
+                for (int i = 0; i < total_features; i++) {
+                    float_features[i] = (float)all_features[i];
                 }
-            }
 
-            free(float_features);
+                float batch_probs[1024];
+                int ml_result = kadd_model_predict_batch(engine->ml_model, float_features, valid_count, batch_probs, 64);
+
+                // 将结果映射回原始索引
+                int valid_idx = 0;
+                for (int i = 0; i < current_batch && valid_idx < ml_result; i++) {
+                    if (all_token_outputs[i] && token_counts[i] >= 0) {
+                        probabilities[batch_start + i] = batch_probs[valid_idx++];
+                        success_count++;
+                    }
+                }
+
+                free(float_features);
+            }
         }
 
         free(token_counts);

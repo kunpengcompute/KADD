@@ -674,6 +674,10 @@ int kadd_dfa_engine_load_tables(kadd_dfa_engine_t *e) {
             return -1;
         }
         e->state_names[i] = malloc(len + 1);
+        if (!e->state_names[i]) {
+            fclose(f);
+            return -1;
+        }
         if (fread(e->state_names[i], 1, len, f) != len) {
             fclose(f);
             return -1;
@@ -748,6 +752,10 @@ int kadd_dfa_engine_load_tables(kadd_dfa_engine_t *e) {
                 }
                 e->transitions[i][j].is_insn = 1;
                 e->transitions[i][j].insn = malloc(len + 1);
+                if (!e->transitions[i][j].insn) {
+                    fclose(f);
+                    return -1;
+                }
                 if (fread(e->transitions[i][j].insn, 1, len, f) != len) {
                     fclose(f);
                     return -1;
@@ -765,10 +773,23 @@ int kadd_dfa_engine_load_tables(kadd_dfa_engine_t *e) {
     if (jf) {
         fseek(jf, 0, SEEK_END);
         long jsize = ftell(jf);
+        if (jsize < 0) {
+            fclose(jf);
+            return -1;
+        }
         fseek(jf, 0, SEEK_SET);
         char *json = malloc(jsize + 1);
-        fread(json, 1, jsize, jf);
-        json[jsize] = '\0';
+        if (!json) {
+            fclose(jf);
+            return -1;
+        }
+        size_t read_size = fread(json, 1, jsize, jf);
+        if (read_size != (size_t)jsize) {
+            free(json);
+            fclose(jf);
+            return -1;
+        }
+        json[read_size] = '\0';
         fclose(jf);
 
         e->meta = calloc(num_states, sizeof(kadd_state_meta_t));
@@ -806,7 +827,9 @@ int kadd_dfa_engine_load_tables(kadd_dfa_engine_t *e) {
                                     char *arg = extract_json_str_fast(&p, obj_end);
                                     if (arg) {
                                         e->meta[i].action_arg = malloc(strlen(arg) + 1);
-                                        strcpy(e->meta[i].action_arg, arg);
+                                        if (e->meta[i].action_arg) {
+                                            strcpy(e->meta[i].action_arg, arg);
+                                        }
                                         free(arg);
                                     }
                                 }
@@ -819,6 +842,9 @@ int kadd_dfa_engine_load_tables(kadd_dfa_engine_t *e) {
         free(json);
     } else {
         e->meta = calloc(num_states, sizeof(kadd_state_meta_t));
+        if (!e->meta) {
+            return -1;
+        }
     }
 
     return 0;
@@ -1885,7 +1911,10 @@ int kadd_dfa_engine_tokenize(const kadd_dfa_engine_t *e,
 
             // Convert token type to index
             int token_index = char_type_to_index(tok.type);
-            output[(*dim)++] = token_index;
+            // 检查是否还有空间写入（防止竞态条件导致越界）
+            if ((size_t)*dim < e->max_output_dim) {
+                output[(*dim)++] = token_index;
+            }
 
             if (temp_heap_ptr) free(temp_heap_ptr);
             pos = new_pos;
