@@ -65,22 +65,46 @@ add_kadd_demo(kadd_sqli_demo kadd_sqli_demo.c TRUE TRUE FALSE)
 
 # libinjection 对比演示
 set(LIBINJECTION_SRC_DIR ${CMAKE_SOURCE_DIR}/third_party/libinjection-main/src)
+
+# 为需要 libinjection 的 demo 添加源文件和头文件路径
+if(EXISTS "${LIBINJECTION_SRC_DIR}/libinjection_sqli.c")
+    set(LIBINJECTION_FOUND TRUE)
+    set(LIBINJECTION_LIB ${LIBINJECTION_SRC_DIR}/libinjection_sqli.c)
+    set(LIBINJECTION_INCLUDE_DIR ${LIBINJECTION_SRC_DIR})
+    message(STATUS "  libinjection: enabled (for comparison in dfa_demo and sqli_demo)")
+else()
+    set(LIBINJECTION_FOUND FALSE)
+    set(LIBINJECTION_LIB "")
+    set(LIBINJECTION_INCLUDE_DIR "")
+    message(STATUS "  libinjection: disabled (source not found)")
+endif()
+
+# 为 dfa_demo 添加 libinjection 支持
+if(LIBINJECTION_FOUND)
+    target_sources(kadd_dfa_demo PRIVATE ${LIBINJECTION_LIB})
+    target_include_directories(kadd_dfa_demo PRIVATE ${LIBINJECTION_INCLUDE_DIR})
+endif()
+
+# 为 sqli_demo 添加 libinjection 支持
+if(LIBINJECTION_FOUND)
+    target_sources(kadd_sqli_demo PRIVATE ${LIBINJECTION_LIB})
+    target_include_directories(kadd_sqli_demo PRIVATE ${LIBINJECTION_INCLUDE_DIR})
+endif()
+
+# 独立的 libinjection demo (可选)
 set(LIBINJECTION_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/kadd_libinjection_demo.c
     ${TOOLS_SRCS}
-    ${LIBINJECTION_SRC_DIR}/libinjection_sqli.c
+    ${LIBINJECTION_LIB}
 )
-if(EXISTS "${LIBINJECTION_SRC_DIR}/libinjection_sqli.c")
+if(LIBINJECTION_FOUND)
     add_executable(kadd_libinjection_demo ${LIBINJECTION_SOURCES})
     target_include_directories(kadd_libinjection_demo PRIVATE
         ${CMAKE_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}
-        ${LIBINJECTION_SRC_DIR}
+        ${LIBINJECTION_INCLUDE_DIR}
     )
     add_dependencies(kadd_libinjection_demo copy_demo_resources)
-    message(STATUS "  kadd_libinjection_demo: enabled")
-else()
-    message(STATUS "  kadd_libinjection_demo: disabled (libinjection source not found)")
 endif()
 
 # ============================================================================
