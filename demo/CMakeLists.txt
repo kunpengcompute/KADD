@@ -28,20 +28,12 @@ function(add_kadd_demo DEMO_NAME SOURCE_FILE NEEDS_ML)
     elseif(${DEMO_NAME} STREQUAL "kadd_ml_demo")
         target_link_libraries(${DEMO_NAME} PRIVATE kadd_ml_engine)
     elseif(${DEMO_NAME} STREQUAL "kadd_sqli_demo")
-        target_link_libraries(${DEMO_NAME} PRIVATE
-            kadd_dfa_engine
-            kadd_feature_engine
-            kadd_ml_engine
-        )
+        target_link_libraries(${DEMO_NAME} PRIVATE kadd_sqli_engine)
     endif()
 
     # C++ 标准库（ML 和 SQLi demo 需要）
     if(${NEEDS_ML})
-        if(MSVC)
-            target_compile_options(${DEMO_NAME} PRIVATE /std:c++17)
-        else()
-            target_link_libraries(${DEMO_NAME} PRIVATE stdc++)
-        endif()
+        target_link_libraries(${DEMO_NAME} PRIVATE stdc++)
     endif()
 endfunction()
 

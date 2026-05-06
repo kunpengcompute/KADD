@@ -20,14 +20,6 @@ function(add_kadd_library NAME)
         SOVERSION 1
     )
 
-    # Windows 上自动导出所有符号
-    if(WIN32)
-        set_target_properties(${NAME} PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS TRUE)
-        # MinGW 需要显式导出
-        target_compile_definitions(${NAME} PRIVATE KADD_EXPORT=__declspec(dllexport))
-    else()
-        target_compile_definitions(${NAME} PUBLIC KADD_EXPORT=)
-    endif()
     target_include_directories(${NAME} PUBLIC ${CMAKE_SOURCE_DIR}/include)
 
     # cJSON 依赖处理
