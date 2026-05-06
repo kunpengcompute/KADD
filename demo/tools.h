@@ -28,7 +28,7 @@ void* timer_start(void);
 /**
  * @brief 高精度计时器（结束）
  * @param timer 计时器句柄
- * @return 经过的毫秒数
+ * @return 经过的微秒数（μs）
  */
 double timer_end(void *timer);
 

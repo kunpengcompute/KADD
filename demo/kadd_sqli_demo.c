@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "kadd_sqli_engine.h"
+#include "tools.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -26,16 +27,22 @@
 static void detect_and_print(kadd_sqli_engine_t *engine, const char *input) {
     float probability = 0.0f;
 
+    // 开始计时
+    void *timer = timer_start();
+
     int ret = kadd_sqli_detect(engine, input, &probability);
- 
+
+    // 结束计时
+    double elapsed_ms = timer_end(timer);
+
     if (ret == KADD_SQLI_OK) {
         int is_sqli = (probability >= 0.5f) ? 1 : 0;
         const char *icon = is_sqli ? "⚠"  : "✓";
         const char *status = is_sqli ? "[SQL 注入]" : "[安全]";
 
-        printf("  %s %-40s | 概率: %6.2f%%\n", icon, input, probability * 100);
+        printf("  %s %-40s | 概率: %6.2f%% | 耗时: %.2f μs\n", icon, input, probability * 100, elapsed_ms);
     } else {
-        printf("  ✗ %-40s | 检测失败 (错误码: %d)\n", input, ret);
+        printf("  ✗ %-40s | 检测失败 (错误码: %d) | 耗时: %.2f μs\n", input, ret, elapsed_ms);
     }
 }
 

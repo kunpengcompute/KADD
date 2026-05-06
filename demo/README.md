@@ -1,126 +1,74 @@
-# KADD Demo 程序使用说明
+# KADD Demo 程序
 
-## 概述
+本目录包含 KADD 项目的交互式演示程序。
 
-本目录包含两个演示程序，用于展示 KADD 库的功能：
+## 编译方法
 
-1. **kadd_feature_demo** - 特征转换功能演示
-2. **kadd_ml_demo** - ML 推理引擎演示
-
-## 编译
-
-Demo 程序已集成到主 CMake 构建系统中。在构建主项目时，这些程序会自动编译：
+### 方法 1: 使用 CMake（推荐）
 
 ```bash
 cd build
-cmake ..
-cmake --build . --target kadd_feature_demo kadd_ml_demo
+cmake .. -G "MinGW Makefiles"
+cmake --build . --target kadd_dfa_demo
+cmake --build . --target kadd_sqli_demo
 ```
 
-编译后，可执行文件位于 `build/demo/` 目录下。
-
-## kadd_feature_demo
-
-### 功能
-- 演示如何将不定长序列转换为固定维度特征向量
-- 包含基本功能、不同序列长度、性能测试和边界条件测试
-- 支持交互式输入测试
-
-### 运行
+### 方法 2: 手动编译
 
 ```bash
-cd build/demo
-./kadd_feature_demo.exe
+# 编译 tools.c
+gcc -c -I. demo/tools.c -o /tmp/tools.o
+
+# 编译 DFA demo
+gcc -Iinclude -Ithird_party/include demo/kadd_dfa_demo.c /tmp/tools.o \
+    build/src/libkadd_other_engines.a \
+    third_party/lib/libonnxruntime.a \
+    third_party/src/cJSON.c -lstdc++ \
+    -o kadd_dfa_demo.exe
+
+# 编译 SQLi demo
+gcc -Iinclude -Ithird_party/include demo/kadd_sqli_demo.c /tmp/tools.o \
+    build/src/libkadd_other_engines.a \
+    third_party/lib/libonnxruntime.a \
+    third_party/src/cJSON.c -lstdc++ \
+    -o kadd_sqli_demo.exe
 ```
 
-### 交互式输入
+## 运行
 
-程序执行完固定测试后，会进入交互模式：
-
-```
-【交互式测试模式】
-─────────────────────────────────────────────────────────────
-输入格式说明:
-  - 序列: 用逗号或空格分隔的整数，例如: 7,11,8,12,8,11,8
-  - 窗口大小: 一个整数，例如: 5
-  - 输入 'q' 或 'quit' 退出程序
-
->> 请输入序列 (或 'q' 退出): 1,2,3,4,5
->> 请输入窗口大小 (默认 5): 5
-
-输入序列: [1, 2, 3, 4, 5] (长度=5)
-窗口大小: 5
-✓ 转换成功
-特征向量: [0, 30, 38, 42, 40, 30, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
-```
-
-### 示例输入
-
-```
-7,11,8,12,8,11,8
-```
-
-## kadd_ml_demo
-
-### 功能
-- 演示 ONNX 模型加载和推理
-- 包含单样本推理、批量推理和性能基准测试
-- 支持交互式输入测试
-
-### 运行
+Demo 程序需要在项目根目录下运行，因为它们依赖以下文件：
+- `tools/profile_data/transition_table.bin`
+- `tools/profile_data/states_meta.json`
+- `config.json`
+- `assets/model/model_tokens_rf.onnx`
 
 ```bash
-cd build/demo
-./kadd_ml_demo
+# 在项目根目录运行
+cd /path/to/KADD
+./kadd_dfa_demo.exe
+./kadd_sqli_demo.exe
 ```
 
-程序会自动查找以下位置的模型文件：
-1. `../../assets/model/model_tokens_rf.onnx` (从 build/demo 目录)
-2. `../assets/model/model_tokens_rf.onnx` (从 build 目录)
-3. `assets/model/model_tokens_rf.onnx` (从项目根目录)
-4. `/usr/local/share/kadd/model_tokens_rf.onnx` (Linux 安装路径)
+## Demo 程序列表
 
-你也可以指定自定义模型路径：
+| Demo 程序 | 描述 | 功能 |
+|---------|------|------|
+| kadd_dfa_demo | DFA 分词引擎演示 | 文本分词，token 向量化 |
+| kadd_feature_demo | 特征提取演示 | 序列到特征向量转换 |
+| kadd_ml_demo | ML 引擎演示 | ONNX 模型推理 |
+| kadd_sqli_demo | SQL 注入检测演示 | 完整的 SQL 注入检测流程 |
 
-```bash
-./kadd_ml_demo /path/to/your/model.onnx
+## 使用示例
+
+### DFA Demo
+```
+[1]> SELECT * FROM users
+  ✓ 分词成功 (耗时: 12.34 μs)
+  Token 向量 [长度=5]: [7, 11, 8, 7, 11]
 ```
 
-### 交互式输入
-
-程序执行完固定测试后，会进入交互模式：
-
+### SQLi Demo
 ```
-【交互式测试模式】
-─────────────────────────────────────────────────────────────
-输入格式说明:
-  - 特征向量: 用逗号或空格分隔的浮点数，必须包含 28 个值
-  - 例如: 0.0,152.0,0.0,0.0,0.0,0.0,185.0,1717.0,4152.0,0.0,0.0,4494.0,190.0,0.0,0.0,0.0,0.0,0.0,0.0,129.0,0.0,0.0,0.0,0.0,173.0,0.0,0.0,0.0
-  - 输入 'q' 或 'quit' 退出程序
-
->> 请输入特征向量 (28维，或 'q' 退出): 0,152,0,0,0,0,185,1717,4152,0,0,4494,190,0,0,0,0,0,0,129,0,0,0,0,173,0,0,0
-
-输入特征: 0, 152, 0, 0, 0, 0, 185, 1717, 4152, 0, 0, 4494, 190, 0, 0, 0, 0, 0, 0, 129, 0, 0, 0, 0, 173, 0, 0, 0
-✓ 推理成功
-预测概率 (Label=1): 1.0000 (100.00%)
-推理耗时: 0.055 ms
+[1]> id=1' OR '1'='1
+  ⚠ id=1' OR '1'='1                    | 概率:  98.46% | 耗时: 1234.56 μs
 ```
-
-### 示例输入
-
-```
-0,152,0,0,0,0,185,1717,4152,0,0,4494,190,0,0,0,0,0,0,129,0,0,0,0,173,0,0,0
-```
-
-## 依赖
-
-Demo 程序会自动复制所需的 DLL 文件到输出目录：
-
-- `libkadd_feature_engine.dll` / `libkadd_ml_engine.dll` - KADD 库
-- `onnxruntime.dll` - ONNX Runtime (仅 kadd_ml_demo 需要)
-
-## 注意事项
-
-1. 运行 `kadd_ml_demo` 时需要提供模型文件路径
-2. 交互模式下，输入 `q` 或 `quit` 可以退出程序
-3. 特征向量维度必须与模型要求的维度匹配（默认为 28）

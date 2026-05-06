@@ -83,7 +83,7 @@ void test_single_predict(kadd_model_handle_t *model, int feature_dim) {
 
     if (kadd_model_predict(model, features, &probability) == 0) {
         double elapsed = timer_end(timer);
-        printf("结果: %.4f (%.2f%%), 耗时: %.3f ms\n", probability, probability * 100, elapsed);
+        printf("结果: %.4f (%.2f%%), 耗时: %.2f μs\n", probability, probability * 100, elapsed);
     } else {
         printf("推理失败\n");
     }
@@ -129,7 +129,7 @@ void test_batch_predict(kadd_model_handle_t *model, int feature_dim) {
     double elapsed = timer_end(timer);
 
     if (count > 0) {
-        printf("批量推理完成: %d/%d, 总耗时: %.3f ms, 平均: %.3f ms/样本\n",
+        printf("批量推理完成: %d/%d, 总耗时: %.2f μs, 平均: %.2f μs/样本\n",
                count, batch_size, elapsed, elapsed / batch_size);
         printf("结果:\n");
         for (int i = 0; i < batch_size; i++) {

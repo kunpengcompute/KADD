@@ -1,3 +1,8 @@
+/**
+ * @file tools.c
+ * @brief Demo 程序工具函数
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -49,7 +54,8 @@ double timer_end(void *timer)
     LARGE_INTEGER end;
     QueryPerformanceCounter(&end);
 
-    double elapsed = (double)(end.QuadPart - t->start.QuadPart) * 1000.0 / t->freq.QuadPart;
+    // 返回微秒（μs）
+    double elapsed = (double)(end.QuadPart - t->start.QuadPart) * 1000000.0 / t->freq.QuadPart;
     free(timer);
 
     return elapsed;
@@ -70,8 +76,9 @@ double timer_end(void *timer)
     struct timeval end;
     gettimeofday(&end, NULL);
 
-    double elapsed = (end.tv_sec - start->tv_sec) * 1000.0 +
-                     (end.tv_usec - start->tv_usec) / 1000.0;
+    // 返回微秒（μs）
+    double elapsed = (end.tv_sec - start->tv_sec) * 1000000.0 +
+                     (end.tv_usec - start->tv_usec);
 
     free(timer);
     return elapsed;

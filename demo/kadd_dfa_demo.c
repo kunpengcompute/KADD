@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "kadd_dfa_engine.h"
+#include "tools.h"
 
 #ifdef _WIN32
 #include <windows.h>
@@ -42,13 +43,20 @@ static void tokenize_and_print(kadd_dfa_engine_t *engine, const char *input) {
     int tokens[8192];
     int token_count = 0;
 
+    // 开始计时
+    void *timer = timer_start();
+
     int ret = kadd_dfa_engine_tokenize(engine, input, strlen(input), tokens, &token_count);
+
+    // 结束计时
+    double elapsed_us = timer_end(timer);
 
     if (ret != 0) {
         printf("  ✗ 分词失败 (错误码: %d)\n\n", ret);
         return;
     }
 
+    printf("  ✓ 分词成功 (耗时: %.2f μs)\n", elapsed_us);
     printf("  Token 向量 [长度=%d]: [", token_count);
     for (int i = 0; i < token_count && i < 20; i++) {
         if (i > 0) printf(", ");

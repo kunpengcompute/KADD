@@ -127,7 +127,7 @@ void test_feature_conversion() {
     double elapsed = timer_end(timer);
 
     if (ret == 0) {
-        printf("转换成功，耗时: %.3f ms\n", elapsed);
+        printf("转换成功，耗时: %.2f μs\n", elapsed);
         printf("特征向量: [");
         for (int i = 0; i < feature_dim; i++) {
             printf("%d", feature[i]);
@@ -178,8 +178,8 @@ void test_performance() {
     }
 
     double elapsed = timer_end(timer);
-    printf("总耗时: %.3f ms\n", elapsed);
-    printf("平均耗时: %.6f ms/次\n", elapsed / iterations);
+    printf("总耗时: %.2f μs\n", elapsed);
+    printf("平均耗时: %.3f μs/次\n", elapsed / iterations);
     printf("吞吐量: %.0f 次/秒\n", 1000.0 / (elapsed / iterations));
 
     free(feature);
