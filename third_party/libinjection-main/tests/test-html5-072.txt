@@ -1,6 +1,0 @@
---TEST--
-# Test minimum valid lengths
---INPUT--
-&#1
---EXPECTED--
-DATA_TEXT,3,&#1

@@ -9,7 +9,7 @@
 #include <vector>
 #include <string>
 #include <chrono>
-#include "../include/kadd_sqli_engine.h"
+#include "kadd_sqli_engine.h"
 
 /* ========== 测试夹具 ========== */
 
@@ -386,20 +386,22 @@ TEST_F(SQLiEngineTest, SingleDetectionPerformance) {
 
 TEST_F(SQLiEngineTest, BatchDetectionPerformance) {
     // 测试批量检测性能
-    std::vector<std::string> inputs(100);
+    std::vector<std::string> inputs_str(100);
+    std::vector<const char*> inputs(100);
     for (int i = 0; i < 100; i++) {
         if (i % 2 == 0) {
-            inputs[i] = "id=1' OR '1'='1";  // 注入
+            inputs_str[i] = "id=1' OR '1'='1";  // 注入
         } else {
-            inputs[i] = "user@example.com";   // 正常
+            inputs_str[i] = "user@example.com";   // 正常
         }
+        inputs[i] = inputs_str[i].c_str();
     }
 
     std::vector<float> probabilities(100);
 
     auto start = std::chrono::high_resolution_clock::now();
     int ret = kadd_sqli_detect_batch(engine,
-                                    (const char**)inputs.data(),
+                                    inputs.data(),
                                     100,
                                     probabilities.data(),
                                     10);
@@ -528,24 +530,28 @@ TEST_F(SQLiEngineTest, DetectionConsistency) {
 
 TEST_F(SQLiEngineTest, BatchVsSingleConsistency) {
     // 测试批量检测与单次检测的一致性
-    std::vector<std::string> inputs = {
+    std::vector<std::string> inputs_str = {
         "id=1' OR '1'='1",
         "admin'--",
         "user@example.com",
         "SELECT * FROM users",
         "1' UNION SELECT NULL--"
     };
+    std::vector<const char*> inputs;
+    for (const auto& s : inputs_str) {
+        inputs.push_back(s.c_str());
+    }
 
     // 单次检测
     std::vector<float> single_probs(inputs.size());
     for (size_t i = 0; i < inputs.size(); i++) {
-        single_probs[i] = detect(inputs[i]);
+        single_probs[i] = detect(inputs_str[i]);
     }
 
     // 批量检测
     std::vector<float> batch_probs(inputs.size());
     int ret = kadd_sqli_detect_batch(engine,
-                                    (const char**)inputs.data(),
+                                    inputs.data(),
                                     inputs.size(),
                                     batch_probs.data(),
                                     10);
@@ -554,7 +560,7 @@ TEST_F(SQLiEngineTest, BatchVsSingleConsistency) {
     // 比较结果
     for (size_t i = 0; i < inputs.size(); i++) {
         EXPECT_FLOAT_EQ(single_probs[i], batch_probs[i])
-            << "单次和批量检测结果应该一致: " << inputs[i];
+            << "单次和批量检测结果应该一致: " << inputs_str[i];
     }
 }
 

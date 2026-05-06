@@ -18,8 +18,7 @@ option(BUILD_TESTS "Build test programs" ON)
 option(USE_SYSTEM_LIBS "Use system libraries instead of third_party" ON)
 option(ENABLE_CODE_COVERAGE "Enable code coverage reporting" OFF)
 option(KADD_OPTIMIZE "Enable optimizations" OFF)
-option(ENABLE_ARM_SVE "Enable ARM SVE acceleration (ARMv9-A)" OFF)
-option(ENABLE_ARM_SVE2 "Enable ARM SVE2 acceleration (ARMv9.2-A+)" OFF)
+option(ENABLE_ARM_SVE "Enable ARM SVE acceleration (auto-detects SVE2 support)" OFF)
 
 # 自动检测 assets 目录（优先级：项目根目录 > 构建目录 > 默认 assets）
 if(EXISTS "${CMAKE_SOURCE_DIR}/assets")
@@ -30,10 +29,24 @@ else()
     set(KADD_ASSETS_PATH "assets")
 endif()
 
-# SVE 选项互斥
-if(ENABLE_ARM_SVE2)
-    set(ENABLE_ARM_SVE ON)
-    message(STATUS "SVE2 enabled, implies SVE")
+# 自动检测 SVE2 支持（如果启用 SVE，尝试检测是否支持 SVE2）
+set(ENABLE_ARM_SVE2 FALSE)
+if(ENABLE_ARM_SVE)
+    include(CheckCSourceCompiles)
+    check_c_source_compiles("
+        #if defined(__ARM_FEATURE_SVE2) && __ARM_FEATURE_SVE2
+            int main(void) { return 0; }
+        #else
+            #error SVE2 not supported
+        #endif
+    " ARM_SVE2_SUPPORTED)
+
+    if(ARM_SVE2_SUPPORTED)
+        set(ENABLE_ARM_SVE2 TRUE)
+        message(STATUS "SVE2 supported, enabling SVE2 acceleration")
+    else()
+        message(STATUS "SVE2 not supported, falling back to SVE")
+    endif()
 endif()
 
 # 优化选项
@@ -84,7 +97,7 @@ message(STATUS "Enable optimize: ${KADD_OPTIMIZE}")
 message(STATUS "Enable ARM SVE: ${ENABLE_ARM_SVE}")
 message(STATUS "Assets path: ${KADD_ASSETS_PATH} (auto-detected)")
 if(ENABLE_ARM_SVE)
-    message(STATUS "  SVE version: ${ENABLE_ARM_SVE2}")
+    message(STATUS "  SVE2 enabled: ${ENABLE_ARM_SVE2}")
 endif()
 
 # ============================================================================

@@ -109,6 +109,7 @@ sudo make install && sudo ldconfig
 mkdir -p third_party/cJSON
 wget https://github.com/DaveGamble/cJSON/archive/refs/heads/master.zip -O cJSON.zip
 unzip cJSON.zip
+mkdir -p third_party/cJSON/
 cp cJSON-master/cJSON.h third_party/cJSON/
 cp cJSON-master/cJSON.c third_party/cJSON/
 rm -rf cJSON-master cJSON.zip
@@ -134,9 +135,11 @@ sudo make install
 
 ```bash
 wget https://github.com/google/googletest/archive/refs/tags/release-1.12.1.tar.gz -O gtest.tar.gz
-tar xzf gtest.tar.gz
-mv googletest-release-1.12.1/googletest third_party/gtest
-rm gtest.tar.gz
+tar xzf googletest*
+mkdir -p third_party/gtest
+cp -r googletest-release-1.12.1/googletest/include third_party/gtest/
+cp -r googletest-release-1.12.1/googletest/src third_party/gtest/
+rm -rf googletest*
 ```
 
 ---
@@ -177,8 +180,66 @@ A: 修改 `ONNXRUNTIME_HOME` 环境变量指向不同版本目录
 
 ---
 
+## libinjection
+
+**可选依赖**，用于 SQL 注入检测的对比测试和基准验证。
+
+### 版本选择
+
+| 版本 | 特点 | 适用场景 |
+|------|------|----------|
+| master | 最新版本，包含最新的指纹库 | 推荐使用 |
+
+### 从已有源码编译（third_party/libinjection-main）
+
+如果项目中已有 `third_party/libinjection-main/` 源码目录，可以直接编译：
+
+```bash
+cd third_party/libinjection-main
+
+# 生成配置脚本
+./autogen.sh
+
+# 配置编译选项
+./configure --prefix=/usr/local --enable-static --disable-shared
+
+# 编译并安装
+make
+sudo make install
+sudo ldconfig
+```
+
+### 手动下载安装
+
+```bash
+git clone https://github.com/client9/libinjection.git
+cd libinjection
+./autogen.sh
+./configure --prefix=/usr/local
+make
+sudo make install
+sudo ldconfig
+```
+
+### third_party 方式
+
+```bash
+# 下载源码包
+wget https://github.com/client9/libinjection/archive/refs/heads/master.zip -O libinjection.zip
+unzip libinjection*
+
+# 复制到 third_party
+mkdir -p third_party/libinjection
+cp -rf libinjection*/* third_party/libinjection
+
+rm -rf libinjection-master libinjection.zip
+```
+
+---
+
 ## 参考链接
 
 - [ONNX Runtime](https://github.com/microsoft/onnxruntime)
 - [cJSON](https://github.com/DaveGamble/cJSON)
 - [Google Test](https://github.com/google/googletest)
+- [libinjection](https://github.com/client9/libinjection)
