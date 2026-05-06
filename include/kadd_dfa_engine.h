@@ -14,18 +14,25 @@ extern "C" {
 typedef struct kadd_dfa_engine_t kadd_dfa_engine_t;
 
 /**
+ * @brief DFA 三张表路径
+ */
+typedef struct {
+    const char *transition_table_path;  /**< 状态转移表路径 */
+    const char *output_table_path;      /**< 边输出表路径 */
+    const char *eod_table_path;         /**< 输入结束输出表路径 */
+} kadd_dfa_table_paths_t;
+
+/**
  * @brief 创建 DFA 引擎
  *
  * @param engine 输出参数，返回创建的引擎指针
- * @param table_path 转移表文件路径
- * @param state_path 状态元数据文件路径
+ * @param table_paths DFA 三张表路径
  * @param max_input_length 最大输入字符长度
  * @param max_output_dim 最大输出特征维度
  * @return 0 成功，非0 失败
  */
 int kadd_dfa_engine_create(kadd_dfa_engine_t **engine,
-                           const char *table_path,
-                           const char *state_path,
+                           const kadd_dfa_table_paths_t *table_paths,
                            size_t max_input_length,
                            size_t max_output_dim);
 

@@ -1,7 +1,8 @@
 {
   "kadd_dfa_engine": {
-    "table_path": "assets/data/transition_table.bin",
-    "state_path": "assets/data/states_meta.json",
+    "transition_table_path": "assets/data/transition_table.bin",
+    "output_table_path": "assets/data/output_table.bin",
+    "eod_table_path": "assets/data/eod_table.bin",
     "max_input_length": 8192,
     "max_output_dim": 8192
   },
