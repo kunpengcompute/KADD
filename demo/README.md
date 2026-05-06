@@ -53,22 +53,40 @@ cd /path/to/KADD
 
 | Demo 程序 | 描述 | 功能 |
 |---------|------|------|
-| kadd_dfa_demo | DFA 分词引擎演示 | 文本分词，token 向量化 |
+| kadd_dfa_demo | DFA 分词引擎演示 | 文本分词，token 向量化，**libinjection 对比** |
 | kadd_feature_demo | 特征提取演示 | 序列到特征向量转换 |
 | kadd_ml_demo | ML 引擎演示 | ONNX 模型推理 |
-| kadd_sqli_demo | SQL 注入检测演示 | 完整的 SQL 注入检测流程 |
+| kadd_sqli_demo | SQL 注入检测演示 | 完整的 SQL 注入检测流程，**libinjection 对比** |
 
 ## 使用示例
 
 ### DFA Demo
+
+DFA Demo 现在包含与 libinjection 的性能对比：
+
 ```
 [1]> SELECT * FROM users
   ✓ 分词成功 (耗时: 12.34 μs)
   Token 向量 [长度=5]: [7, 11, 8, 7, 11]
+  
+  --- libinjection 对比 ---
+  Tokenize: 8.52 μs | Fold: 2.14 μs | Lookup: 1.23 μs | 总计: 11.89 μs
+  Libinjection 结果: 安全 (fingerprint: ...)
 ```
 
 ### SQLi Demo
+
+SQLi Demo 提供 KADD 检测引擎与 libinjection 的双重验证：
+
 ```
 [1]> id=1' OR '1'='1
-  ⚠ id=1' OR '1'='1                    | 概率:  98.46% | 耗时: 1234.56 μs
+  ⚠ SQL 注入检测!
+     KADD:      概率  98.46% | 耗时  1234.56 μs
+     libinjection: 是注入   | 耗时     45.23 μs
+     指纹: 1&1
+  
+[2]> user@example.com
+  ✓ 安全输入
+     KADD:      概率   1.23% | 耗时   567.89 μs
+     libinjection: 非注入 | 耗时     12.34 μs
 ```

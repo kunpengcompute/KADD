@@ -114,11 +114,21 @@ int main() {
 | 选项 | 默认值 | 说明 |
 |------|--------|------|
 | `-DKADD_OPTIMIZE=ON` | OFF | 启用 -O3 优化 |
-| `-DENABLE_ARM_SVE=ON` | OFF | 启用 ARM SVE 加速 |
-| `-DENABLE_ARM_SVE2=ON` | OFF | 启用 ARM SVE2 加速 |
+| `-DENABLE_ARM_SVE=ON` | OFF | 启用 ARM SVE（自动检测 SVE2） |
 | `-DENABLE_CODE_COVERAGE=ON` | OFF | 启用代码覆盖率 |
 | `-DBUILD_TESTS=ON` | ON | 构建测试程序 |
 | `-DUSE_SYSTEM_LIBS=ON` | ON | 优先使用系统库 |
+
+### ARM 加速
+
+```bash
+# 启用 SVE（自动检测 SVE2 支持）
+cmake -DENABLE_ARM_SVE=ON -DCMAKE_BUILD_TYPE=Release -DKADD_OPTIMIZE=ON
+cmake --build .
+
+# SVE2 支持的系统会自动启用 SVE2
+# 非 SVE2 系统会回退到 SVE
+```
 
 ### Assets 目录自动检测
 

@@ -39,18 +39,20 @@ ctest --verbose
 | `USE_SYSTEM_LIBS` | ON | 优先使用系统库 |
 | `ENABLE_CODE_COVERAGE` | OFF | 启用代码覆盖率 |
 | `KADD_OPTIMIZE` | OFF | 启用 -O3 优化 |
-| `ENABLE_ARM_SVE` | OFF | 启用 ARM SVE |
-| `ENABLE_ARM_SVE2` | OFF | 启用 ARM SVE2 |
+| `ENABLE_ARM_SVE` | OFF | 启用 ARM SVE（自动检测 SVE2） |
 
 ### ARM 加速
 
 ```bash
-# SVE (ARMv9-A)
-cmake -DENABLE_ARM_SVE=ON ..
+# 启用 SVE（自动检测 SVE2 支持）
+cmake -DENABLE_ARM_SVE=ON -DCMAKE_BUILD_TYPE=Release -DKADD_OPTIMIZE=ON
+cmake --build .
 
-# SVE2 (ARMv9.2-A+)
-cmake -DENABLE_ARM_SVE2=ON ..
+# SVE2 支持的系统会自动启用 SVE2
+# 非 SVE2 系统会回退到 SVE
 ```
+
+**注意**：SVE/SVE2 仅在 ARM64 架构上可用。启用时会自动检测编译器是否支持 SVE2，如果支持则自动启用 SVE2，否则使用 SVE。
 
 ---
 

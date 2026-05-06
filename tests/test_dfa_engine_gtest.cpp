@@ -19,12 +19,8 @@ protected:
     int max_output_dim = 8192;
 
     void SetUp() override {
-        // 每个测试前创建引擎
-        ASSERT_EQ(kadd_dfa_engine_create(&engine,
-                                        "../../tools/profile_data/transition_table.bin",
-                                        "../../tools/profile_data/states_meta.json",
-                                        max_input_length,
-                                        max_output_dim), 0);
+        // 每个测试前从 config.json 创建引擎
+        ASSERT_EQ(kadd_dfa_engine_create_from_file(&engine, "../config.json"), 0);
     }
 
     void TearDown() override {

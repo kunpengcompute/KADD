@@ -20,6 +20,47 @@
 #include <windows.h>
 #endif
 
+/* ========== Token 类型到索引的映射 (与 DFA 引擎一致) ========== */
+
+static int libinjection_type_to_index(char type) {
+    static const int8_t map[256] = {
+        [0 ... 255] = 24,  // 默认 TYPE_UNKNOWN
+        ['0'] = 0,     // TYPE_NONE
+        ['k'] = 1,     // TYPE_KEYWORD
+        ['U'] = 2,     // TYPE_UNION
+        ['B'] = 3,     // TYPE_GROUP
+        ['E'] = 4,     // TYPE_EXPRESSION
+        ['t'] = 5,     // TYPE_SQLTYPE
+        ['f'] = 6,     // TYPE_FUNCTION
+        ['n'] = 7,     // TYPE_BAREWORD
+        ['1'] = 8,     // TYPE_NUMBER
+        ['v'] = 9,     // TYPE_VARIABLE
+        ['s'] = 10,    // TYPE_STRING
+        ['o'] = 11,    // TYPE_OPERATOR
+        ['&'] = 12,    // TYPE_LOGIC_OPERATOR
+        ['c'] = 13,    // TYPE_COMMENT
+        ['A'] = 14,    // TYPE_COLLATE
+        ['('] = 15,    // TYPE_LEFTPARENS
+        [')'] = 16,    // TYPE_RIGHTPARENS
+        ['{'] = 17,    // TYPE_LEFTBRACE
+        ['}'] = 18,    // TYPE_RIGHTBRACE
+        ['.'] = 19,    // TYPE_DOT
+        [','] = 20,    // TYPE_COMMA
+        [':'] = 21,    // TYPE_COLON
+        [';'] = 22,    // TYPE_SEMICOLON
+        ['T'] = 23,    // TYPE_STATEMENT
+        ['?'] = 24,    // TYPE_UNKNOWN
+        ['X'] = 25,    // TYPE_EVIL
+        ['F'] = 26,    // TYPE_FINGERPRINT
+        ['\\'] = 27,   // TYPE_BACKSLASH
+    };
+
+    if (type >= 0 && type < 256) {
+        return map[(unsigned char)type];
+    }
+    return 24;  // TYPE_UNKNOWN
+}
+
 /* ========== 分步检测函数 ========== */
 
 /**
@@ -44,16 +85,19 @@ static void detect_and_print(const char *input) {
     double tokenize_time = timer_end(timer);
 
     // 打印 token 向量（重新 tokenize 以获取所有 token，不影响时间统计）
-    printf("  Token向量:\n");
+    printf("  Token向量 (%d个):\n    [", token_count);
     struct libinjection_sqli_state print_state;
     libinjection_sqli_init(&print_state, input, strlen(input), FLAG_QUOTE_NONE | FLAG_SQL_MYSQL);
     int print_count = 0;
     while (libinjection_sqli_tokenize(&print_state)) {
-        struct libinjection_sqli_token *tok = print_state.current;
-        printf("    [%d] type='%c' val=\"%.*s\" (pos:%zu len:%zu)\n",
-               print_count, tok->type, (int)tok->len, tok->val, tok->pos, tok->len);
+        int token_index = libinjection_type_to_index(print_state.current->type);
+        printf("%d", token_index);
         print_count++;
+        if (print_count < token_count) {
+            printf(", ");
+        }
     }
+    printf("]\n");
 
     // 步骤 3: fold (生成指纹)
     timer = timer_start();
@@ -71,7 +115,7 @@ static void detect_and_print(const char *input) {
     const char *icon = is_sqli ? "⚠"  : "✓";
     const char *status = is_sqli ? "[SQL 注入]" : "[安全]";
 
-    printf("  %s 结果: %-10s | 指纹: %6s | Token数: %d\n", icon, status, state.fingerprint, token_count);
+    printf("  %s 结果: %-10s | 指纹: %6s\n", icon, status, state.fingerprint);
     printf("  耗时分解:\n");
     printf("    init:          %8.2f μs (%5.1f%%)\n", init_time, (init_time / total_time) * 100);
     printf("    tokenize:      %8.2f μs (%5.1f%%)\n", tokenize_time, (tokenize_time / total_time) * 100);
