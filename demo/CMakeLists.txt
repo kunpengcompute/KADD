@@ -64,7 +64,7 @@ add_kadd_demo(kadd_ml_demo kadd_ml_demo.c TRUE FALSE FALSE)
 add_kadd_demo(kadd_sqli_demo kadd_sqli_demo.c TRUE TRUE FALSE)
 
 # libinjection 对比演示
-set(LIBINJECTION_SRC_DIR ${CMAKE_SOURCE_DIR}/third_party/libinjection-main/src)
+set(LIBINJECTION_SRC_DIR ${CMAKE_SOURCE_DIR}/third_party/libinjection/src)
 
 # 为需要 libinjection 的 demo 添加源文件和头文件路径
 if(EXISTS "${LIBINJECTION_SRC_DIR}/libinjection_sqli.c")

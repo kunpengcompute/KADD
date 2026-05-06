@@ -1,7 +1,0 @@
---TEST--
-smoke (updated: 1E without exponent is now ignored per MySQL behavior)
---INPUT--
-SELECT 1E;
---EXPECTED--
-E SELECT
-; ;
