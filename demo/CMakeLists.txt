@@ -52,30 +52,42 @@ endfunction()
 # ============================================================================
 
 # DFA 引擎演示
-add_kadd_demo(kadd_dfa_demo kadd_dfa_demo.c FALSE TRUE)
+add_kadd_demo(kadd_dfa_demo kadd_dfa_demo.c FALSE TRUE FALSE)
 
 # 特征引擎演示
-add_kadd_demo(kadd_feature_demo kadd_feature_demo.c FALSE FALSE)
+add_kadd_demo(kadd_feature_demo kadd_feature_demo.c FALSE FALSE FALSE)
 
 # ML 引擎演示
-add_kadd_demo(kadd_ml_demo kadd_ml_demo.c TRUE FALSE)
+add_kadd_demo(kadd_ml_demo kadd_ml_demo.c TRUE FALSE FALSE)
 
 # SQL 注入检测演示
-add_kadd_demo(kadd_sqli_demo kadd_sqli_demo.c TRUE TRUE)
+add_kadd_demo(kadd_sqli_demo kadd_sqli_demo.c TRUE TRUE FALSE)
+
+# libinjection 对比演示
+set(LIBINJECTION_SRC_DIR ${CMAKE_SOURCE_DIR}/third_party/libinjection-main/src)
+if(EXISTS "${LIBINJECTION_SRC_DIR}/libinjection_sqli.c")
+    add_executable(kadd_libinjection_demo
+        kadd_libinjection_demo.c
+        ${TOOLS_SRCS}
+        ${LIBINJECTION_SRC_DIR}/libinjection.c
+        ${LIBINJECTION_SRC_DIR}/libinjection_sqli.c
+    )
+    target_include_directories(kadd_libinjection_demo PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}
+        ${LIBINJECTION_SRC_DIR}
+    )
+    add_dependencies(kadd_libinjection_demo copy_demo_resources)
+    message(STATUS "  kadd_libinjection_demo: enabled")
+else()
+    message(STATUS "  kadd_libinjection_demo: disabled (libinjection source not found)")
+endif()
 
 # ============================================================================
 # 资源文件复制
 # ============================================================================
 add_custom_target(copy_demo_resources ALL
     COMMAND ${CMAKE_COMMAND} -E echo "Copying demo resources..."
-)
-
-# 复制 tools 目录
-add_custom_command(TARGET copy_demo_resources POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-        ${CMAKE_SOURCE_DIR}/tools
-        ${CMAKE_BINARY_DIR}/demo/tools
-    COMMENT "Copying tools directory for demos"
 )
 
 # 复制 config.json

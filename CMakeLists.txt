@@ -97,7 +97,7 @@ if(ONNXRUNTIME_ROOT)
     set(SEARCH_MODE NO_DEFAULT_PATH)
 else()
     # 未指定，搜索 third_party 和系统路径
-    set(SEARCH_PATHS "${CMAKE_SOURCE_DIR}/third_party" "/usr/local" "/usr")
+    set(SEARCH_PATHS "${CMAKE_SOURCE_DIR}/third_party/onnxruntime" "/usr/local" "/usr")
     set(SEARCH_MODE "")
 endif()
 
@@ -109,11 +109,11 @@ find_library(ONNXRUNTIME_LIBRARIES
     ${SEARCH_MODE}
 )
 
-# 查找头文件
+# 查找头文件（源代码使用 #include "onnxruntime/xxx.h"）
 find_path(ONNXRUNTIME_INCLUDE_DIRS
     NAMES onnxruntime_c_api.h
     PATHS ${SEARCH_PATHS}
-    PATH_SUFFIXES include include/onnxruntime
+    PATH_SUFFIXES include/onnxruntime include
     ${SEARCH_MODE}
 )
 
@@ -154,12 +154,13 @@ endif()
 
 if(NOT CJSON_FOUND)
     # 使用 third_party 中的 cJSON
-    set(cjson_header "${CMAKE_SOURCE_DIR}/third_party/include/cJSON.h")
-    set(cjson_source "${CMAKE_SOURCE_DIR}/third_party/src/cJSON.c")
+    set(cjson_path "${CMAKE_SOURCE_DIR}/third_party/cJSON")
+    set(cjson_header "${cjson_path}/cJSON.h")
+    set(cjson_source "${cjson_path}/cJSON.c")
 
     if(EXISTS "${cjson_header}" AND EXISTS "${cjson_source}")
         set(CJSON_FOUND TRUE)
-        set(CJSON_INCLUDE_DIRS "${CMAKE_SOURCE_DIR}/third_party/include")
+        set(CJSON_INCLUDE_DIRS "${cjson_path}")
         set(CJSON_LIBRARIES "${cjson_source}")
         set(CJSON_IS_THIRD_PARTY TRUE)
         message(STATUS "Using third_party cJSON")
@@ -187,15 +188,18 @@ if(BUILD_TESTS)
 
         if(EXISTS "${gtest_source}")
             message(STATUS "Using third_party Google Test")
-            set(GTEST_INCLUDE_DIR "${gtest_path}")
+            set(GTEST_INCLUDE_DIR "${gtest_path}/include")
             set(GTest_FOUND TRUE)
 
             # 创建 gtest 静态库
+            # 使用 CMAKE_CURRENT_SOURCE_DIR 确保 gtest-all.cc 的 include 路径正确
             add_library(gtest STATIC "${gtest_source}")
             target_include_directories(gtest PUBLIC "${GTEST_INCLUDE_DIR}")
+            target_include_directories(gtest PRIVATE "${gtest_path}")  # 为 #include "src/xxx.cc" 提供路径
 
             add_library(gtest_main STATIC "${gtest_path}/src/gtest_main.cc")
             target_include_directories(gtest_main PUBLIC "${GTEST_INCLUDE_DIR}")
+            target_include_directories(gtest_main PRIVATE "${gtest_path}")  # 为 gtest_main.cc 的 include 提供
             target_link_libraries(gtest_main PUBLIC gtest)
         else()
             message(WARNING "Google Test not found! Tests will be disabled.")

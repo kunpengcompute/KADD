@@ -21,7 +21,7 @@
 #endif
 
 #if KADD_USE_THIRD_PARTY_CJSON
-#include "../third_party/include/cJSON.h"
+#include "../third_party/cJSON/cJSON.h"
 #else
 #include <cJSON.h>
 #endif

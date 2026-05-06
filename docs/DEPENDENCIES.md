@@ -2,6 +2,30 @@
 
 本文档说明 KADD 项目所需第三方库的安装方法。
 
+## third_party 目录结构
+
+项目使用统一的目录结构管理第三方依赖：
+
+```
+third_party/
+├── cJSON/              # JSON 解析库
+│   ├── cJSON.h
+│   └── cJSON.c
+├── gtest/              # Google Test 测试框架
+│   ├── include/gtest/
+│   │   ├── gtest.h
+│   │   └── internal/
+│   └── src/
+│       ├── gtest-all.cc
+│       └── gtest_main.cc
+├── onnxruntime/        # ONNX Runtime 推理引擎
+│   ├── include/onnxruntime/
+│   └── lib/
+│       └── libonnxruntime.a
+└── libinjection/       # SQL 注入检测库
+    └── ...
+```
+
 ## 快速安装
 
 使用系统包管理器一键安装：
@@ -18,36 +42,53 @@
 
 **必需依赖**，用于 ML 模型推理。推荐版本：1.16.x 或 1.20.x
 
-### 手动安装
+### 版本选择
+
+| 版本 | 特点 | 适用场景 |
+|------|------|----------|
+| 1.16.x | 稳定版，ARM64 支持完善 | 生产环境推荐 |
+| 1.20.x | 最新特性，性能优化 | 开发测试 |
+| 1.10.x | 旧版本，兼容性好 | 旧系统 |
+
+### 手动安装（系统级）
 
 ```bash
-# 下载预编译包（根据架构选择：linux-x64 / linux-aarch64）
-wget https://github.com/microsoft/onnxruntime/releases/download/v1.16.0/onnxruntime-linux-aarch64-1.16.0.tgz
+# 检测系统架构
+uname -m
+# aarch64 → ARM64（树莓派、Jetson、ARM 服务器）
+# x86_64 → Intel/AMD 64位
+
+# 下载预编译包
+wget https://github.com/microsoft/onnxruntime/releases/download/v1.16.3/onnxruntime-linux-x64-1.16.3.tgz
+# 或 ARM64:
+wget https://github.com/microsoft/onnxruntime/releases/download/v1.16.3/onnxruntime-linux-aarch64-1.16.3.tgz
+
+# 解压
 tar xzf onnxruntime-linux-*.tgz
+cd onnxruntime-linux-*
 
 # 安装到系统目录
 sudo cp lib/libonnxruntime.so* /usr/local/lib/
 sudo cp -r include/onnxruntime /usr/local/include/
 sudo ldconfig
+
+# 验证安装
+pkg-config --modversion onnxruntime  # 如果有 .pc 文件
+ldconfig -p | grep onnxruntime       # 检查库是否被找到
 ```
 
 ### third_party 方式
 
 ```bash
-# 项目根目录执行
-mkdir -p third_party/lib third_party/include
-cp lib/libonnxruntime.so* third_party/lib/
-cp -r include/onnxruntime third_party/include/
+wget https://github.com/microsoft/onnxruntime/releases/download/v1.16.3/onnxruntime-linux-aarch64-1.16.3.tgz
+tar xzf onnxruntime-linux-*.tgz
+
+mkdir -p third_party/onnxruntime/lib third_party/onnxruntime/include/onnxruntime
+cp onnxruntime-linux-*/lib/libonnxruntime.so* third_party/onnxruntime/lib/
+cp onnxruntime-linux-*/include/*.h third_party/onnxruntime/include/onnxruntime/
+
+rm -rf onnxruntime-linux-*.tgz onnxruntime-linux-*
 ```
-
-### 环境变量
-
-```bash
-export ONNXRUNTIME_HOME=/path/to/onnxruntime
-export LD_LIBRARY_PATH=$ONNXRUNTIME_HOME/lib:$LD_LIBRARY_PATH
-```
-
----
 
 ## cJSON
 
@@ -65,10 +106,12 @@ sudo make install && sudo ldconfig
 ### third_party 方式
 
 ```bash
-mkdir -p third_party/src third_party/include
+mkdir -p third_party/cJSON
 wget https://github.com/DaveGamble/cJSON/archive/refs/heads/master.zip -O cJSON.zip
-unzip cJSON.zip && cp cJSON-master/cJSON.* third_party/src/
-cp cJSON-master/cJSON.h third_party/include/
+unzip cJSON.zip
+cp cJSON-master/cJSON.h third_party/cJSON/
+cp cJSON-master/cJSON.c third_party/cJSON/
+rm -rf cJSON-master cJSON.zip
 ```
 
 ---
@@ -90,8 +133,10 @@ sudo make install
 ### third_party 方式
 
 ```bash
-git clone https://github.com/google/googletest.git third_party/gtest
-cd third_party/gtest && git checkout release-1.12.1
+wget https://github.com/google/googletest/archive/refs/tags/release-1.12.1.tar.gz -O gtest.tar.gz
+tar xzf gtest.tar.gz
+mv googletest-release-1.12.1/googletest third_party/gtest
+rm gtest.tar.gz
 ```
 
 ---
