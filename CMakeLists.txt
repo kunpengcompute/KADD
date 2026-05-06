@@ -32,13 +32,13 @@ endif()
 # 自动检测 SVE2 支持（如果启用 SVE，尝试检测是否支持 SVE2）
 set(ENABLE_ARM_SVE2 FALSE)
 if(ENABLE_ARM_SVE)
-    # 检查编译器是否支持 SVE2
     include(CheckCSourceCompiles)
     check_c_source_compiles("
-        int main(void) {
-            __asm__(".arch armv9-a+sve2");
-            return 0;
-        }
+        #if defined(__ARM_FEATURE_SVE2) && __ARM_FEATURE_SVE2
+            int main(void) { return 0; }
+        #else
+            #error SVE2 not supported
+        #endif
     " ARM_SVE2_SUPPORTED)
 
     if(ARM_SVE2_SUPPORTED)

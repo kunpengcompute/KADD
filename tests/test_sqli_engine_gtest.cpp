@@ -9,7 +9,7 @@
 #include <vector>
 #include <string>
 #include <chrono>
-#include "../include/kadd_sqli_engine.h"
+#include "kadd_sqli_engine.h"
 
 /* ========== 测试夹具 ========== */
 
@@ -20,7 +20,7 @@ protected:
 
     void SetUp() override {
         // 每个测试前创建引擎
-        ASSERT_EQ(kadd_sqli_engine_create_from_file(&engine, "../config.json"), KADD_SQLI_OK)
+        ASSERT_EQ(kadd_sqli_engine_create_from_file(&engine, "../../config.json"), KADD_SQLI_OK)
             << "引擎创建失败，请检查 config.json 是否存在";
     }
 

@@ -8,19 +8,56 @@
 #include <gtest/gtest.h>
 #include <vector>
 #include <string>
-#include "../include/kadd_dfa_engine.h"
+#include <stdlib.h>
+#include "kadd_dfa_engine.h"
+#include "cJSON.h"
 
 /* ========== 测试夹具 ========== */
 
 class DFAEngineTest : public ::testing::Test {
 protected:
     kadd_dfa_engine_t *engine;
-    int max_input_length = 8192;
-    int max_output_dim = 8192;
+    int max_input_length;
+    int max_output_dim;
 
     void SetUp() override {
         // 每个测试前从 config.json 创建引擎
-        ASSERT_EQ(kadd_dfa_engine_create_from_file(&engine, "../config.json"), 0);
+        char *content = nullptr;
+        size_t len = 0;
+
+        // 读取 config.json
+        FILE *f = fopen("../../config.json", "rb");
+        ASSERT_NE(f, nullptr) << "无法打开 config.json";
+
+        fseek(f, 0, SEEK_END);
+        len = ftell(f);
+        fseek(f, 0, SEEK_SET);
+        content = (char*)malloc(len + 1);
+        ASSERT_NE(content, nullptr) << "内存分配失败";
+        fread(content, 1, len, f);
+        content[len] = '\0';
+        fclose(f);
+
+        // 解析 JSON
+        cJSON *json = cJSON_Parse(content);
+        ASSERT_NE(json, nullptr) << "JSON 解析失败: " << cJSON_GetErrorPtr();
+        free(content);
+
+        // 获取 kadd_dfa_engine 配置
+        cJSON *dfa_config = cJSON_GetObjectItem(json, "kadd_dfa_engine");
+        ASSERT_NE(dfa_config, nullptr) << "config.json 中缺少 kadd_dfa_engine 配置";
+
+        const char *table_path = cJSON_GetObjectItem(dfa_config, "table_path")->valuestring;
+        const char *state_path = cJSON_GetObjectItem(dfa_config, "state_path")->valuestring;
+        max_input_length = cJSON_GetObjectItem(dfa_config, "max_input_length")->valueint;
+        max_output_dim = cJSON_GetObjectItem(dfa_config, "max_output_dim")->valueint;
+
+        // 创建引擎
+        ASSERT_EQ(kadd_dfa_engine_create(&engine, table_path, state_path,
+                                         max_input_length, max_output_dim), 0)
+            << "引擎创建失败";
+
+        cJSON_Delete(json);
     }
 
     void TearDown() override {
