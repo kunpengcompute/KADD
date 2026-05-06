@@ -29,10 +29,10 @@ struct kadd_sqli_engine_t {
 /* ========== 公共接口 ========== */
 
 static int create_engine_internal(kadd_sqli_engine_t **engine,
-                                   const char *table_path, const char *state_path,
+                                   const kadd_dfa_table_paths_t *table_paths,
                                    const char *model_path, int feature_dim,
                                    int window_size, int max_output_dim, int max_input_length) {
-    if (!engine || !table_path || !state_path || !model_path) {
+    if (!engine || !table_paths || !model_path) {
         return KADD_SQLI_ERROR_INVALID_INPUT;
     }
 
@@ -46,7 +46,7 @@ static int create_engine_internal(kadd_sqli_engine_t **engine,
     e->max_output_dim = max_output_dim;
     e->max_input_length = max_input_length;
 
-    if (kadd_dfa_engine_create(&e->dfa_engine, table_path, state_path, e->max_input_length, e->max_output_dim) != 0) {
+    if (kadd_dfa_engine_create(&e->dfa_engine, table_paths, e->max_input_length, e->max_output_dim) != 0) {
         free(e);
         return KADD_SQLI_ERROR_DFA;
     }
@@ -107,9 +107,10 @@ int kadd_sqli_engine_create_from_file(kadd_sqli_engine_t **engine, const char *c
         return KADD_SQLI_ERROR_CONFIG;
     }
 
-    cJSON *dfa_table = cJSON_GetObjectItemCaseSensitive(dfa_obj, "table_path");
-    cJSON *dfa_state = cJSON_GetObjectItemCaseSensitive(dfa_obj, "state_path");
-    if (!cJSON_IsString(dfa_table) || !cJSON_IsString(dfa_state)) {
+    cJSON *dfa_transition = cJSON_GetObjectItemCaseSensitive(dfa_obj, "transition_table_path");
+    cJSON *dfa_output = cJSON_GetObjectItemCaseSensitive(dfa_obj, "output_table_path");
+    cJSON *dfa_eod = cJSON_GetObjectItemCaseSensitive(dfa_obj, "eod_table_path");
+    if (!cJSON_IsString(dfa_transition) || !cJSON_IsString(dfa_output) || !cJSON_IsString(dfa_eod)) {
         cJSON_Delete(root);
         return KADD_SQLI_ERROR_CONFIG;
     }
@@ -139,7 +140,13 @@ int kadd_sqli_engine_create_from_file(kadd_sqli_engine_t **engine, const char *c
     cJSON *dfa_max_in = cJSON_GetObjectItemCaseSensitive(dfa_obj, "max_input_length");
     int max_input_length = cJSON_IsNumber(dfa_max_in) ? (int)dfa_max_in->valuedouble : 8192;
 
-    int result = create_engine_internal(engine, dfa_table->valuestring, dfa_state->valuestring,
+    kadd_dfa_table_paths_t table_paths = {
+        dfa_transition->valuestring,
+        dfa_output->valuestring,
+        dfa_eod->valuestring
+    };
+
+    int result = create_engine_internal(engine, &table_paths,
                                         ml_model->valuestring, feature_dim, window_size,
                                         max_output_dim, max_input_length);
     cJSON_Delete(root);

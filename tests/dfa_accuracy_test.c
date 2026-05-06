@@ -55,9 +55,12 @@ typedef kadd_dfa_engine_t dfa_engine_t;
 // 兼容性函数包装器
 static dfa_engine_t *dfa_engine_create_wrapper(const char *table_dir) {
     kadd_dfa_engine_t *engine = NULL;
+    (void)table_dir;
+
     // 构建完整路径 - 直接使用绝对路径或更简单的相对路径
-    char table_path[512];
-    char state_path[512];
+    char transition_path[512];
+    char output_path[512];
+    char eod_path[512];
 
     // 尝试多个可能的路径
     const char *paths[] = {
@@ -67,31 +70,34 @@ static dfa_engine_t *dfa_engine_create_wrapper(const char *table_dir) {
         NULL
     };
 
-    const char *state_paths[] = {
-        "C:/Users/60907/Desktop/test0/c/tools/profile_data/states_meta.json",
-        "../tools/profile_data/states_meta.json",
-        "../../tools/profile_data/states_meta.json",
-        NULL
-    };
-
-    // 尝试每个路径组合
+    // 尝试每个路径
     for (int i = 0; paths[i]; i++) {
         FILE *f = fopen(paths[i], "rb");
         if (f) {
             fclose(f);
-            // 找到有效的table路径，现在找对应的state路径
-            for (int j = 0; state_paths[j]; j++) {
-                FILE *sf = fopen(state_paths[j], "r");
-                if (sf) {
-                    fclose(sf);
-                    // 两个文件都存在，使用这对路径
-                    strncpy(table_path, paths[i], sizeof(table_path) - 1);
-                    strncpy(state_path, state_paths[j], sizeof(state_path) - 1);
+            strncpy(transition_path, paths[i], sizeof(transition_path) - 1);
+            transition_path[sizeof(transition_path) - 1] = '\0';
+            strncpy(output_path, paths[i], sizeof(output_path) - 1);
+            output_path[sizeof(output_path) - 1] = '\0';
+            strncpy(eod_path, paths[i], sizeof(eod_path) - 1);
+            eod_path[sizeof(eod_path) - 1] = '\0';
 
-                    if (kadd_dfa_engine_create(&engine, table_path, state_path, 8192, 8192) == 0) {
-                        return (dfa_engine_t *)engine;
-                    }
-                }
+            char *file_name = strrchr(output_path, '/');
+            file_name = file_name ? file_name + 1 : output_path;
+            strcpy(file_name, "output_table.bin");
+
+            file_name = strrchr(eod_path, '/');
+            file_name = file_name ? file_name + 1 : eod_path;
+            strcpy(file_name, "eod_table.bin");
+
+            kadd_dfa_table_paths_t table_paths = {
+                transition_path,
+                output_path,
+                eod_path
+            };
+
+            if (kadd_dfa_engine_create(&engine, &table_paths, 8192, 8192) == 0) {
+                return (dfa_engine_t *)engine;
             }
         }
     }

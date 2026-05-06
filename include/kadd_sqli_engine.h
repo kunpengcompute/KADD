@@ -45,8 +45,9 @@ typedef struct kadd_sqli_engine_t kadd_sqli_engine_t;
  * @note 配置文件格式：
  *       {
  *         "kadd_dfa_engine": {
- *           "table_path": "path/to/transition_table.bin",
- *           "state_path": "path/to/states_meta.json",
+ *           "transition_table_path": "path/to/transition_table.bin",
+ *           "output_table_path": "path/to/output_table.bin",
+ *           "eod_table_path": "path/to/eod_table.bin",
  *           "max_input_length": 8192,    // 可选，默认 8192
  *           "max_output_dim": 8192       // 可选，默认 8192
  *         },
@@ -141,4 +142,3 @@ void kadd_sqli_engine_free(kadd_sqli_engine_t *engine);
 #endif
 
 #endif // KADD_SQLI_ENGINE_H
-

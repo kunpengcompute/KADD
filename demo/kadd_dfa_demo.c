@@ -228,31 +228,38 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    cJSON *table_path_item = cJSON_GetObjectItemCaseSensitive(dfa_config, "table_path");
-    cJSON *state_path_item = cJSON_GetObjectItemCaseSensitive(dfa_config, "state_path");
+    cJSON *transition_path_item = cJSON_GetObjectItemCaseSensitive(dfa_config, "transition_table_path");
+    cJSON *output_path_item = cJSON_GetObjectItemCaseSensitive(dfa_config, "output_table_path");
+    cJSON *eod_path_item = cJSON_GetObjectItemCaseSensitive(dfa_config, "eod_table_path");
     cJSON *max_input_item = cJSON_GetObjectItemCaseSensitive(dfa_config, "max_input_length");
     cJSON *max_output_item = cJSON_GetObjectItemCaseSensitive(dfa_config, "max_output_dim");
 
-    if (!cJSON_IsString(table_path_item) || !cJSON_IsString(state_path_item)) {
-        printf("✗ 配置文件中缺少 table_path 或 state_path\n");
+    if (!cJSON_IsString(transition_path_item) ||
+        !cJSON_IsString(output_path_item) ||
+        !cJSON_IsString(eod_path_item)) {
+        printf("✗ 配置文件中缺少 transition_table_path/output_table_path/eod_table_path\n");
         cJSON_Delete(config);
         return 1;
     }
 
-    const char *table_path = table_path_item->valuestring;
-    const char *state_path = state_path_item->valuestring;
+    kadd_dfa_table_paths_t table_paths = {
+        transition_path_item->valuestring,
+        output_path_item->valuestring,
+        eod_path_item->valuestring
+    };
     size_t max_input = max_input_item && cJSON_IsNumber(max_input_item) ? (size_t)max_input_item->valuedouble : 8192;
     size_t max_output = max_output_item && cJSON_IsNumber(max_output_item) ? (size_t)max_output_item->valuedouble : 8192;
 
-    printf("  table_path: %s\n", table_path);
-    printf("  state_path: %s\n", state_path);
+    printf("  transition_table_path: %s\n", table_paths.transition_table_path);
+    printf("  output_table_path: %s\n", table_paths.output_table_path);
+    printf("  eod_table_path: %s\n", table_paths.eod_table_path);
     printf("  max_input_length: %zu\n", max_input);
     printf("  max_output_dim: %zu\n", max_output);
 
     printf("\n正在初始化 DFA 引擎...\n");
 
     kadd_dfa_engine_t *engine = NULL;
-    int ret = kadd_dfa_engine_create(&engine, table_path, state_path, max_input, max_output);
+    int ret = kadd_dfa_engine_create(&engine, &table_paths, max_input, max_output);
     if (ret != 0) {
         printf("✗ 引擎创建失败 (错误码: %d)\n", ret);
         cJSON_Delete(config);
