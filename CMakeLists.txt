@@ -101,7 +101,6 @@ else()
     set(SEARCH_MODE "")
 endif()
 
-# 查找库
 find_library(ONNXRUNTIME_LIBRARIES
     NAMES onnxruntime
     PATHS ${SEARCH_PATHS}
@@ -109,11 +108,10 @@ find_library(ONNXRUNTIME_LIBRARIES
     ${SEARCH_MODE}
 )
 
-# 查找头文件（源代码使用 #include "onnxruntime/xxx.h"）
 find_path(ONNXRUNTIME_INCLUDE_DIRS
-    NAMES onnxruntime_c_api.h
+    NAMES onnxruntime/onnxruntime_c_api.h
     PATHS ${SEARCH_PATHS}
-    PATH_SUFFIXES include/onnxruntime include
+    PATH_SUFFIXES include
     ${SEARCH_MODE}
 )
 

@@ -41,7 +41,6 @@ cd demo
 gcc -O2 -o kadd_libinjection_demo \
     kadd_libinjection_demo.c \
     tools.c \
-    ../third_party/libinjection-main/src/libinjection.c \
     ../third_party/libinjection-main/src/libinjection_sqli.c \
     -I ../third_party/libinjection-main/src
 ```
@@ -52,25 +51,8 @@ cd demo
 gcc -O2 -o kadd_libinjection_demo.exe ^
     kadd_libinjection_demo.c ^
     tools.c ^
-    ..\third_party\libinjection-main\src\libinjection.c ^
     ..\third_party\libinjection-main\src\libinjection_sqli.c ^
     -I ..\third_party\libinjection-main\src
-```
-
-### 方式 3: 手动编译（备用）
-
-需要在 demo/CMakeLists.txt 中取消注释：
-
-```cmake
-# 取消注释这行
-add_kadd_demo(kadd_libinjection_demo kadd_libinjection_demo.c FALSE FALSE TRUE)
-```
-
-然后编译：
-
-```bash
-cmake -B build
-cmake --build build --target kadd_libinjection_demo
 ```
 
 ## 功能说明

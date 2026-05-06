@@ -65,13 +65,13 @@ add_kadd_demo(kadd_sqli_demo kadd_sqli_demo.c TRUE TRUE FALSE)
 
 # libinjection 对比演示
 set(LIBINJECTION_SRC_DIR ${CMAKE_SOURCE_DIR}/third_party/libinjection-main/src)
+set(LIBINJECTION_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/kadd_libinjection_demo.c
+    ${TOOLS_SRCS}
+    ${LIBINJECTION_SRC_DIR}/libinjection_sqli.c
+)
 if(EXISTS "${LIBINJECTION_SRC_DIR}/libinjection_sqli.c")
-    add_executable(kadd_libinjection_demo
-        kadd_libinjection_demo.c
-        ${TOOLS_SRCS}
-        ${LIBINJECTION_SRC_DIR}/libinjection.c
-        ${LIBINJECTION_SRC_DIR}/libinjection_sqli.c
-    )
+    add_executable(kadd_libinjection_demo ${LIBINJECTION_SOURCES})
     target_include_directories(kadd_libinjection_demo PRIVATE
         ${CMAKE_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}

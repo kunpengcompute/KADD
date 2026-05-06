@@ -30,33 +30,51 @@ static void detect_and_print(const char *input) {
 
     printf("  输入: \"%s\"\n", input);
 
-    // 步骤 1: init + tokenize (在 libinjection_sqli_init 中完成)
+    // 步骤 1: init
     void *timer = timer_start();
-    libinjection_sqli_init(&state, input, strlen(input), FLAG_NONE);
-    // 设置默认 lookup 函数
-    libinjection_sqli_callback(&state, libinjection_sqli_lookup, NULL);
+    libinjection_sqli_init(&state, input, strlen(input), FLAG_QUOTE_NONE | FLAG_SQL_MYSQL);
     double init_time = timer_end(timer);
 
-    // 步骤 2: fold (生成指纹)
+    // 步骤 2: tokenize (循环调用直到完成)
     timer = timer_start();
-    int token_count = libinjection_sqli_fold(&state);
+    int token_count = 0;
+    while (libinjection_sqli_tokenize(&state)) {
+        token_count++;
+    }
+    double tokenize_time = timer_end(timer);
+
+    // 打印 token 向量（重新 tokenize 以获取所有 token，不影响时间统计）
+    printf("  Token向量:\n");
+    struct libinjection_sqli_state print_state;
+    libinjection_sqli_init(&print_state, input, strlen(input), FLAG_QUOTE_NONE | FLAG_SQL_MYSQL);
+    int print_count = 0;
+    while (libinjection_sqli_tokenize(&print_state)) {
+        struct libinjection_sqli_token *tok = print_state.current;
+        printf("    [%d] type='%c' val=\"%.*s\" (pos:%zu len:%zu)\n",
+               print_count, tok->type, (int)tok->len, tok->val, tok->pos, tok->len);
+        print_count++;
+    }
+
+    // 步骤 3: fold (生成指纹)
+    timer = timer_start();
+    libinjection_sqli_fold(&state);
     double fold_time = timer_end(timer);
 
-    // 步骤 3: lookup (检查指纹)
+    // 步骤 4: lookup (检查指纹)
     timer = timer_start();
-    int is_sqli = state.lookup(&state, LOOKUP_FINGERPRINT, state.fingerprint,
-                             strlen(state.fingerprint));
+    int is_sqli = libinjection_sqli_check_fingerprint(&state);
     double lookup_time = timer_end(timer);
 
-    double total_time = init_time + fold_time + lookup_time;
+    double total_time = init_time + tokenize_time + fold_time + lookup_time;
 
     // 结果
     const char *icon = is_sqli ? "⚠"  : "✓";
     const char *status = is_sqli ? "[SQL 注入]" : "[安全]";
 
-    printf("  %s 结果: %-10s | 指纹: %6s | Fold后Token: %d\n", icon, status, state.fingerprint, token_count);
+    printf("  %s 结果: %-10s | 指纹: %6s | Token数: %d\n", icon, status, state.fingerprint, token_count);
     printf("  耗时分解:\n");
-    printf("    init+tokenize: %8.2f μs (%5.1f%%)\n", init_time, (init_time / total_time) * 100);
+    printf("    init:          %8.2f μs (%5.1f%%)\n", init_time, (init_time / total_time) * 100);
+    printf("    tokenize:      %8.2f μs (%5.1f%%)\n", tokenize_time, (tokenize_time / total_time) * 100);
     printf("    fold:          %8.2f μs (%5.1f%%)\n", fold_time, (fold_time / total_time) * 100);
     printf("    lookup:       %8.2f μs (%5.1f%%)\n", lookup_time, (lookup_time / total_time) * 100);
     printf("    总计:          %8.2f μs\n\n", total_time);
@@ -193,34 +211,41 @@ int main(int argc, char *argv[])
     for (int i = 0; i < 4; i++) {
         const char *sample = samples[i];
         struct libinjection_sqli_state state;
-        int token_count = 0;
 
-        double init_total = 0, fold_total = 0, lookup_total = 0;
+        double init_total = 0, tokenize_total = 0, fold_total = 0, lookup_total = 0;
         int iterations = 1000;
+        int token_count = 0, tc;
 
         for (int j = 0; j < iterations; j++) {
             void *timer;
 
             timer = timer_start();
-            libinjection_sqli_init(&state, sample, strlen(sample), FLAG_NONE);
-            libinjection_sqli_callback(&state, libinjection_sqli_lookup, NULL);
+            libinjection_sqli_init(&state, sample, strlen(sample), FLAG_QUOTE_NONE | FLAG_SQL_MYSQL);
             init_total += timer_end(timer);
 
             timer = timer_start();
-            token_count = libinjection_sqli_fold(&state);
+            tc = 0;
+            while (libinjection_sqli_tokenize(&state)) {
+                tc++;
+            }
+            token_count = tc;
+            tokenize_total += timer_end(timer);
+
+            timer = timer_start();
+            libinjection_sqli_fold(&state);
             fold_total += timer_end(timer);
 
             timer = timer_start();
-            state.lookup(&state, LOOKUP_FINGERPRINT, state.fingerprint,
-                      strlen(state.fingerprint));
+            libinjection_sqli_check_fingerprint(&state);
             lookup_total += timer_end(timer);
         }
 
         printf("样本: \"%s\"\n", sample);
-        printf("  init+tokenize: %8.2f μs\n", init_total / iterations);
-        printf("  fold:          %8.2f μs (Fold后Token: %d)\n", fold_total / iterations, token_count);
+        printf("  init:          %8.2f μs\n", init_total / iterations);
+        printf("  tokenize:      %8.2f μs (Token数: %d)\n", tokenize_total / iterations, token_count);
+        printf("  fold:          %8.2f μs\n", fold_total / iterations);
         printf("  lookup:       %8.2f μs\n", lookup_total / iterations);
-        printf("  总计:          %8.2f μs\n\n", (init_total + fold_total + lookup_total) / iterations);
+        printf("  总计:          %8.2f μs\n\n", (init_total + tokenize_total + fold_total + lookup_total) / iterations);
     }
 
     printf("✓ 测试完成\n");
