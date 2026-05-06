@@ -6,7 +6,7 @@ set(TOOLS_SRCS ${CMAKE_CURRENT_SOURCE_DIR}/tools.c)
 # ============================================================================
 # 通用 Demo 函数
 # ============================================================================
-function(add_kadd_demo DEMO_NAME SOURCE_FILE NEEDS_ML)
+function(add_kadd_demo DEMO_NAME SOURCE_FILE NEEDS_ML NEEDS_CJSON)
     add_executable(${DEMO_NAME} ${SOURCE_FILE} ${TOOLS_SRCS})
 
     target_include_directories(${DEMO_NAME} PRIVATE
@@ -18,6 +18,16 @@ function(add_kadd_demo DEMO_NAME SOURCE_FILE NEEDS_ML)
     if(${NEEDS_ML})
         target_include_directories(${DEMO_NAME} PRIVATE ${ONNXRUNTIME_INCLUDE_DIRS})
         target_link_libraries(${DEMO_NAME} PRIVATE ${ONNXRUNTIME_LIBRARIES})
+    endif()
+
+    # cJSON（DFA demo 和 SQLi demo 需要）
+    if(${NEEDS_CJSON} AND CJSON_FOUND)
+        if(CJSON_IS_THIRD_PARTY)
+            target_sources(${DEMO_NAME} PRIVATE ${CJSON_LIBRARIES})
+        else()
+            target_link_libraries(${DEMO_NAME} PRIVATE ${CJSON_LIBRARIES})
+        endif()
+        target_include_directories(${DEMO_NAME} PRIVATE ${CJSON_INCLUDE_DIRS})
     endif()
 
     # 链接引擎库
@@ -42,16 +52,16 @@ endfunction()
 # ============================================================================
 
 # DFA 引擎演示
-add_kadd_demo(kadd_dfa_demo kadd_dfa_demo.c FALSE)
+add_kadd_demo(kadd_dfa_demo kadd_dfa_demo.c FALSE TRUE)
 
 # 特征引擎演示
-add_kadd_demo(kadd_feature_demo kadd_feature_demo.c FALSE)
+add_kadd_demo(kadd_feature_demo kadd_feature_demo.c FALSE FALSE)
 
 # ML 引擎演示
-add_kadd_demo(kadd_ml_demo kadd_ml_demo.c TRUE)
+add_kadd_demo(kadd_ml_demo kadd_ml_demo.c TRUE FALSE)
 
 # SQL 注入检测演示
-add_kadd_demo(kadd_sqli_demo kadd_sqli_demo.c TRUE)
+add_kadd_demo(kadd_sqli_demo kadd_sqli_demo.c TRUE TRUE)
 
 # ============================================================================
 # 资源文件复制
