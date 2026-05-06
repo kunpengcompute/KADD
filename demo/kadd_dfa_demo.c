@@ -93,8 +93,8 @@ int main(int argc, char *argv[])
     printf("正在初始化 DFA 引擎...\n");
 
     kadd_dfa_engine_t *engine = NULL;
-    if (kadd_dfa_engine_create(&engine, "tools/profile_data/transition_table.bin",
-                                "tools/profile_data/states_meta.json", 8192, 8192) != 0) {
+    if (kadd_dfa_engine_create(&engine, "assets/data/transition_table.bin",
+                                "assets/data/states_meta.json", 8192, 8192) != 0) {
         printf("✗ 引擎创建失败，请检查文件路径\n");
         return 1;
     }
