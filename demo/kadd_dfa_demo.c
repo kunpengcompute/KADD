@@ -154,13 +154,13 @@ int main(int argc, char *argv[])
     printf("  max_input_length: %zu\n", max_input);
     printf("  max_output_dim: %zu\n", max_output);
 
-    cJSON_Delete(config);
-
     printf("\n正在初始化 DFA 引擎...\n");
 
     kadd_dfa_engine_t *engine = NULL;
-    if (kadd_dfa_engine_create(&engine, table_path, state_path, max_input, max_output) != 0) {
-        printf("✗ 引擎创建失败，请检查文件路径\n");
+    int ret = kadd_dfa_engine_create(&engine, table_path, state_path, max_input, max_output);
+    if (ret != 0) {
+        printf("✗ 引擎创建失败 (错误码: %d)\n", ret);
+        cJSON_Delete(config);
         return 1;
     }
 
@@ -197,6 +197,7 @@ int main(int argc, char *argv[])
 
     // ========== 释放资源 ==========
     kadd_dfa_engine_free(engine);
+    cJSON_Delete(config);
     printf("\n✓ 引擎已释放\n");
 
     return 0;
