@@ -24,6 +24,11 @@ struct kadd_sqli_engine_t {
     int window_size;
     int max_output_dim;
     int max_input_length;
+
+    /* 内存池 - 避免每次检测都分配内存 */
+    int *token_buffer;           /* DFA 分词输出缓冲区 */
+    int *feature_buffer;         /* 特征向量缓冲区 */
+    float *float_feature_buffer; /* 浮点特征缓冲区 */
 };
 
 /* ========== 公共接口 ========== */
@@ -46,13 +51,39 @@ static int create_engine_internal(kadd_sqli_engine_t **engine,
     e->max_output_dim = max_output_dim;
     e->max_input_length = max_input_length;
 
+    /* 分配内存池 */
+    e->token_buffer = (int *)malloc(e->max_output_dim * sizeof(int));
+    e->feature_buffer = (int *)calloc(e->feature_dim, sizeof(int));
+#if defined(_WIN32)
+    e->float_feature_buffer = (float *)malloc(e->feature_dim * sizeof(float));
+#else
+    if (posix_memalign((void **)&e->float_feature_buffer, 16, e->feature_dim * sizeof(float)) != 0) {
+        e->float_feature_buffer = NULL;
+    }
+#endif
+
+    if (!e->token_buffer || !e->feature_buffer || !e->float_feature_buffer) {
+        /* 内存分配失败，清理已分配的资源 */
+        if (e->token_buffer) free(e->token_buffer);
+        if (e->feature_buffer) free(e->feature_buffer);
+        if (e->float_feature_buffer) free(e->float_feature_buffer);
+        free(e);
+        return KADD_SQLI_ERROR_MEMORY;
+    }
+
     if (kadd_dfa_engine_create(&e->dfa_engine, table_paths, e->max_input_length, e->max_output_dim) != 0) {
+        free(e->token_buffer);
+        free(e->feature_buffer);
+        free(e->float_feature_buffer);
         free(e);
         return KADD_SQLI_ERROR_DFA;
     }
 
     if (kadd_model_load(&e->ml_model, model_path, e->feature_dim) != 0) {
         kadd_dfa_engine_free(e->dfa_engine);
+        free(e->token_buffer);
+        free(e->feature_buffer);
+        free(e->float_feature_buffer);
         free(e);
         return KADD_SQLI_ERROR_ML;
     }
@@ -164,77 +195,28 @@ int kadd_sqli_detect(kadd_sqli_engine_t *engine, const char *input, float *proba
 
     *probability = 0.0f;
 
-    /* 步骤 1: DFA 分词 */
-    int *token_output = (int *)malloc(engine->max_output_dim * sizeof(int));
-    if (!token_output) {
-        return KADD_SQLI_ERROR_MEMORY;
-    }
-
+    /* 步骤 1: DFA 分词 - 使用内存池 */
     int token_count = 0;
-    if (kadd_dfa_engine_tokenize(engine->dfa_engine, input, strlen(input), token_output, &token_count) != 0) {
-        free(token_output);
+    if (kadd_dfa_engine_tokenize(engine->dfa_engine, input, strlen(input),
+                                 engine->token_buffer, &token_count) != 0) {
         return KADD_SQLI_ERROR_DFA;
     }
 
-    fprintf(stderr, "[SQLi_DEBUG] DFA tokens (%d): ", token_count);
-    for (int i = 0; i < (token_count < 10 ? token_count : 10); i++) {
-        fprintf(stderr, "%d ", token_output[i]);
-    }
-    if (token_count > 10) fprintf(stderr, "...");
-    fprintf(stderr, "\n");
+    /* 步骤 2: 特征提取 - 使用内存池 */
+    memset(engine->feature_buffer, 0, engine->feature_dim * sizeof(int));
 
-    /* 步骤 2: 特征提取 */
-    int *features = (int *)calloc(engine->feature_dim, sizeof(int));
-    if (!features) {
-        free(token_output);
-        return KADD_SQLI_ERROR_MEMORY;
-    }
-
-    if (kadd_seq_to_feature(token_output, token_count, engine->window_size, features, engine->feature_dim) != 0) {
-        free(token_output);
-        free(features);
+    if (kadd_seq_to_feature(engine->token_buffer, token_count, engine->window_size,
+                             engine->feature_buffer, engine->feature_dim) != 0) {
         return KADD_SQLI_ERROR_FEATURE;
     }
 
-    fprintf(stderr, "[SQLi_DEBUG] Features (first 10): ");
-    int nonzero = 0;
-    for (int i = 0; i < (engine->feature_dim < 10 ? engine->feature_dim : 10); i++) {
-        fprintf(stderr, "%d ", features[i]);
-        if (features[i] > 0) nonzero++;
-    }
-    if (engine->feature_dim > 10) fprintf(stderr, "...");
-    fprintf(stderr, " (nonzero: %d)\n", nonzero);
-
-    /* 步骤 3: ML 推理 */
-    float *float_features = NULL;
-#if defined(_WIN32)
-    float_features = (float *)malloc(engine->feature_dim * sizeof(float));
-#else
-    if (posix_memalign((void **)&float_features, 16, engine->feature_dim * sizeof(float)) != 0) {
-        free(token_output);
-        free(features);
-        return KADD_SQLI_ERROR_MEMORY;
-    }
-#endif
-
-    if (!float_features) {
-        free(token_output);
-        free(features);
-        return KADD_SQLI_ERROR_MEMORY;
-    }
-
+    /* 步骤 3: ML 推理 - 使用内存池 */
     for (int i = 0; i < engine->feature_dim; i++) {
-        float_features[i] = (float)features[i];
+        engine->float_feature_buffer[i] = (float)engine->feature_buffer[i];
     }
 
     float prob = 0.0f;
-    int ret = kadd_model_predict(engine->ml_model, float_features, &prob);
-
-    fprintf(stderr, "[SQLi_DEBUG] ML result: prob=%.6f, ret=%d\n", prob, ret);
-
-    free(token_output);
-    free(features);
-    free(float_features);
+    int ret = kadd_model_predict(engine->ml_model, engine->float_feature_buffer, &prob);
 
     if (ret != 0) {
         return KADD_SQLI_ERROR_ML;
@@ -363,5 +345,11 @@ void kadd_sqli_engine_free(kadd_sqli_engine_t *engine) {
     if (engine->dfa_engine) {
         kadd_dfa_engine_free(engine->dfa_engine);
     }
+
+    /* 释放内存池 */
+    if (engine->token_buffer) free(engine->token_buffer);
+    if (engine->feature_buffer) free(engine->feature_buffer);
+    if (engine->float_feature_buffer) free(engine->float_feature_buffer);
+
     free(engine);
 }

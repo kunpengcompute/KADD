@@ -44,7 +44,7 @@ ctest --verbose
 
 ```bash
 # 启用 SVE（自动检测 SVE2 支持）
-cmake -DENABLE_ARM_SVE=ON -DCMAKE_BUILD_TYPE=Release -DKADD_OPTIMIZE=ON
+cmake -DENABLE_ARM_SVE=ON -DCMAKE_BUILD_TYPE=Release -DKADD_OPTIMIZE=ON ..
 cmake --build .
 
 # SVE2 支持的系统会自动启用 SVE2

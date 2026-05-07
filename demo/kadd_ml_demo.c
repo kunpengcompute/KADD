@@ -15,12 +15,9 @@
 #include <sys/time.h>
 #endif
 
-// 默认模型路径
+// 默认模型路径（CMake 复制到 build/demo/assets/model/）
 const char *default_model_paths[] = {
-    "../../assets/model/model_tokens_rf.onnx",
-    "../assets/model/model_tokens_rf.onnx",
     "assets/model/model_tokens_rf.onnx",
-    "/usr/local/share/kadd/model_tokens_rf.onnx",
     NULL
 };
 

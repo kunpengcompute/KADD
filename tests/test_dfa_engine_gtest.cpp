@@ -20,72 +20,13 @@ protected:
     kadd_dfa_engine_t *engine = nullptr;
     int max_input_length = 8192;
     int max_output_dim = 8192;
-    std::string transition_table_path;
-    std::string output_table_path;
-    std::string eod_table_path;
-
-    static bool file_exists(const std::string &path) {
-        FILE *fp = fopen(path.c_str(), "rb");
-        if (!fp) {
-            return false;
-        }
-        fclose(fp);
-        return true;
-    }
-
-    static std::string dirname(const std::string &path) {
-        const size_t pos = path.find_last_of("/\\");
-        if (pos == std::string::npos) {
-            return ".";
-        }
-        return path.substr(0, pos);
-    }
-
-    bool set_table_paths_from_dir(const std::string &dir) {
-        const std::string sep = (!dir.empty() && (dir.back() == '/' || dir.back() == '\\')) ? "" : "/";
-        const std::string transition = dir + sep + "transition_table.bin";
-        const std::string output = dir + sep + "output_table.bin";
-        const std::string eod = dir + sep + "eod_table.bin";
-
-        if (!file_exists(transition) || !file_exists(output) || !file_exists(eod)) {
-            return false;
-        }
-
-        transition_table_path = transition;
-        output_table_path = output;
-        eod_table_path = eod;
-        return true;
-    }
-
-    void init_table_paths() {
-        std::vector<std::string> candidate_dirs;
-
-#ifdef TEST_DATA_PATH
-        candidate_dirs.push_back(dirname(TEST_DATA_PATH));
-#endif
-        candidate_dirs.push_back("assets/data");
-        candidate_dirs.push_back("../assets/data");
-        candidate_dirs.push_back("../../assets/data");
-        candidate_dirs.push_back("KADD_5571/assets/data");
-        candidate_dirs.push_back("../KADD_5571/assets/data");
-        candidate_dirs.push_back(".");
-        candidate_dirs.push_back("..");
-
-        for (const auto &dir : candidate_dirs) {
-            if (set_table_paths_from_dir(dir)) {
-                return;
-            }
-        }
-
-        FAIL() << "找不到 DFA 三张表: transition_table.bin/output_table.bin/eod_table.bin";
-    }
 
     void SetUp() override {
-        init_table_paths();
+        // 使用 CMake 复制的统一路径: build/tests/assets/data/
         kadd_dfa_table_paths_t table_paths = {
-            transition_table_path.c_str(),
-            output_table_path.c_str(),
-            eod_table_path.c_str()
+            "assets/data/transition_table.bin",
+            "assets/data/output_table.bin",
+            "assets/data/eod_table.bin"
         };
         ASSERT_EQ(kadd_dfa_engine_create(&engine, &table_paths, max_input_length, max_output_dim), 0);
     }

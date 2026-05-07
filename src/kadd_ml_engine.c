@@ -50,15 +50,11 @@ static int create_session(kadd_model_handle_t *handle, const char *model_path) {
         for (int version = ORT_API_VERSION; version >= 15; version--) {
             g_ort_api = api_base->GetApi(version);
             if (g_ort_api) {
-                fprintf(stderr, "KADD ML: Using ONNX Runtime API version %d\n", version);
                 break;
             }
         }
 
         if (!g_ort_api) {
-            fprintf(stderr, "KADD ML: Failed to get ONNX Runtime API (tried versions %d down to 15)\n", ORT_API_VERSION);
-            fprintf(stderr, "KADD ML: ONNX Runtime 1.16+ requires API version 15 or higher\n");
-            fprintf(stderr, "KADD ML: Please ensure ONNX Runtime library is compatible\n");
             return -1;
         }
     }
@@ -123,8 +119,6 @@ static int create_session(kadd_model_handle_t *handle, const char *model_path) {
     handle->api->ReleaseSessionOptions(options);
 
     if (status) {
-        const char *msg = handle->api->GetErrorMessage(status);
-        fprintf(stderr, "KADD ML: Failed to create session: %s\n", msg ? msg : "Unknown error");
         handle->api->ReleaseStatus(status);
         return -1;
     }
@@ -199,18 +193,6 @@ int kadd_model_load(kadd_model_handle_t **handle, const char *model_path, int fe
 int kadd_model_predict(kadd_model_handle_t *handle, const float *features, float *probability) {
     if (!handle || !features || !probability) return -1;
 
-    // 调试: 检查输入特征
-    #ifdef KADD_DEBUG_ML
-    float max_feat = 0.0f;
-    float sum_feat = 0.0f;
-    for (int i = 0; i < handle->feature_dim; i++) {
-        if (features[i] > max_feat) max_feat = features[i];
-        sum_feat += features[i];
-    }
-    fprintf(stderr, "[KADD_ML_DEBUG] Input features: max=%.2f, sum=%.2f, dim=%d\n",
-            max_feat, sum_feat, handle->feature_dim);
-    #endif
-
     int64_t shape[] = {1, handle->feature_dim};
     OrtValue *input = NULL;
     OrtStatus *status = handle->api->CreateTensorWithDataAsOrtValue(
@@ -273,21 +255,7 @@ int kadd_model_predict(kadd_model_handle_t *handle, const float *features, float
      * 所以 data[1] 就是正类概率
      */
 
-    // 调试: 打印原始输出
-    #ifdef KADD_DEBUG_ML
-    fprintf(stderr, "[KADD_ML_DEBUG] Output shape dims: %zu\n", output_dim_count);
-    if (output_dim_count >= 2) {
-        fprintf(stderr, "[KADD_ML_DEBUG] Output shape: [%ld, %ld]\n", output_shape[0], output_shape[1]);
-    }
-    fprintf(stderr, "[KADD_ML_DEBUG] Raw output: data[0]=%.6f, data[1]=%.6f\n", data[0], data[1]);
-    #endif
-
     *probability = data[1];
-
-    // 调试: 打印最终结果
-    #ifdef KADD_DEBUG_ML
-    fprintf(stderr, "[KADD_ML_DEBUG] Final probability: %.6f\n", *probability);
-    #endif
 
     handle->api->ReleaseValue(output);
     return 0;

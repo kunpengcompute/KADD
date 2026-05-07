@@ -1,6 +1,36 @@
 # Tests CMakeLists.txt (仅 gtest 测试)
 
 # ============================================================================
+# 资源文件复制
+# ============================================================================
+add_custom_target(copy_test_resources ALL
+    COMMAND ${CMAKE_COMMAND} -E echo "Copying test resources..."
+)
+
+# 复制 config.json
+add_custom_command(TARGET copy_test_resources POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+        ${CMAKE_SOURCE_DIR}/config.json
+        ${CMAKE_BINARY_DIR}/tests/config.json
+    COMMENT "Copying config.json for tests"
+)
+
+# 复制 assets 目录
+add_custom_command(TARGET copy_test_resources POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/assets
+        ${CMAKE_BINARY_DIR}/tests/assets
+    COMMENT "Copying assets directory for tests"
+)
+
+# 创建 results 输出目录
+add_custom_command(TARGET copy_test_resources POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        ${CMAKE_BINARY_DIR}/tests/results
+    COMMENT "Creating tests/results output directory"
+)
+
+# ============================================================================
 # 通用测试函数
 # ============================================================================
 function(add_kadd_gtest TEST_NAME SOURCE_FILE)
@@ -33,11 +63,14 @@ function(add_kadd_gtest TEST_NAME SOURCE_FILE)
         endif()
     endif()
 
-    # 定义模型和数据路径（支持自定义 assets 目录）
+    # 定义模型和数据路径（统一使用 build/tests/assets）
     target_compile_definitions(${TEST_NAME} PRIVATE
-        TEST_MODEL_PATH="${KADD_ASSETS_PATH}/model/model_tokens_rf.onnx"
-        TEST_DATA_PATH="${KADD_ASSETS_PATH}/data/parsed_results_fixed.json"
+        TEST_MODEL_PATH="assets/model/model_tokens_rf.onnx"
+        TEST_DATA_PATH="assets/data/parsed_results_fixed.json"
     )
+
+    # 添加资源复制依赖
+    add_dependencies(${TEST_NAME} copy_test_resources)
 
     add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
 endfunction()
