@@ -20,15 +20,15 @@
 ### 依赖安装
 
 ```bash
-# Ubuntu/Debian
-sudo apt-get update
-sudo apt-get install cmake build-essential
+# openEuler
+sudo yum update
+sudo yum install cmake gcc-c++ make
 
 # 安装 ONNX Runtime
-sudo apt-get install libonnxruntime-dev
+sudo yum install onnxruntime-devel
 
 # 可选：安装 cJSON 和 Google Test
-sudo apt-get install libcjson-dev libgtest-dev
+sudo yum install cjson-devel gtest-devel
 ```
 
 > 详见 [第三方库安装指南](docs/DEPENDENCIES.md)

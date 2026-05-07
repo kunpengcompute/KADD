@@ -57,49 +57,15 @@ static dfa_engine_t *dfa_engine_create_wrapper(const char *table_dir) {
     kadd_dfa_engine_t *engine = NULL;
     (void)table_dir;
 
-    // 构建完整路径 - 直接使用绝对路径或更简单的相对路径
-    char transition_path[512];
-    char output_path[512];
-    char eod_path[512];
-
-    // 尝试多个可能的路径
-    const char *paths[] = {
-        "C:/Users/60907/Desktop/test0/c/tools/profile_data/transition_table.bin",
-        "../tools/profile_data/transition_table.bin",
-        "../../tools/profile_data/transition_table.bin",
-        NULL
+    // 使用 CMake 复制的统一路径: build/tests/assets/data/
+    kadd_dfa_table_paths_t table_paths = {
+        "assets/data/transition_table.bin",
+        "assets/data/output_table.bin",
+        "assets/data/eod_table.bin"
     };
 
-    // 尝试每个路径
-    for (int i = 0; paths[i]; i++) {
-        FILE *f = fopen(paths[i], "rb");
-        if (f) {
-            fclose(f);
-            strncpy(transition_path, paths[i], sizeof(transition_path) - 1);
-            transition_path[sizeof(transition_path) - 1] = '\0';
-            strncpy(output_path, paths[i], sizeof(output_path) - 1);
-            output_path[sizeof(output_path) - 1] = '\0';
-            strncpy(eod_path, paths[i], sizeof(eod_path) - 1);
-            eod_path[sizeof(eod_path) - 1] = '\0';
-
-            char *file_name = strrchr(output_path, '/');
-            file_name = file_name ? file_name + 1 : output_path;
-            strcpy(file_name, "output_table.bin");
-
-            file_name = strrchr(eod_path, '/');
-            file_name = file_name ? file_name + 1 : eod_path;
-            strcpy(file_name, "eod_table.bin");
-
-            kadd_dfa_table_paths_t table_paths = {
-                transition_path,
-                output_path,
-                eod_path
-            };
-
-            if (kadd_dfa_engine_create(&engine, &table_paths, 8192, 8192) == 0) {
-                return (dfa_engine_t *)engine;
-            }
-        }
+    if (kadd_dfa_engine_create(&engine, &table_paths, 8192, 8192) == 0) {
+        return (dfa_engine_t *)engine;
     }
 
     return NULL;
@@ -259,27 +225,55 @@ int load_test_data_from_json(const char *filepath, TestDataArray *array) {
     long file_size = ftell(file);
     fseek(file, 0, SEEK_SET);
 
+    // 检查文件大小，对于超大文件给出警告
+    if (file_size > 100 * 1024 * 1024) {  // 大于100MB
+        printf("警告: 文件很大 (%.2f MB)，解析可能需要较长时间和内存\n", file_size / 1024.0 / 1024.0);
+        printf("建议: 考虑使用较小的测试数据集\n");
+    }
+
     // 读取整个文件
     char *content = (char *)malloc(file_size + 1);
+    if (!content) {
+        printf("错误: 无法分配内存 (%ld 字节)\n", file_size + 1);
+        fclose(file);
+        return 0;
+    }
+
     size_t read_size = fread(content, 1, file_size, file);
     content[read_size] = '\0';
     fclose(file);
 
-    printf("文件大小: %ld bytes (%.2f MB)\n", file_size, file_size / 1024.0 / 1024.0);
-    printf("开始解析 JSON...\n");
-    fflush(stdout);
+    // printf("文件大小: %ld bytes (%.2f MB)\n", file_size, file_size / 1024.0 / 1024.0);
+    // printf("开始解析 JSON...\n");
+    // fflush(stdout);
 
     // 使用cJSON解析
     clock_t parse_start = clock();
+    printf("开始解析 JSON 文件 (%.2f MB)...\n", file_size / 1024.0 / 1024.0);
+    fflush(stdout);
+
     cJSON *root = cJSON_Parse(content);
     clock_t parse_end = clock();
 
     if (!root) {
         const char *error_ptr = cJSON_GetErrorPtr();
         if (error_ptr != NULL) {
-            printf("错误: JSON解析失败，位置: %s\n", error_ptr);
+            // 计算错误位置在文件中的偏移量
+            long error_offset = error_ptr - content;
+            printf("错误: JSON解析失败，位置: 偏移量 %ld 字节 (文件大小: %ld 字节)\n", error_offset, file_size);
+
+            // 只显示错误位置周围有限的内容（最多200字符）
+            long context_start = error_offset > 100 ? error_offset - 100 : 0;
+            long context_end = error_offset + 100 < file_size ? error_offset + 100 : file_size;
+            long context_len = context_end - context_start;
+
+            // 确保不超过合理长度
+            if (context_len > 200) context_len = 200;
+
+            printf("错误上下文 (共%ld字符): ...\n", context_len);
+            // 不再打印具体的JSON内容，避免大量输出
         } else {
-            printf("错误: JSON解析失败\n");
+            printf("错误: JSON解析失败 (未知原因)\n");
         }
         free(content);
         return 0;
@@ -605,7 +599,7 @@ void save_results_to_json(const char *filepath, AccuracyResult *result, TestResu
         return;
     }
 
-    printf("正在保存结果到 %s...\n", filepath);
+    // printf("正在保存结果到 %s...\n", filepath);
 
     // 写入JSON文件头
     fprintf(file, "{\n");
@@ -667,7 +661,7 @@ void save_results_to_json(const char *filepath, AccuracyResult *result, TestResu
     fprintf(file, "}\n");
 
     fclose(file);
-    printf("结果已保存到 %s\n", filepath);
+    // printf("结果已保存到 %s\n", filepath);
 }
 
 // 保存不一致的token到单独的JSON文件
@@ -678,7 +672,7 @@ void save_mismatches_to_json(const char *filepath, TestResultArray *results) {
         return;
     }
 
-    printf("正在保存不匹配token到 %s...\n", filepath);
+    // printf("正在保存不匹配token到 %s...\n", filepath);
 
     // 统计不匹配数量
     int mismatch_count = 0;
@@ -773,7 +767,7 @@ void save_mismatches_to_json(const char *filepath, TestResultArray *results) {
     fprintf(file, "}\n");
 
     fclose(file);
-    printf("不匹配token已保存到 %s (共%d条)\n", filepath, mismatch_count);
+    // printf("不匹配token已保存到 %s (共%d条)\n", filepath, mismatch_count);
 }
 
 int main(void) {
@@ -798,21 +792,10 @@ int main(void) {
     TestDataArray test_array;
     init_test_array(&test_array);
 
-    // 尝试多个可能的路径
-    const char *paths[] = {
-        "../tools/profile_data/full_dfa_tokenize_results.json",
-        "C:/Users/60907/Desktop/test0/c/tools/profile_data/full_dfa_tokenize_results.json",
-        NULL
-    };
-
-    int loaded = 0;
-    for (int i = 0; paths[i]; i++) {
-        loaded = load_test_data_from_json(paths[i], &test_array);
-        if (loaded > 0) {
-            printf("从文件加载: %s\n", paths[i]);
-            break;
-        }
-    }
+    // 使用 CMake 复制的统一路径
+    const char *data_path = "assets/data/full_dfa_tokenize_results.json";
+    int loaded = load_test_data_from_json(data_path, &test_array);
+    printf("从文件加载: %s\n", data_path);
 
     printf("成功加载 %d 条测试数据\n\n", loaded);
 
@@ -845,14 +828,14 @@ int main(void) {
     int max_tests = 1000000;  // 默认只测试前1000条，避免卡死
     // int max_tests = 0;  // 0表示测试所有数据（需要很长时间）
 
-    run_accuracy_test(engine, &test_array, &result, &result_array, 1, max_tests);
+    run_accuracy_test(engine, &test_array, &result, &result_array, 0, max_tests);
 
     clock_t end_time = clock();
     double elapsed_time = (double)(end_time - start_time) / CLOCKS_PER_SEC;
 
     // 保存结果到JSON文件
-    save_results_to_json("../tests/results/dfa_accuracy_results.json", &result, &result_array);
-    save_mismatches_to_json("../tests/results/dfa_mismatches.json", &result_array);
+    save_results_to_json("results/dfa_accuracy_results.json", &result, &result_array);
+    save_mismatches_to_json("results/dfa_mismatches.json", &result_array);
 
     // 打印结果
     printf("\n");
