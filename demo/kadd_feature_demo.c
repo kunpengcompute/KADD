@@ -185,6 +185,124 @@ void test_performance() {
     free(feature);
 }
 
+// 批处理测试
+void test_batch_feature() {
+    printf("\n╔════════════════════════════════════════════════════════════╗\n");
+    printf("║                    批处理测试                                ║\n");
+    printf("╚════════════════════════════════════════════════════════════╝\n\n");
+
+    int batch_count = 0;
+    printf("请输入要处理的序列数量 (1-100, 直接回车使用默认值10): ");
+
+    char input[64];
+    fgets(input, sizeof(input), stdin);
+    input[strcspn(input, "\n")] = 0;
+
+    if (strlen(input) == 0) {
+        batch_count = 10;
+        printf("使用默认数量: 10\n");
+    } else if (sscanf(input, "%d", &batch_count) != 1 || batch_count < 1 || batch_count > 100) {
+        printf("数量无效，使用默认值10\n");
+        batch_count = 10;
+    }
+
+    int feature_dim = 28;
+    int window_size = 5;
+
+    // 准备批处理数据
+    const int **seqs = (const int **)malloc(batch_count * sizeof(int *));
+    int *seq_lens = (int *)malloc(batch_count * sizeof(int));
+    int *features = (int *)calloc(batch_count * feature_dim, sizeof(int));
+
+    if (!seqs || !seq_lens || !features) {
+        printf("内存分配失败\n");
+        free(seqs);
+        free(seq_lens);
+        free(features);
+        return;
+    }
+
+    // 读取序列
+    printf("\n请输入 %d 个序列（用逗号或空格分隔，直接回车使用默认值）:\n", batch_count);
+    for (int i = 0; i < batch_count; i++) {
+        printf("[%d]> ", i + 1);
+        char seq_input[1024];
+        if (!fgets(seq_input, sizeof(seq_input), stdin)) break;
+        seq_input[strcspn(seq_input, "\n")] = 0;
+
+        if (strlen(seq_input) == 0) {
+            // 使用默认序列
+            int *default_seq = (int *)malloc(7 * sizeof(int));
+            if (default_seq) {
+                int temp[] = {7, 11, 8, 12, 8, 11, 8};
+                memcpy(default_seq, temp, 7 * sizeof(int));
+                seqs[i] = default_seq;
+                seq_lens[i] = 7;
+                printf("使用默认序列: [7, 11, 8, 12, 8, 11, 8]\n");
+            }
+        } else {
+            seq_lens[i] = parse_sequence(seq_input, (int **)&seqs[i]);
+            if (seq_lens[i] < 0) {
+                printf("序列解析失败\n");
+                seq_lens[i] = 0;
+            } else {
+                printf("解析到 %d 个值\n", seq_lens[i]);
+            }
+        }
+    }
+
+    // 执行批处理
+    printf("\n正在执行批处理...\n");
+    void *timer = timer_start();
+
+    kadd_feature_batch_t batch = {
+        .seqs = seqs,
+        .seq_lens = seq_lens,
+        .count = batch_count,
+        .features = features,
+        .feature_dim = feature_dim,
+        .window_size = window_size,
+        .batch_size = 32
+    };
+
+    int result = kadd_seq_to_feature_batch(&batch);
+    double batch_time = timer_end(timer);
+
+    // 打印结果
+    printf("\n批处理完成！\n");
+    printf("┌─────────────────────────────────────────────────────────────┐\n");
+    printf("│ 批处理结果                                                  │\n");
+    printf("├─────────────────────────────────────────────────────────────┤\n");
+    printf("│ 总序列数:     %5d                                         │\n", batch_count);
+    printf("│ 成功处理:     %5d                                         │\n", result > 0 ? result : 0);
+    printf("│ 总耗时:       %8.2f μs                                 │\n", batch_time);
+    printf("│ 平均耗时:     %8.2f μs/条                               │\n", batch_time / batch_count);
+    printf("└─────────────────────────────────────────────────────────────┘\n\n");
+
+    // 详细结果
+    for (int i = 0; i < batch_count; i++) {
+        printf("  [%d] 序列长度: %d, 特征前5维: [", i + 1, seq_lens[i]);
+        int *feat = &features[i * feature_dim];
+        for (int j = 0; j < 5 && j < feature_dim; j++) {
+            printf("%d", feat[j]);
+            if (j < 4) printf(", ");
+        }
+        printf("]\n");
+    }
+
+    // 清理
+    for (int i = 0; i < batch_count; i++) {
+        if (seq_lens[i] > 0) {
+            free((void *)seqs[i]);
+        }
+    }
+    free(seqs);
+    free(seq_lens);
+    free(features);
+
+    printf("\n批处理测试完成\n");
+}
+
 // 主菜单
 void show_main_menu() {
     printf("\n╔════════════════════════════════════════════════════════════╗\n");
@@ -192,7 +310,8 @@ void show_main_menu() {
     printf("╠════════════════════════════════════════════════════════════╣\n");
     printf("║  1. 特征转换测试                                            ║\n");
     printf("║  2. 性能测试                                                ║\n");
-    printf("║  0. 退出程序                                               ║\n");
+    printf("║  3. 批处理测试                                              ║\n");
+    printf("║ 0. 退出程序                                               ║\n");
     printf("╚════════════════════════════════════════════════════════════╝\n");
 }
 
@@ -208,7 +327,7 @@ int main() {
 
     while (running) {
         show_main_menu();
-        printf("请选择操作 (0-2): ");
+        printf("请选择操作 (0-3): ");
 
         char input[64];
         if (fgets(input, sizeof(input), stdin) == NULL) break;
@@ -226,12 +345,15 @@ int main() {
             case 2:
                 test_performance();
                 break;
+            case 3:
+                test_batch_feature();
+                break;
             case 0:
                 running = 0;
                 printf("退出程序\n");
                 break;
             default:
-                printf("无效选择，请输入 0-2\n");
+                printf("无效选择，请输入 0-3\n");
                 break;
         }
     }

@@ -3,6 +3,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "kadd_errors.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -23,13 +24,25 @@ typedef struct {
 } kadd_dfa_table_paths_t;
 
 /**
+ * @brief DFA 批处理上下文
+ */
+typedef struct {
+    const char **inputs;      /**< 输入字符串数组 */
+    const size_t *lengths;    /**< 长度数组（NULL表示自动计算） */
+    int count;                /**< 输入数量 */
+    int **outputs;            /**< 输出token数组（调用者分配，每项需free） */
+    int *dims;                /**< 每个的token数量 */
+    int batch_size;           /**< 批次大小（0或负数表示默认64） */
+} kadd_dfa_batch_t;
+
+/**
  * @brief 创建 DFA 引擎
  *
  * @param engine 输出参数，返回创建的引擎指针
  * @param table_paths DFA 三张表路径
  * @param max_input_length 最大输入字符长度
  * @param max_output_dim 最大输出特征维度
- * @return 0 成功，非0 失败
+ * @return 0 成功，<0 失败（错误码）
  */
 int kadd_dfa_engine_create(kadd_dfa_engine_t **engine,
                            const kadd_dfa_table_paths_t *table_paths,
@@ -51,13 +64,26 @@ void kadd_dfa_engine_free(kadd_dfa_engine_t *e);
  * @param input_length 输入字符串长度
  * @param output 输出数组（存储token索引）
  * @param dim 输出参数，返回实际的token数量
- * @return 0 成功，非0 失败
+ * @return 0 成功，<0 失败（错误码）
  */
 int kadd_dfa_engine_tokenize(const kadd_dfa_engine_t *e,
                              const char *input,
                              size_t input_length,
                              int *output,
                              int *dim);
+
+/**
+ * @brief 批量分词多个字符串
+ *
+ * @param e DFA 引擎
+ * @param batch 批处理上下文
+ * @return 0 完全成功，>0 部分成功（返回成功数量），<0 失败（错误码）
+ *
+ * @note 失败的项目 dims[i] 会被设为 -1，outputs[i] 为 NULL
+ * @note 调用者负责释放成功的 outputs[i]
+ */
+int kadd_dfa_engine_tokenize_batch(const kadd_dfa_engine_t *e,
+                                   kadd_dfa_batch_t *batch);
 
 #ifdef __cplusplus
 }

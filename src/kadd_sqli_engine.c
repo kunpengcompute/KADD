@@ -231,106 +231,111 @@ int kadd_sqli_detect(kadd_sqli_engine_t *engine, const char *input, float *proba
  */
 int kadd_sqli_detect_batch(kadd_sqli_engine_t *engine, const char **inputs, int count, float *probabilities, int batch_size) {
     if (!engine || !inputs || !probabilities || count <= 0) {
-        return KADD_SQLI_ERROR_INVALID_INPUT;
+        return KADD_ERROR_INVALID_INPUT;
     }
 
     if (batch_size <= 0) batch_size = 64;
     if (batch_size > 1024) batch_size = 1024;
 
-    for (int i = 0; i < count; i++) {
-        probabilities[i] = -1.0f;
-    }
+    // 初始化所有概率为-1（表示失败）
+    memset(probabilities, 0, count * sizeof(float));
 
     int success_count = 0;
 
+    // ========== 在循环外分配临时缓冲区（一次性分配，重复使用） ==========
+    int **dfa_outputs = (int **)calloc(batch_size, sizeof(int *));
+    int *dfa_dims = (int *)calloc(batch_size, sizeof(int));
+    int *features = (int *)calloc(batch_size * engine->feature_dim, sizeof(int));
+    float *float_features = (float *)malloc(batch_size * engine->feature_dim * sizeof(float));
+
+    if (!dfa_outputs || !dfa_dims || !features || !float_features) {
+        free(dfa_outputs);
+        free(dfa_dims);
+        free(features);
+        free(float_features);
+        return KADD_ERROR_OUT_OF_MEMORY;
+    }
+
+    // 分批处理（复用缓冲区）
     for (int batch_start = 0; batch_start < count; batch_start += batch_size) {
         int current_batch = (batch_start + batch_size < count) ? batch_size : (count - batch_start);
 
-        int *token_counts = (int *)calloc(current_batch, sizeof(int));
-        int **all_token_outputs = (int **)calloc(current_batch, sizeof(int *));
+        // ========== 步骤1: DFA 批量 tokenize ==========
+        kadd_dfa_batch_t dfa_batch = {
+            .inputs = &inputs[batch_start],
+            .lengths = NULL,
+            .count = current_batch,
+            .outputs = dfa_outputs,
+            .dims = dfa_dims,
+            .batch_size = current_batch
+        };
 
-        if (!token_counts || !all_token_outputs) {
-            free(token_counts);
-            free(all_token_outputs);
-            continue;
-        }
-
-        for (int i = 0; i < current_batch; i++) {
-            all_token_outputs[i] = (int *)malloc(engine->max_output_dim * sizeof(int));
-            if (!all_token_outputs[i]) {
-                // 内存分配失败，标记此样本失败
-                token_counts[i] = -1;
-                continue;
-            }
-            if (kadd_dfa_engine_tokenize(engine->dfa_engine, inputs[batch_start + i],
-                                         strlen(inputs[batch_start + i]),
-                                         all_token_outputs[i], &token_counts[i]) != 0) {
-                free(all_token_outputs[i]);
-                all_token_outputs[i] = NULL;
-                token_counts[i] = -1;
-            }
-        }
-
-        int *all_features = (int *)calloc(current_batch * engine->feature_dim, sizeof(int));
-        if (!all_features) {
-            free(token_counts);
+        int dfa_result = kadd_dfa_engine_tokenize_batch(engine->dfa_engine, &dfa_batch);
+        if (dfa_result < 0) {
+            // DFA 批处理失败，清理并继续下一批次
             for (int i = 0; i < current_batch; i++) {
-                if (all_token_outputs[i]) free(all_token_outputs[i]);
+                if (dfa_outputs[i]) free(dfa_outputs[i]);
             }
-            free(all_token_outputs);
             continue;
         }
 
-        // 统计有效样本数量并压缩到数组开头
-        int valid_count = 0;
-        for (int i = 0; i < current_batch; i++) {
-            if (all_token_outputs[i] && token_counts[i] >= 0) {
-                kadd_seq_to_feature(all_token_outputs[i], token_counts[i], engine->window_size,
-                                   &all_features[valid_count * engine->feature_dim], engine->feature_dim);
-                valid_count++;
+        // ========== 步骤2: Feature 批量提取特征 ==========
+        kadd_feature_batch_t feat_batch = {
+            .seqs = (const int **)dfa_outputs,
+            .seq_lens = dfa_dims,
+            .count = current_batch,
+            .features = features,
+            .feature_dim = engine->feature_dim,
+            .window_size = engine->window_size,
+            .batch_size = current_batch
+        };
+
+        int feat_result = kadd_seq_to_feature_batch(&feat_batch);
+        if (feat_result < 0) {
+            // Feature 批处理失败，清理 DFA 并继续下一批次
+            for (int i = 0; i < current_batch; i++) {
+                if (dfa_outputs[i]) free(dfa_outputs[i]);
+            }
+            continue;
+        }
+
+        // ========== 步骤3: ML 批量推理 ==========
+        // 转换为浮点特征（复用缓冲区）
+        int total_features = current_batch * engine->feature_dim;
+        for (int i = 0; i < total_features; i++) {
+            float_features[i] = (float)features[i];
+        }
+
+        float batch_probs[1024];
+        int ml_result = kadd_model_predict_batch(engine->ml_model, float_features, current_batch,
+                                                batch_probs, 64);
+
+        // 只在 ML 成功时更新概率
+        if (ml_result >= 0) {
+            for (int i = 0; i < current_batch; i++) {
+                if (dfa_dims[i] > 0) {
+                    probabilities[batch_start + i] = batch_probs[i];
+                    success_count++;
+                }
             }
         }
 
-        // 只处理有效的样本
-        if (valid_count > 0) {
-            int total_features = valid_count * engine->feature_dim;
-            float *float_features = NULL;
-    #if defined(_WIN32)
-            float_features = (float *)malloc(total_features * sizeof(float));
-    #else
-            posix_memalign((void **)&float_features, 16, total_features * sizeof(float));
-    #endif
-
-            if (float_features) {
-                for (int i = 0; i < total_features; i++) {
-                    float_features[i] = (float)all_features[i];
-                }
-
-                float batch_probs[1024];
-                int ml_result = kadd_model_predict_batch(engine->ml_model, float_features, valid_count, batch_probs, 64);
-
-                // 将结果映射回原始索引
-                int valid_idx = 0;
-                for (int i = 0; i < current_batch && valid_idx < ml_result; i++) {
-                    if (all_token_outputs[i] && token_counts[i] >= 0) {
-                        probabilities[batch_start + i] = batch_probs[valid_idx++];
-                        success_count++;
-                    }
-                }
-
-                free(float_features);
+        // 清理 DFA 输出（为下一批次准备）
+        for (int i = 0; i < current_batch; i++) {
+            if (dfa_outputs[i]) {
+                free(dfa_outputs[i]);
+                dfa_outputs[i] = NULL;
             }
         }
-
-        free(token_counts);
-        for (int i = 0; i < current_batch; i++) {
-            if (all_token_outputs[i]) free(all_token_outputs[i]);
-        }
-        free(all_token_outputs);
-        free(all_features);
     }
 
-    return success_count;
+    // ========== 释放循环外分配的缓冲区 ==========
+    free(dfa_outputs);
+    free(dfa_dims);
+    free(features);
+    free(float_features);
+
+    return (success_count == count) ? KADD_SUCCESS : success_count;
 }
 
 /**

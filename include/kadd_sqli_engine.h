@@ -40,7 +40,7 @@ typedef struct kadd_sqli_engine_t kadd_sqli_engine_t;
  * @param engine 引擎句柄指针的指针
  * @param config_file JSON 配置文件路径 (如 "config.json")
  *
- * @return KADD_SQLI_OK 成功, 其他值表示失败
+ * @return 0 成功，<0 失败（错误码）
  *
  * @note 配置文件格式：
  *       {
@@ -61,9 +61,9 @@ typedef struct kadd_sqli_engine_t kadd_sqli_engine_t;
  * @example
  * @code
  * kadd_sqli_engine_t *engine = NULL;
- * if (kadd_sqli_engine_create_from_file(&engine, "config.json") == KADD_SQLI_OK) {
+ * if (kadd_sqli_engine_create_from_file(&engine, "config.json") == KADD_SUCCESS) {
  *     float probability;
- *     if (kadd_sqli_detect(engine, "id=1' OR '1'='1", &probability) == KADD_SQLI_OK) {
+ *     if (kadd_sqli_detect(engine, "id=1' OR '1'='1", &probability) == KADD_SUCCESS) {
  *         printf("SQL注入概率: %.2f%%\n", probability * 100);
  *     }
  *     kadd_sqli_engine_free(engine);
@@ -79,14 +79,14 @@ int kadd_sqli_engine_create_from_file(kadd_sqli_engine_t **engine, const char *c
  * @param input 输入字符串（如 URL 参数）
  * @param probability 输出概率值指针 [0, 1]
  *
- * @return KADD_SQLI_OK 成功, 其他值表示失败
+ * @return 0 成功，<0 失败（错误码）
  *
  * @note 返回 SQL 注入概率值，调用方根据业务需求判断阈值
  *
  * @example
  * @code
  * float probability;
- * if (kadd_sqli_detect(engine, "id=1' OR '1'='1", &probability) == KADD_SQLI_OK) {
+ * if (kadd_sqli_detect(engine, "id=1' OR '1'='1", &probability) == KADD_SUCCESS) {
  *     if (probability >= 0.5f) {
  *         printf("检测到 SQL 注入，概率: %.2f%%\n", probability * 100);
  *     }
@@ -104,7 +104,7 @@ int kadd_sqli_detect(kadd_sqli_engine_t *engine, const char *input, float *proba
  * @param probabilities 输出概率数组（需预先分配，至少 count 个元素）
  * @param batch_size ML推理批次大小（建议值：32/64/128，0表示自动选择）
  *
- * @return 成功检测的数量，负值表示失败
+ * @return 0 完全成功，>0 部分成功（返回成功数量），<0 失败（错误码）
  *
  * @note 使用 ML 引擎的批量推理能力，性能优于逐个检测
  * @note 即使某个输入失败也会继续处理其他输入
@@ -115,8 +115,10 @@ int kadd_sqli_detect(kadd_sqli_engine_t *engine, const char *input, float *proba
  * const char *inputs[] = {"id=1", "id=1' OR '1'='1", "search=test"};
  * float probabilities[3];
  *
- * int detected = kadd_sqli_detect_batch(engine, inputs, 3, probabilities, 64);
- * printf("成功检测: %d/3\n", detected);
+ * int result = kadd_sqli_detect_batch(engine, inputs, 3, probabilities, 64);
+ * if (result >= 0) {
+ *     printf("成功检测: %d/3\n", result);
+ * }
  *
  * for (int i = 0; i < 3; i++) {
  *     if (probabilities[i] >= 0) {

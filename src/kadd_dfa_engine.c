@@ -308,3 +308,79 @@ int kadd_dfa_engine_tokenize(const kadd_dfa_engine_t *e,
     *dim = (int)count;
     return KADD_DFA_OK;
 }
+
+int kadd_dfa_engine_tokenize_batch(const kadd_dfa_engine_t *e,
+                                   kadd_dfa_batch_t *batch) {
+    if (e == NULL || batch == NULL) {
+        return KADD_ERROR_NULL_PTR;
+    }
+
+    if (batch->inputs == NULL || batch->outputs == NULL || batch->dims == NULL) {
+        return KADD_ERROR_NULL_PTR;
+    }
+
+    if (batch->count <= 0) {
+        return KADD_ERROR_INVALID_INPUT;
+    }
+
+    // 设置默认批次大小
+    int actual_batch_size = batch->batch_size;
+    if (actual_batch_size <= 0) {
+        actual_batch_size = 64;
+    }
+    if (actual_batch_size > 1024) {
+        actual_batch_size = 1024;
+    }
+
+    // 初始化输出
+    for (int i = 0; i < batch->count; i++) {
+        batch->outputs[i] = NULL;
+        batch->dims[i] = -1;
+    }
+
+    int success_count = 0;
+
+    // 分批处理
+    for (int batch_start = 0; batch_start < batch->count; batch_start += actual_batch_size) {
+        int current_batch = (batch_start + actual_batch_size < batch->count) ?
+                           actual_batch_size : (batch->count - batch_start);
+
+        // 处理当前批次
+        for (int i = 0; i < current_batch; i++) {
+            int idx = batch_start + i;
+            const char *input = batch->inputs[idx];
+            size_t input_len = (batch->lengths != NULL) ? batch->lengths[idx] : 0;
+
+            if (input == NULL) {
+                continue;
+            }
+
+            // 如果没有提供长度，自动计算
+            if (batch->lengths == NULL) {
+                input_len = strlen(input);
+            }
+
+            // 分配输出缓冲区
+            int *output = (int *)malloc(e->max_output_dim * sizeof(int));
+            if (output == NULL) {
+                continue;
+            }
+
+            // 调用单条 tokenize
+            int dim = 0;
+            int result = kadd_dfa_engine_tokenize(e, input, input_len, output, &dim);
+
+            if (result == KADD_DFA_OK && dim > 0) {
+                batch->outputs[idx] = output;
+                batch->dims[idx] = dim;
+                success_count++;
+            } else {
+                free(output);
+                batch->dims[idx] = -1;
+            }
+        }
+    }
+
+    // 返回成功数量（与 KADD_SUCCESS 区分）
+    return (success_count == batch->count) ? KADD_SUCCESS : success_count;
+}

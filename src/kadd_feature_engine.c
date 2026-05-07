@@ -162,3 +162,65 @@ int kadd_seq_to_feature(const int *seq, int seq_len, int window_size,
     free(result);
     return 0;
 }
+
+int kadd_seq_to_feature_batch(kadd_feature_batch_t *batch) {
+    if (batch == NULL) {
+        return KADD_ERROR_NULL_PTR;
+    }
+
+    if (batch->seqs == NULL || batch->seq_lens == NULL || batch->features == NULL) {
+        return KADD_ERROR_NULL_PTR;
+    }
+
+    if (batch->count <= 0 || batch->feature_dim <= 0 || batch->window_size <= 0) {
+        return KADD_ERROR_INVALID_PARAM;
+    }
+
+    // 设置默认批次大小
+    int actual_batch_size = batch->batch_size;
+    if (actual_batch_size <= 0) {
+        actual_batch_size = 64;
+    }
+    if (actual_batch_size > 1024) {
+        actual_batch_size = 1024;
+    }
+
+    // 初始化输出特征为0
+    memset(batch->features, 0, batch->count * batch->feature_dim * sizeof(int));
+
+    int success_count = 0;
+
+    // 分批处理
+    for (int batch_start = 0; batch_start < batch->count; batch_start += actual_batch_size) {
+        int current_batch = (batch_start + actual_batch_size < batch->count) ?
+                           actual_batch_size : (batch->count - batch_start);
+
+        // 处理当前批次
+        for (int i = 0; i < current_batch; i++) {
+            int idx = batch_start + i;
+            const int *seq = batch->seqs[idx];
+            int seq_len = batch->seq_lens[idx];
+
+            if (seq == NULL || seq_len <= 0) {
+                continue;
+            }
+
+            // 获取当前序列的特征输出位置
+            int *feature = batch->features + idx * batch->feature_dim;
+
+            // 调用单条特征提取
+            int result = kadd_seq_to_feature(seq, seq_len, batch->window_size,
+                                            feature, batch->feature_dim);
+
+            if (result == 0) {
+                success_count++;
+            } else {
+                // 失败则保持特征为0
+                memset(feature, 0, batch->feature_dim * sizeof(int));
+            }
+        }
+    }
+
+    // 返回成功数量（与 KADD_SUCCESS 区分）
+    return (success_count == batch->count) ? KADD_SUCCESS : success_count;
+}

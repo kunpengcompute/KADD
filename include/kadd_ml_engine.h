@@ -32,11 +32,11 @@ typedef struct kadd_model_handle_t kadd_model_handle_t;
  * @param model_path 模型文件路径 (.onnx)
  * @param feature_dim 特征维度
  *
- * @return 0 成功, -1 失败
+ * @return 0 成功，<0 失败（错误码）
  *
  * @example
  * kadd_model_handle_t *model = NULL;
- * if (kadd_model_load(&model, "model/model_tokens.onnx", 28) == 0) {
+ * if (kadd_model_load(&model, "model/model_tokens.onnx", 28) == KADD_SUCCESS) {
  *     // 使用模型
  *     kadd_model_free(model);
  * }
@@ -50,7 +50,7 @@ int kadd_model_load(kadd_model_handle_t **handle, const char *model_path, int fe
  * @param features 特征向量 (feature_dim 维 float 数组)
  * @param probability 输出概率 [0, 1]
  *
- * @return 0 成功, -1 失败
+ * @return 0 成功，<0 失败（错误码）
  */
 int kadd_model_predict(kadd_model_handle_t *handle, const float *features, float *probability);
 
@@ -63,7 +63,7 @@ int kadd_model_predict(kadd_model_handle_t *handle, const float *features, float
  * @param probabilities 输出概率数组
  * @param batch_size 批次大小（推荐值：32/64/128，设置为0则自动选择）
  *
- * @return 成功预测的样本数，-1 失败
+ * @return 0 完全成功，>0 部分成功（返回成功数量），<0 失败（错误码）
  *
  * @note 使用分块批量推理，每次处理 batch_size 个样本，避免内存峰值过高
  * @note 较大的 batch_size 性能更好，但需要更多内存

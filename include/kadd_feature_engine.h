@@ -2,10 +2,24 @@
 #define KADD_FEATURE_ENGINE_H
 
 #include <stddef.h>
+#include "kadd_errors.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/**
+ * @brief 特征批处理上下文
+ */
+typedef struct {
+    const int **seqs;         /**< token序列数组 */
+    const int *seq_lens;      /**< 序列长度数组 */
+    int count;                /**< 序列数量 */
+    int *features;            /**< 输出特征（调用者分配，二维展平） */
+    int feature_dim;          /**< 特征维度 */
+    int window_size;          /**< 滑动窗口大小 */
+    int batch_size;           /**< 批次大小（0或负数表示默认64） */
+} kadd_feature_batch_t;
 
 /**
  * @brief 将不定长序列转换为固定维度特征向量
@@ -16,7 +30,7 @@ extern "C" {
  * @param feature 输出特征向量（需预先分配）
  * @param feature_dim 输出特征维度
  *
- * @return 0 成功, -1 失败
+ * @return 0 成功，<0 失败（错误码）
  *
  * @note 支持 ARM SVE 加速（如果编译时启用）
  *
@@ -30,6 +44,16 @@ extern "C" {
  */
 int kadd_seq_to_feature(const int *seq, int seq_len, int window_size,
                         int *feature, int feature_dim);
+
+/**
+ * @brief 批量将token序列转换为特征向量
+ *
+ * @param batch 批处理上下文
+ * @return 0 完全成功，>0 部分成功（返回成功数量），<0 失败（错误码）
+ *
+ * @note 失败的序列对应位置特征设为 0
+ */
+int kadd_seq_to_feature_batch(kadd_feature_batch_t *batch);
 
 #ifdef __cplusplus
 }
