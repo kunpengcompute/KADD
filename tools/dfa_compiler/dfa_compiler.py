@@ -17,6 +17,8 @@ import sys
 import os
 import re
 import struct
+import json
+from pathlib import Path
 from collections import defaultdict
 
 if sys.platform == 'win32':
@@ -108,8 +110,9 @@ class DFACompiler:
     ]
     TOKEN_CHAR_TO_ID = {char: idx + 1 for idx, char in enumerate(TOKEN_CHAR_ORDER)}
 
-    def __init__(self, dfa_file):
+    def __init__(self, dfa_file, output_dir=None):
         self.dfa_file = dfa_file
+        self.output_dir = output_dir
         self.states = {}  # state_name -> DFAState
         self.state_names = []  # state_id -> state_name
         self.entry_state = None
@@ -170,7 +173,7 @@ class DFACompiler:
 
         # 5. 保存编译结果
         print("\n[5/5] 保存编译结果...")
-        output_dir = os.getcwd()
+        output_dir = self.output_dir or os.getcwd()
         self._save_compiled_dfa(transition_table, output_table, eod_table, output_dir)
 
         print("\n" + "=" * 80)
@@ -1465,10 +1468,44 @@ class DFACompiler:
                 f.write(struct.pack('<H', cell))
         print(f"      EOF表 : {eod_file}")
 
-def main():
-    dfa_file = os.path.join(os.getcwd(), "profile_sqli_fixed.txt")
+def _resolve_kadd_paths():
+    """解析 KADD 工程内 profile 与 config.json 表输出路径。"""
+    script_dir = Path(__file__).resolve().parent
+    project_root = script_dir.parents[1]
+    dfa_file = script_dir / "profile_sqli_fixed.txt"
+    config_file = project_root / "config.json"
 
-    compiler = DFACompiler(dfa_file)
+    with open(config_file, 'r', encoding='utf-8') as f:
+        config = json.load(f)
+
+    dfa_config = config.get('kadd_dfa_engine', {})
+    required_keys = ('transition_table_path', 'output_table_path', 'eod_table_path')
+    missing = [key for key in required_keys if not dfa_config.get(key)]
+    if missing:
+        raise ValueError(f"{config_file} 缺少 kadd_dfa_engine 配置项: {', '.join(missing)}")
+
+    table_dirs = set()
+    for key in required_keys:
+        path = Path(dfa_config[key])
+        if not path.is_absolute():
+            path = project_root / path
+        table_dirs.add(path.parent)
+
+    if len(table_dirs) != 1:
+        raise ValueError("三张 DFA 表必须配置在同一个目录下，才能复用 _save_compiled_dfa")
+
+    output_dir = next(iter(table_dirs))
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return dfa_file, str(output_dir)
+
+def main():
+    try:
+        dfa_file, output_dir = _resolve_kadd_paths()
+    except Exception as e:
+        print(f"[ERROR] 解析 KADD DFA 编译路径失败: {e}")
+        return False
+
+    compiler = DFACompiler(str(dfa_file), output_dir=output_dir)
     success = compiler.compile()
 
     return success
