@@ -86,6 +86,13 @@ if(CJSON_FOUND)
         NEED_CJSON
         LINK_LIBRARIES kadd_dfa_engine kadd_feature_engine kadd_ml_engine
     )
+
+    # 配置加载器
+    add_kadd_library(kadd_config_loader
+        VERSION 1.0.0
+        SOURCES kadd_config_loader.c
+        NEED_CJSON
+    )
 endif()
 
 # ============================================================================

@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "kadd_dfa_engine.h"
+#include "kadd_config_loader.h"
 #include "tools.h"
 
 /* 检测是否需要使用 third_party cJSON */
@@ -115,7 +116,7 @@ static void tokenize_and_print(kadd_dfa_engine_t *engine, const char *input) {
 
     timer = timer_start();
     while (libinjection_sqli_tokenize(&lib_state)) {
-        if (lib_count < 8192) {
+        if (lib_count < 8192 && lib_state.current) {
             lib_tokens[lib_count++] = libinjection_type_to_index(lib_state.current->type);
         }
     }
@@ -226,77 +227,26 @@ int main(int argc, char *argv[])
 
     const char *config_file = (argc > 1) ? argv[1] : "config.json";
 
-    FILE *f = fopen(config_file, "r");
-    if (!f) {
-        printf("✗ 无法打开配置文件: %s\n", config_file);
+    kadd_config_t config;
+    if (kadd_config_load(config_file, &config) != 0) {
+        printf("✗ 无法加载配置文件: %s\n", config_file);
         return 1;
     }
 
-    fseek(f, 0, SEEK_END);
-    long file_size = ftell(f);
-    fseek(f, 0, SEEK_SET);
-
-    char *config_content = (char *)malloc(file_size + 1);
-    if (!config_content) {
-        printf("✗ 内存分配失败\n");
-        fclose(f);
-        return 1;
-    }
-
-    fread(config_content, 1, file_size, f);
-    config_content[file_size] = '\0';
-    fclose(f);
-
-    cJSON *config = cJSON_Parse(config_content);
-    free(config_content);
-
-    if (!config) {
-        printf("✗ 配置文件解析失败\n");
-        return 1;
-    }
-
-    cJSON *dfa_config = cJSON_GetObjectItemCaseSensitive(config, "kadd_dfa_engine");
-    if (!dfa_config) {
-        printf("✗ 配置文件中缺少 kadd_dfa_engine 节点\n");
-        cJSON_Delete(config);
-        return 1;
-    }
-
-    cJSON *transition_path_item = cJSON_GetObjectItemCaseSensitive(dfa_config, "transition_table_path");
-    cJSON *output_path_item = cJSON_GetObjectItemCaseSensitive(dfa_config, "output_table_path");
-    cJSON *eod_path_item = cJSON_GetObjectItemCaseSensitive(dfa_config, "eod_table_path");
-    cJSON *max_input_item = cJSON_GetObjectItemCaseSensitive(dfa_config, "max_input_length");
-    cJSON *max_output_item = cJSON_GetObjectItemCaseSensitive(dfa_config, "max_output_dim");
-
-    if (!cJSON_IsString(transition_path_item) ||
-        !cJSON_IsString(output_path_item) ||
-        !cJSON_IsString(eod_path_item)) {
-        printf("✗ 配置文件中缺少 transition_table_path/output_table_path/eod_table_path\n");
-        cJSON_Delete(config);
-        return 1;
-    }
-
-    kadd_dfa_table_paths_t table_paths = {
-        transition_path_item->valuestring,
-        output_path_item->valuestring,
-        eod_path_item->valuestring
-    };
-    size_t max_input = max_input_item && cJSON_IsNumber(max_input_item) ? (size_t)max_input_item->valuedouble : 8192;
-    size_t max_output = max_output_item && cJSON_IsNumber(max_output_item) ? (size_t)max_output_item->valuedouble : 8192;
-
-    printf("  transition_table_path: %s\n", table_paths.transition_table_path);
-    printf("  output_table_path: %s\n", table_paths.output_table_path);
-    printf("  eod_table_path: %s\n", table_paths.eod_table_path);
-    printf("  max_input_length: %zu\n", max_input);
-    printf("  max_output_dim: %zu\n", max_output);
+    printf("  transition_table_path: %s\n", config.dfa.table_paths.transition_table_path);
+    printf("  output_table_path: %s\n", config.dfa.table_paths.output_table_path);
+    printf("  eod_table_path: %s\n", config.dfa.table_paths.eod_table_path);
+    printf("  max_input_length: %d\n", config.dfa.max_input_length);
+    printf("  max_output_dim: %d\n", config.dfa.max_output_dim);
 
     printf("\n正在初始化 DFA 引擎...\n");
 
     kadd_dfa_engine_t *engine = NULL;
-    int ret = kadd_dfa_engine_create(&engine, &table_paths, max_input, max_output);
+    int ret = kadd_dfa_engine_create(&engine, &config.dfa.table_paths,
+                                     config.dfa.max_input_length,
+                                     config.dfa.max_output_dim);
     if (ret != 0) {
         printf("✗ 引擎创建失败 (错误码: %d)\n", ret);
-        cJSON_Delete(config);
         return 1;
     }
 
@@ -447,7 +397,7 @@ int main(int argc, char *argv[])
 
     // ========== 释放资源 ==========
     kadd_dfa_engine_free(engine);
-    cJSON_Delete(config);
+    kadd_config_free(&config);
     printf("\n✓ 引擎已释放\n");
 
     return 0;

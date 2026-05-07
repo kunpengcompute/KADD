@@ -38,7 +38,7 @@ function(add_kadd_gtest TEST_NAME SOURCE_FILE)
     target_compile_features(${TEST_NAME} PRIVATE cxx_std_17)
 
     # 链接必要的引擎库
-    target_link_libraries(${TEST_NAME} PRIVATE kadd_other_engines)
+    target_link_libraries(${TEST_NAME} PRIVATE kadd_other_engines kadd_config_loader)
 
     target_include_directories(${TEST_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/include)
 

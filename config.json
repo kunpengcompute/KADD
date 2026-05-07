@@ -3,8 +3,8 @@
     "transition_table_path": "assets/data/transition_table.bin",
     "output_table_path": "assets/data/output_table.bin",
     "eod_table_path": "assets/data/eod_table.bin",
-    "max_input_length": 8192,
-    "max_output_dim": 8192
+    "max_input_length": 300,
+    "max_output_dim": 300
   },
   "kadd_ml_engine": {
     "model_path": "assets/model/model_tokens_rf.onnx",

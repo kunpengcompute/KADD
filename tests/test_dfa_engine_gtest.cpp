@@ -12,23 +12,24 @@
 #include <vector>
 #include <string>
 #include "../include/kadd_dfa_engine.h"
+#include "../include/kadd_config_loader.h"
 
 /* ========== 测试夹具 ========== */
 
 class DFAEngineTest : public ::testing::Test {
 protected:
     kadd_dfa_engine_t *engine = nullptr;
-    int max_input_length = 8192;
-    int max_output_dim = 8192;
+    kadd_config_t config;
 
     void SetUp() override {
-        // 使用 CMake 复制的统一路径: build/tests/assets/data/
-        kadd_dfa_table_paths_t table_paths = {
-            "assets/data/transition_table.bin",
-            "assets/data/output_table.bin",
-            "assets/data/eod_table.bin"
-        };
-        ASSERT_EQ(kadd_dfa_engine_create(&engine, &table_paths, max_input_length, max_output_dim), 0);
+        // 从config.json加载配置
+        ASSERT_EQ(kadd_config_load(nullptr, &config), 0)
+            << "无法加载config.json配置文件";
+
+        // 使用配置文件中的参数
+        ASSERT_EQ(kadd_dfa_engine_create(&engine, &config.dfa.table_paths,
+                                         config.dfa.max_input_length,
+                                         config.dfa.max_output_dim), 0);
     }
 
     void TearDown() override {
@@ -41,7 +42,7 @@ protected:
 
     // 辅助函数：执行分词并返回结果
     std::vector<int> tokenize(const std::string &input) {
-        std::vector<int> tokens(max_output_dim);
+        std::vector<int> tokens(config.dfa.max_output_dim);
         int token_count = 0;
 
         int ret = kadd_dfa_engine_tokenize(engine, input.c_str(),
@@ -162,9 +163,9 @@ TEST_F(DFAEngineTest, VeryLongInput) {
 
 TEST_F(DFAEngineTest, MaxInputBoundary) {
     // 测试最大输入长度边界
-    std::string max_input(max_input_length, 'a');
+    std::string max_input(config.dfa.max_input_length, 'a');
 
-    int tokens[max_output_dim];
+    int tokens[config.dfa.max_output_dim];
     int token_count = 0;
 
     int ret = kadd_dfa_engine_tokenize(engine, max_input.c_str(),
@@ -174,9 +175,9 @@ TEST_F(DFAEngineTest, MaxInputBoundary) {
 
 TEST_F(DFAEngineTest, ExceedsMaxInput) {
     // 测试超过最大输入长度
-    std::string too_long(max_input_length + 1, 'a');
+    std::string too_long(config.dfa.max_input_length + 1, 'a');
 
-    int tokens[max_output_dim];
+    int tokens[config.dfa.max_output_dim];
     int token_count = 0;
 
     int ret = kadd_dfa_engine_tokenize(engine, too_long.c_str(),

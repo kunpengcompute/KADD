@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "kadd_feature_engine.h"
+#include "kadd_config_loader.h"
 #include "tools.h"
 
 #ifdef _WIN32
@@ -45,8 +46,8 @@ int parse_sequence(const char *input, int **seq_out) {
 }
 
 // 特征转换测试
-void test_feature_conversion() {
-    int feature_dim = 28;
+void test_feature_conversion(const kadd_config_t *config) {
+    int feature_dim = config->ml.feature_dim;
     int *feature = (int *)calloc(feature_dim, sizeof(int));
     if (!feature) {
         printf("内存分配失败\n");
@@ -91,23 +92,23 @@ void test_feature_conversion() {
         return;
     }
 
-    printf("请输入窗口大小 (直接回车使用默认值5): ");
+    printf("请输入窗口大小 (直接回车使用配置值%d): ", config->ml.window_size);
 
     char window_input[64];
     fgets(window_input, sizeof(window_input), stdin);
     window_input[strcspn(window_input, "\n")] = 0;
 
-    int window_size = 5;
+    int window_size = config->ml.window_size;
     if (strlen(window_input) > 0 && sscanf(window_input, "%d", &window_size) == 1) {
         if (window_size <= 0) {
-            printf("窗口大小必须大于0，使用默认值5\n");
-            window_size = 5;
+            printf("窗口大小必须大于0，使用配置值%d\n", config->ml.window_size);
+            window_size = config->ml.window_size;
         }
     } else {
-        printf("使用默认窗口大小: 5\n");
+        printf("使用配置窗口大小: %d\n", window_size);
     }
 
-    printf("请输入输出特征维度 (直接回车使用默认值28): ");
+    printf("请输入输出特征维度 (直接回车使用配置值%d): ", config->ml.feature_dim);
 
     char dim_input[64];
     fgets(dim_input, sizeof(dim_input), stdin);
@@ -115,11 +116,11 @@ void test_feature_conversion() {
 
     if (strlen(dim_input) > 0 && sscanf(dim_input, "%d", &feature_dim) == 1) {
         if (feature_dim <= 0 || feature_dim > 1024) {
-            printf("特征维度无效，使用默认值28\n");
-            feature_dim = 28;
+            printf("特征维度无效，使用配置值%d\n", config->ml.feature_dim);
+            feature_dim = config->ml.feature_dim;
         }
     } else {
-        printf("使用默认特征维度: 28\n");
+        printf("使用配置特征维度: %d\n", feature_dim);
     }
 
     void *timer = timer_start();
@@ -143,7 +144,7 @@ void test_feature_conversion() {
 }
 
 // 性能测试
-void test_performance() {
+void test_performance(const kadd_config_t *config) {
     int iterations = 0;
     printf("请输入测试次数 (100-100000, 直接回车使用默认值10000): ");
 
@@ -159,11 +160,11 @@ void test_performance() {
         iterations = 10000;
     }
 
-    int feature_dim = 28;
+    int feature_dim = config->ml.feature_dim;
     int *feature = (int *)calloc(feature_dim, sizeof(int));
     int seq[] = {7, 11, 8, 12, 8, 11, 8};
     int seq_len = 7;
-    int window_size = 5;
+    int window_size = config->ml.window_size;
 
     if (!feature) {
         printf("内存分配失败\n");
@@ -186,7 +187,7 @@ void test_performance() {
 }
 
 // 批处理测试
-void test_batch_feature() {
+void test_batch_feature(const kadd_config_t *config) {
     printf("\n╔════════════════════════════════════════════════════════════╗\n");
     printf("║                    批处理测试                                ║\n");
     printf("╚════════════════════════════════════════════════════════════╝\n\n");
@@ -206,8 +207,8 @@ void test_batch_feature() {
         batch_count = 10;
     }
 
-    int feature_dim = 28;
-    int window_size = 5;
+    int feature_dim = config->ml.feature_dim;
+    int window_size = config->ml.window_size;
 
     // 准备批处理数据
     const int **seqs = (const int **)malloc(batch_count * sizeof(int *));
@@ -323,6 +324,14 @@ int main() {
     SetConsoleOutputCP(CP_UTF8);
 #endif
 
+    // 加载配置
+    kadd_config_t config;
+    if (kadd_config_load(NULL, &config) != 0) {
+        printf("警告: 无法加载 config.json，使用默认配置\n");
+        config.ml.feature_dim = 28;
+        config.ml.window_size = 5;
+    }
+
     int running = 1;
 
     while (running) {
@@ -340,13 +349,13 @@ int main() {
 
         switch (choice) {
             case 1:
-                test_feature_conversion();
+                test_feature_conversion(&config);
                 break;
             case 2:
-                test_performance();
+                test_performance(&config);
                 break;
             case 3:
-                test_batch_feature();
+                test_batch_feature(&config);
                 break;
             case 0:
                 running = 0;

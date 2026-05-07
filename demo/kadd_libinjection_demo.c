@@ -91,8 +91,10 @@ static void detect_and_print(const char *input) {
     libinjection_sqli_init(&print_state, input, strlen(input), FLAG_QUOTE_NONE | FLAG_SQL_MYSQL);
     int print_count = 0;
     while (libinjection_sqli_tokenize(&print_state)) {
-        int token_index = libinjection_type_to_index(print_state.current->type);
-        printf("%d", token_index);
+        if (print_state.current) {
+            int token_index = libinjection_type_to_index(print_state.current->type);
+            printf("%d", token_index);
+        }
         print_count++;
         if (print_count < token_count) {
             printf(", ");

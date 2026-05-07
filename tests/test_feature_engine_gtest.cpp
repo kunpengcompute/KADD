@@ -14,23 +14,21 @@
 #include <random>
 #include <algorithm>
 #include "kadd_feature_engine.h"
-
-#ifndef TEST_FEATURE_DIM
-#define TEST_FEATURE_DIM 28
-#endif
-
-#ifndef TEST_WINDOW_SIZE
-#define TEST_WINDOW_SIZE 5
-#endif
+#include "kadd_config_loader.h"
 
 // ========== 测试夹具 ==========
 class FeatureEngineTest : public ::testing::Test {
 protected:
     std::vector<int> test_sequence;
     std::vector<int> test_feature;
+    kadd_config_t config;
 
     void SetUp() override {
-        test_feature.resize(TEST_FEATURE_DIM, 0);
+        // 从config.json加载配置
+        ASSERT_EQ(kadd_config_load(nullptr, &config), 0)
+            << "无法加载config.json配置文件";
+
+        test_feature.resize(config.ml.feature_dim, 0);
     }
 
     void TearDown() override {
@@ -68,20 +66,20 @@ protected:
 TEST_F(FeatureEngineTest, TransformSimpleSequence) {
     // 简单序列: {7, 11, 8, 12, 8, 11, 8}
     std::vector<int> seq = {7, 11, 8, 12, 8, 11, 8};
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
-    int ret = kadd_seq_to_feature(seq.data(), seq.size(), TEST_WINDOW_SIZE,
-                                  feature.data(), TEST_FEATURE_DIM);
+    int ret = kadd_seq_to_feature(seq.data(), seq.size(), config.ml.window_size,
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "应该成功转换序列";
 }
 
 TEST_F(FeatureEngineTest, TransformSingleElement) {
     std::vector<int> seq = {42};
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
-    int ret = kadd_seq_to_feature(seq.data(), seq.size(), TEST_WINDOW_SIZE,
-                                  feature.data(), TEST_FEATURE_DIM);
+    int ret = kadd_seq_to_feature(seq.data(), seq.size(), config.ml.window_size,
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "单元素序列应该成功转换";
 }
@@ -92,30 +90,30 @@ TEST_F(FeatureEngineTest, TransformLongSequence) {
         seq[i] = i % 256;
     }
 
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
-    int ret = kadd_seq_to_feature(seq.data(), seq.size(), TEST_WINDOW_SIZE,
-                                  feature.data(), TEST_FEATURE_DIM);
+    int ret = kadd_seq_to_feature(seq.data(), seq.size(), config.ml.window_size,
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "长序列应该成功转换";
 }
 
 TEST_F(FeatureEngineTest, TransformWithWindow5) {
     std::vector<int> seq = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
     int ret = kadd_seq_to_feature(seq.data(), seq.size(), 5,
-                                  feature.data(), TEST_FEATURE_DIM);
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "窗口大小5应该成功转换";
 }
 
 TEST_F(FeatureEngineTest, TransformWithWindow10) {
     std::vector<int> seq = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
     int ret = kadd_seq_to_feature(seq.data(), seq.size(), 10,
-                                  feature.data(), TEST_FEATURE_DIM);
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "窗口大小10应该成功转换";
 }
@@ -126,10 +124,10 @@ TEST_F(FeatureEngineTest, TransformWithWindow20) {
         seq[i] = i % 20;
     }
 
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
     int ret = kadd_seq_to_feature(seq.data(), seq.size(), 20,
-                                  feature.data(), TEST_FEATURE_DIM);
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "窗口大小20应该成功转换";
 }
@@ -176,10 +174,10 @@ TEST_F(FeatureEngineTest, WeightedDistance) {
     // 验证加权距离计算
     // 距离越远，权重越小
     std::vector<int> seq = {10, 20, 30, 40, 50};
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
     int ret = kadd_seq_to_feature(seq.data(), seq.size(), 5,
-                                  feature.data(), TEST_FEATURE_DIM);
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "应该成功计算加权距离";
 }
@@ -187,10 +185,10 @@ TEST_F(FeatureEngineTest, WeightedDistance) {
 TEST_F(FeatureEngineTest, ConstantSequence) {
     // 常量序列: 所有元素相同
     std::vector<int> seq(100, 42);
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
-    int ret = kadd_seq_to_feature(seq.data(), seq.size(), TEST_WINDOW_SIZE,
-                                  feature.data(), TEST_FEATURE_DIM);
+    int ret = kadd_seq_to_feature(seq.data(), seq.size(), config.ml.window_size,
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "常量序列应该成功转换";
 
@@ -206,10 +204,10 @@ TEST_F(FeatureEngineTest, AlternatingSequence) {
         seq[i] = (i % 2 == 0) ? 0 : 100;
     }
 
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
-    int ret = kadd_seq_to_feature(seq.data(), seq.size(), TEST_WINDOW_SIZE,
-                                  feature.data(), TEST_FEATURE_DIM);
+    int ret = kadd_seq_to_feature(seq.data(), seq.size(), config.ml.window_size,
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "交替序列应该成功转换";
 
@@ -225,10 +223,10 @@ TEST_F(FeatureEngineTest, IncreasingSequence) {
         seq[i] = i;
     }
 
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
-    int ret = kadd_seq_to_feature(seq.data(), seq.size(), TEST_WINDOW_SIZE,
-                                  feature.data(), TEST_FEATURE_DIM);
+    int ret = kadd_seq_to_feature(seq.data(), seq.size(), config.ml.window_size,
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "递增序列应该成功转换";
 }
@@ -238,10 +236,10 @@ TEST_F(FeatureEngineTest, RandomSequence) {
     std::vector<int> seq;
     GenerateRandomSequence(seq, 1000, 0, 255);
 
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
-    int ret = kadd_seq_to_feature(seq.data(), seq.size(), TEST_WINDOW_SIZE,
-                                  feature.data(), TEST_FEATURE_DIM);
+    int ret = kadd_seq_to_feature(seq.data(), seq.size(), config.ml.window_size,
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "随机序列应该成功转换";
 }
@@ -249,10 +247,10 @@ TEST_F(FeatureEngineTest, RandomSequence) {
 TEST_F(FeatureEngineTest, SequenceWithZeros) {
     // 包含零的序列
     std::vector<int> seq = {0, 5, 0, 10, 0, 15, 0};
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
-    int ret = kadd_seq_to_feature(seq.data(), seq.size(), TEST_WINDOW_SIZE,
-                                  feature.data(), TEST_FEATURE_DIM);
+    int ret = kadd_seq_to_feature(seq.data(), seq.size(), config.ml.window_size,
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "包含零的序列应该成功转换";
 }
@@ -260,10 +258,10 @@ TEST_F(FeatureEngineTest, SequenceWithZeros) {
 TEST_F(FeatureEngineTest, SequenceWithNegativeValues) {
     // 包含负值的序列
     std::vector<int> seq = {-10, -5, 0, 5, 10};
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
-    int ret = kadd_seq_to_feature(seq.data(), seq.size(), TEST_WINDOW_SIZE,
-                                  feature.data(), TEST_FEATURE_DIM);
+    int ret = kadd_seq_to_feature(seq.data(), seq.size(), config.ml.window_size,
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "包含负值的序列应该成功转换";
 }
@@ -271,10 +269,10 @@ TEST_F(FeatureEngineTest, SequenceWithNegativeValues) {
 TEST_F(FeatureEngineTest, SequenceWithLargeValues) {
     // 包含大值的序列
     std::vector<int> seq = {10000, 20000, 30000, 40000, 50000};
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
-    int ret = kadd_seq_to_feature(seq.data(), seq.size(), TEST_WINDOW_SIZE,
-                                  feature.data(), TEST_FEATURE_DIM);
+    int ret = kadd_seq_to_feature(seq.data(), seq.size(), config.ml.window_size,
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "包含大值的序列应该成功转换";
 }
@@ -282,10 +280,10 @@ TEST_F(FeatureEngineTest, SequenceWithLargeValues) {
 // ========== 2. 边界测试 ==========
 
 TEST_F(FeatureEngineTest, TransformNullSequence) {
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
-    int ret = kadd_seq_to_feature(nullptr, 10, TEST_WINDOW_SIZE,
-                                  feature.data(), TEST_FEATURE_DIM);
+    int ret = kadd_seq_to_feature(nullptr, 10, config.ml.window_size,
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_NE(ret, 0) << "NULL 序列应该失败";
 }
@@ -293,18 +291,18 @@ TEST_F(FeatureEngineTest, TransformNullSequence) {
 TEST_F(FeatureEngineTest, TransformNullFeature) {
     std::vector<int> seq = {1, 2, 3, 4, 5};
 
-    int ret = kadd_seq_to_feature(seq.data(), seq.size(), TEST_WINDOW_SIZE,
-                                  nullptr, TEST_FEATURE_DIM);
+    int ret = kadd_seq_to_feature(seq.data(), seq.size(), config.ml.window_size,
+                                  nullptr, config.ml.feature_dim);
 
     EXPECT_NE(ret, 0) << "NULL 特征向量应该失败";
 }
 
 TEST_F(FeatureEngineTest, TransformZeroLength) {
     std::vector<int> seq = {1, 2, 3};
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
-    int ret = kadd_seq_to_feature(seq.data(), 0, TEST_WINDOW_SIZE,
-                                  feature.data(), TEST_FEATURE_DIM);
+    int ret = kadd_seq_to_feature(seq.data(), 0, config.ml.window_size,
+                                  feature.data(), config.ml.feature_dim);
 
     // 零长度序列的行为取决于实现
     // 可能成功（返回全零特征）或失败
@@ -314,10 +312,10 @@ TEST_F(FeatureEngineTest, TransformZeroLength) {
 
 TEST_F(FeatureEngineTest, TransformNegativeLength) {
     std::vector<int> seq = {1, 2, 3};
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
-    int ret = kadd_seq_to_feature(seq.data(), -1, TEST_WINDOW_SIZE,
-                                  feature.data(), TEST_FEATURE_DIM);
+    int ret = kadd_seq_to_feature(seq.data(), -1, config.ml.window_size,
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_NE(ret, 0) << "负长度序列应该失败";
 }
@@ -326,7 +324,7 @@ TEST_F(FeatureEngineTest, TransformZeroFeatureDim) {
     std::vector<int> seq = {1, 2, 3};
     std::vector<int> feature(1, 0);
 
-    int ret = kadd_seq_to_feature(seq.data(), seq.size(), TEST_WINDOW_SIZE,
+    int ret = kadd_seq_to_feature(seq.data(), seq.size(), config.ml.window_size,
                                   feature.data(), 0);
 
     EXPECT_NE(ret, 0) << "零特征维度应该失败";
@@ -336,7 +334,7 @@ TEST_F(FeatureEngineTest, TransformNegativeFeatureDim) {
     std::vector<int> seq = {1, 2, 3};
     std::vector<int> feature(1, 0);
 
-    int ret = kadd_seq_to_feature(seq.data(), seq.size(), TEST_WINDOW_SIZE,
+    int ret = kadd_seq_to_feature(seq.data(), seq.size(), config.ml.window_size,
                                   feature.data(), -1);
 
     EXPECT_NE(ret, 0) << "负特征维度应该失败";
@@ -344,10 +342,10 @@ TEST_F(FeatureEngineTest, TransformNegativeFeatureDim) {
 
 TEST_F(FeatureEngineTest, TransformZeroWindowSize) {
     std::vector<int> seq = {1, 2, 3};
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
     int ret = kadd_seq_to_feature(seq.data(), seq.size(), 0,
-                                  feature.data(), TEST_FEATURE_DIM);
+                                  feature.data(), config.ml.feature_dim);
 
     // 窗口大小为0的行为取决于实现
     // 应该返回全零特征或失败
@@ -356,10 +354,10 @@ TEST_F(FeatureEngineTest, TransformZeroWindowSize) {
 
 TEST_F(FeatureEngineTest, TransformNegativeWindowSize) {
     std::vector<int> seq = {1, 2, 3};
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
     int ret = kadd_seq_to_feature(seq.data(), seq.size(), -1,
-                                  feature.data(), TEST_FEATURE_DIM);
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_NE(ret, 0) << "负窗口大小应该失败";
 }
@@ -369,7 +367,7 @@ TEST_F(FeatureEngineTest, TransformInsufficientFeatureDim) {
     std::vector<int> seq(100);
     std::vector<int> feature(10, 0);
 
-    int ret = kadd_seq_to_feature(seq.data(), seq.size(), TEST_WINDOW_SIZE,
+    int ret = kadd_seq_to_feature(seq.data(), seq.size(), config.ml.window_size,
                                   feature.data(), 10);
 
     // 应该成功（只填充可用的维度）
@@ -377,17 +375,17 @@ TEST_F(FeatureEngineTest, TransformInsufficientFeatureDim) {
 }
 
 TEST_F(FeatureEngineTest, TransformAllNull) {
-    int ret = kadd_seq_to_feature(nullptr, 10, TEST_WINDOW_SIZE, nullptr, TEST_FEATURE_DIM);
+    int ret = kadd_seq_to_feature(nullptr, 10, config.ml.window_size, nullptr, config.ml.feature_dim);
     EXPECT_NE(ret, 0) << "所有参数为 NULL 应该失败";
 }
 
 TEST_F(FeatureEngineTest, TransformSequenceShorterThanWindow) {
     // 序列长度小于窗口大小
     std::vector<int> seq = {1, 2};
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
     int ret = kadd_seq_to_feature(seq.data(), seq.size(), 10,
-                                  feature.data(), TEST_FEATURE_DIM);
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "序列短于窗口应该成功";
 }
@@ -395,10 +393,10 @@ TEST_F(FeatureEngineTest, TransformSequenceShorterThanWindow) {
 TEST_F(FeatureEngineTest, TransformSequenceEqualToWindow) {
     // 序列长度等于窗口大小
     std::vector<int> seq = {1, 2, 3, 4, 5};
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
     int ret = kadd_seq_to_feature(seq.data(), seq.size(), 5,
-                                  feature.data(), TEST_FEATURE_DIM);
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "序列等于窗口应该成功";
 }
@@ -410,10 +408,10 @@ TEST_F(FeatureEngineTest, TransformVeryLongSequence) {
         seq[i] = i % 256;
     }
 
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
-    int ret = kadd_seq_to_feature(seq.data(), seq.size(), TEST_WINDOW_SIZE,
-                                  feature.data(), TEST_FEATURE_DIM);
+    int ret = kadd_seq_to_feature(seq.data(), seq.size(), config.ml.window_size,
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "非常长的序列应该成功转换";
 }
@@ -425,10 +423,10 @@ TEST_F(FeatureEngineTest, TransformLargeWindow) {
         seq[i] = i % 256;
     }
 
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
     int ret = kadd_seq_to_feature(seq.data(), seq.size(), 1000,
-                                  feature.data(), TEST_FEATURE_DIM);
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "大窗口大小应该成功";
 }
@@ -441,14 +439,14 @@ TEST_F(FeatureEngineTest, Performance_SmallSequence) {
         seq[i] = i;
     }
 
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
     const int iterations = 100000;
     auto start = std::chrono::high_resolution_clock::now();
 
     for (int i = 0; i < iterations; i++) {
-        kadd_seq_to_feature(seq.data(), seq.size(), TEST_WINDOW_SIZE,
-                           feature.data(), TEST_FEATURE_DIM);
+        kadd_seq_to_feature(seq.data(), seq.size(), config.ml.window_size,
+                           feature.data(), config.ml.feature_dim);
     }
 
     auto end = std::chrono::high_resolution_clock::now();
@@ -470,14 +468,14 @@ TEST_F(FeatureEngineTest, Performance_MediumSequence) {
         seq[i] = i % 256;
     }
 
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
     const int iterations = 10000;
     auto start = std::chrono::high_resolution_clock::now();
 
     for (int i = 0; i < iterations; i++) {
-        kadd_seq_to_feature(seq.data(), seq.size(), TEST_WINDOW_SIZE,
-                           feature.data(), TEST_FEATURE_DIM);
+        kadd_seq_to_feature(seq.data(), seq.size(), config.ml.window_size,
+                           feature.data(), config.ml.feature_dim);
     }
 
     auto end = std::chrono::high_resolution_clock::now();
@@ -499,14 +497,14 @@ TEST_F(FeatureEngineTest, Performance_LargeSequence) {
         seq[i] = i % 256;
     }
 
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
     const int iterations = 1000;
     auto start = std::chrono::high_resolution_clock::now();
 
     for (int i = 0; i < iterations; i++) {
-        kadd_seq_to_feature(seq.data(), seq.size(), TEST_WINDOW_SIZE,
-                           feature.data(), TEST_FEATURE_DIM);
+        kadd_seq_to_feature(seq.data(), seq.size(), config.ml.window_size,
+                           feature.data(), config.ml.feature_dim);
     }
 
     auto end = std::chrono::high_resolution_clock::now();
@@ -528,7 +526,7 @@ TEST_F(FeatureEngineTest, Performance_VariousWindowSizes) {
         seq[i] = i % 256;
     }
 
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
     std::cout << "\n[性能测试] 不同窗口大小性能测试:" << std::endl;
 
@@ -540,7 +538,7 @@ TEST_F(FeatureEngineTest, Performance_VariousWindowSizes) {
 
         for (int i = 0; i < iterations; i++) {
             kadd_seq_to_feature(seq.data(), seq.size(), window_size,
-                               feature.data(), TEST_FEATURE_DIM);
+                               feature.data(), config.ml.feature_dim);
         }
 
         auto end = std::chrono::high_resolution_clock::now();
@@ -574,7 +572,7 @@ TEST_F(FeatureEngineTest, Performance_VariousFeatureDims) {
         auto start = std::chrono::high_resolution_clock::now();
 
         for (int i = 0; i < iterations; i++) {
-            kadd_seq_to_feature(seq.data(), seq.size(), TEST_WINDOW_SIZE,
+            kadd_seq_to_feature(seq.data(), seq.size(), config.ml.window_size,
                                feature.data(), feature_dim);
         }
 
@@ -596,14 +594,14 @@ TEST_F(FeatureEngineTest, Performance_RandomSequence) {
     std::vector<int> seq;
     GenerateRandomSequence(seq, 10000, 0, 255);
 
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
     const int iterations = 1000;
     auto start = std::chrono::high_resolution_clock::now();
 
     for (int i = 0; i < iterations; i++) {
-        kadd_seq_to_feature(seq.data(), seq.size(), TEST_WINDOW_SIZE,
-                           feature.data(), TEST_FEATURE_DIM);
+        kadd_seq_to_feature(seq.data(), seq.size(), config.ml.window_size,
+                           feature.data(), config.ml.feature_dim);
     }
 
     auto end = std::chrono::high_resolution_clock::now();
@@ -626,14 +624,14 @@ TEST_F(FeatureEngineTest, Performance_SVEAcceleration) {
         seq[i] = i % 256;
     }
 
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
     const int iterations = 1000;
     auto start = std::chrono::high_resolution_clock::now();
 
     for (int i = 0; i < iterations; i++) {
-        kadd_seq_to_feature(seq.data(), seq.size(), TEST_WINDOW_SIZE,
-                           feature.data(), TEST_FEATURE_DIM);
+        kadd_seq_to_feature(seq.data(), seq.size(), config.ml.window_size,
+                           feature.data(), config.ml.feature_dim);
     }
 
     auto end = std::chrono::high_resolution_clock::now();
@@ -655,11 +653,11 @@ TEST_F(FeatureEngineTest, Math_DistanceSymmetry) {
     std::vector<int> seq1 = {10, 5};
     std::vector<int> seq2 = {5, 10};
 
-    std::vector<int> feature1(TEST_FEATURE_DIM, 0);
-    std::vector<int> feature2(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature1(config.ml.feature_dim, 0);
+    std::vector<int> feature2(config.ml.feature_dim, 0);
 
-    kadd_seq_to_feature(seq1.data(), seq1.size(), 2, feature1.data(), TEST_FEATURE_DIM);
-    kadd_seq_to_feature(seq2.data(), seq2.size(), 2, feature2.data(), TEST_FEATURE_DIM);
+    kadd_seq_to_feature(seq1.data(), seq1.size(), 2, feature1.data(), config.ml.feature_dim);
+    kadd_seq_to_feature(seq2.data(), seq2.size(), 2, feature2.data(), config.ml.feature_dim);
 
     // 第一个位置的距离应该相同
     EXPECT_EQ(feature1[0], feature2[0]) << "距离应该对称";
@@ -672,10 +670,10 @@ TEST_F(FeatureEngineTest, Math_DistanceNonNegativity) {
         seq[i] = (i % 2 == 0) ? 100 : -100;
     }
 
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
-    kadd_seq_to_feature(seq.data(), seq.size(), TEST_WINDOW_SIZE,
-                       feature.data(), TEST_FEATURE_DIM);
+    kadd_seq_to_feature(seq.data(), seq.size(), config.ml.window_size,
+                       feature.data(), config.ml.feature_dim);
 
     // 所有特征值应该非负
     for (int f : feature) {
@@ -686,10 +684,10 @@ TEST_F(FeatureEngineTest, Math_DistanceNonNegativity) {
 TEST_F(FeatureEngineTest, Math_ZeroDistanceForIdentical) {
     // 验证相同元素的序列距离为0
     std::vector<int> seq(100, 50);
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
-    kadd_seq_to_feature(seq.data(), seq.size(), TEST_WINDOW_SIZE,
-                       feature.data(), TEST_FEATURE_DIM);
+    kadd_seq_to_feature(seq.data(), seq.size(), config.ml.window_size,
+                       feature.data(), config.ml.feature_dim);
 
     // 所有特征值应该为0
     for (int f : feature) {
@@ -703,13 +701,13 @@ TEST_F(FeatureEngineTest, Math_LinearScaling) {
     std::vector<int> seq1 = {1, 2, 3, 4, 5};
     std::vector<int> seq2 = {2, 4, 6, 8, 10};  // 所有 token_id < 28
 
-    std::vector<int> feature1(TEST_FEATURE_DIM, 0);
-    std::vector<int> feature2(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature1(config.ml.feature_dim, 0);
+    std::vector<int> feature2(config.ml.feature_dim, 0);
 
-    kadd_seq_to_feature(seq1.data(), seq1.size(), TEST_WINDOW_SIZE,
-                       feature1.data(), TEST_FEATURE_DIM);
-    kadd_seq_to_feature(seq2.data(), seq2.size(), TEST_WINDOW_SIZE,
-                       feature2.data(), TEST_FEATURE_DIM);
+    kadd_seq_to_feature(seq1.data(), seq1.size(), config.ml.window_size,
+                       feature1.data(), config.ml.feature_dim);
+    kadd_seq_to_feature(seq2.data(), seq2.size(), config.ml.window_size,
+                       feature2.data(), config.ml.feature_dim);
 
     long long sum1 = SumFeature(feature1);
     long long sum2 = SumFeature(feature2);
@@ -724,10 +722,10 @@ TEST_F(FeatureEngineTest, FeatureVector_TestCase1_StandardSequenceWindow5) {
     // 测试用例 1: 标准序列，窗口5
     // 参考: sliding_window_distance.py 测试用例 5
     std::vector<int> seq = {7, 11, 8, 12, 8, 11, 8};
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
     int ret = kadd_seq_to_feature(seq.data(), seq.size(), 5,
-                                  feature.data(), TEST_FEATURE_DIM);
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "标准序列，窗口5应该成功转换";
 
@@ -738,7 +736,7 @@ TEST_F(FeatureEngineTest, FeatureVector_TestCase1_StandardSequenceWindow5) {
     EXPECT_EQ(feature[12], 160) << "token_id=12 的特征值应该为 160";
 
     // 验证其他位置为0
-    for (int i = 0; i < TEST_FEATURE_DIM; i++) {
+    for (int i = 0; i < config.ml.feature_dim; i++) {
         if (i != 7 && i != 8 && i != 11 && i != 12) {
             EXPECT_EQ(feature[i], 0) << "位置 " << i << " 应该为 0";
         }
@@ -749,10 +747,10 @@ TEST_F(FeatureEngineTest, FeatureVector_TestCase2_StandardSequenceWindow3) {
     // 测试用例 2: 标准序列，窗口3
     // 参考: sliding_window_distance.py 测试用例 6
     std::vector<int> seq = {7, 11, 8, 12, 8, 11, 12};
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
     int ret = kadd_seq_to_feature(seq.data(), seq.size(), 3,
-                                  feature.data(), TEST_FEATURE_DIM);
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "标准序列，窗口3应该成功转换";
 
@@ -763,7 +761,7 @@ TEST_F(FeatureEngineTest, FeatureVector_TestCase2_StandardSequenceWindow3) {
     EXPECT_EQ(feature[12], 84) << "token_id=12 的特征值应该为 84";
 
     // 验证其他位置为0
-    for (int i = 0; i < TEST_FEATURE_DIM; i++) {
+    for (int i = 0; i < config.ml.feature_dim; i++) {
         if (i != 7 && i != 8 && i != 11 && i != 12) {
             EXPECT_EQ(feature[i], 0) << "位置 " << i << " 应该为 0";
         }
@@ -773,10 +771,10 @@ TEST_F(FeatureEngineTest, FeatureVector_TestCase2_StandardSequenceWindow3) {
 TEST_F(FeatureEngineTest, FeatureVector_TestCase3_IncreasingSequence) {
     // 测试用例 3: 递增序列，窗口3
     std::vector<int> seq = {1, 2, 3, 4, 5};
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
     int ret = kadd_seq_to_feature(seq.data(), seq.size(), 3,
-                                  feature.data(), TEST_FEATURE_DIM);
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "递增序列应该成功转换";
 
@@ -791,10 +789,10 @@ TEST_F(FeatureEngineTest, FeatureVector_TestCase3_IncreasingSequence) {
 TEST_F(FeatureEngineTest, FeatureVector_TestCase4_ConstantSequence) {
     // 测试用例 4: 重复序列，窗口3
     std::vector<int> seq = {5, 5, 5, 5, 5};
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
     int ret = kadd_seq_to_feature(seq.data(), seq.size(), 3,
-                                  feature.data(), TEST_FEATURE_DIM);
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "重复序列应该成功转换";
 
@@ -802,7 +800,7 @@ TEST_F(FeatureEngineTest, FeatureVector_TestCase4_ConstantSequence) {
     EXPECT_EQ(feature[5], 110) << "token_id=5 的特征值应该为 110";
 
     // 其他位置应该为0
-    for (int i = 0; i < TEST_FEATURE_DIM; i++) {
+    for (int i = 0; i < config.ml.feature_dim; i++) {
         if (i != 5) {
             EXPECT_EQ(feature[i], 0) << "位置 " << i << " 应该为 0";
         }
@@ -812,10 +810,10 @@ TEST_F(FeatureEngineTest, FeatureVector_TestCase4_ConstantSequence) {
 TEST_F(FeatureEngineTest, FeatureVector_TestCase5_AlternatingSequence) {
     // 测试用例 5: 交替序列，窗口3
     std::vector<int> seq = {0, 10, 0, 10, 0, 10};
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
     int ret = kadd_seq_to_feature(seq.data(), seq.size(), 3,
-                                  feature.data(), TEST_FEATURE_DIM);
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "交替序列应该成功转换";
 
@@ -827,10 +825,10 @@ TEST_F(FeatureEngineTest, FeatureVector_TestCase5_AlternatingSequence) {
 TEST_F(FeatureEngineTest, FeatureVector_TestCase6_SingleElement) {
     // 测试用例 6: 单元素序列
     std::vector<int> seq = {7};
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
     int ret = kadd_seq_to_feature(seq.data(), seq.size(), 5,
-                                  feature.data(), TEST_FEATURE_DIM);
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "单元素序列应该成功转换";
 
@@ -842,10 +840,10 @@ TEST_F(FeatureEngineTest, FeatureVector_TestCase6_SingleElement) {
 TEST_F(FeatureEngineTest, FeatureVector_TestCase7_TwoElements) {
     // 测试用例 7: 两元素序列，窗口3
     std::vector<int> seq = {7, 11};
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
     int ret = kadd_seq_to_feature(seq.data(), seq.size(), 3,
-                                  feature.data(), TEST_FEATURE_DIM);
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "两元素序列应该成功转换";
 
@@ -857,10 +855,10 @@ TEST_F(FeatureEngineTest, FeatureVector_TestCase7_TwoElements) {
 TEST_F(FeatureEngineTest, FeatureVector_TestCase8_ThreeElements) {
     // 测试用例 8: 三元素序列，窗口3
     std::vector<int> seq = {7, 11, 8};
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
     int ret = kadd_seq_to_feature(seq.data(), seq.size(), 3,
-                                  feature.data(), TEST_FEATURE_DIM);
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "三元素序列应该成功转换";
 
@@ -873,10 +871,10 @@ TEST_F(FeatureEngineTest, FeatureVector_TestCase8_ThreeElements) {
 TEST_F(FeatureEngineTest, FeatureVector_TestCase9_LargeWindow) {
     // 测试用例 9: 较长序列，大窗口
     std::vector<int> seq = {1, 2, 3, 4, 5, 6, 7, 8};
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
     int ret = kadd_seq_to_feature(seq.data(), seq.size(), 6,
-                                  feature.data(), TEST_FEATURE_DIM);
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "大窗口应该成功转换";
 
@@ -894,10 +892,10 @@ TEST_F(FeatureEngineTest, FeatureVector_TestCase9_LargeWindow) {
 TEST_F(FeatureEngineTest, FeatureVector_TestCase10_BoundaryValues) {
     // 测试用例 10: 边界值序列
     std::vector<int> seq = {0, 27, 0, 27, 0, 27};
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
     int ret = kadd_seq_to_feature(seq.data(), seq.size(), 3,
-                                  feature.data(), TEST_FEATURE_DIM);
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "边界值序列应该成功转换";
 
@@ -909,10 +907,10 @@ TEST_F(FeatureEngineTest, FeatureVector_TestCase10_BoundaryValues) {
 TEST_F(FeatureEngineTest, FeatureVector_TestCase11_LongSequence) {
     // 测试用例 11: 长序列
     std::vector<int> seq = {7, 11, 8, 12, 8, 11, 8, 7, 11, 8, 12, 8, 11, 8};
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
     int ret = kadd_seq_to_feature(seq.data(), seq.size(), 5,
-                                  feature.data(), TEST_FEATURE_DIM);
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "长序列应该成功转换";
 
@@ -926,10 +924,10 @@ TEST_F(FeatureEngineTest, FeatureVector_TestCase11_LongSequence) {
 TEST_F(FeatureEngineTest, FeatureVector_TestCase12_SmallWindow) {
     // 测试用例 12: 小窗口
     std::vector<int> seq = {7, 11, 8, 12, 8, 11, 8};
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
     int ret = kadd_seq_to_feature(seq.data(), seq.size(), 2,
-                                  feature.data(), TEST_FEATURE_DIM);
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "小窗口应该成功转换";
 
@@ -943,10 +941,10 @@ TEST_F(FeatureEngineTest, FeatureVector_TestCase12_SmallWindow) {
 TEST_F(FeatureEngineTest, FeatureVector_TestCase13_MediumWindow) {
     // 测试用例 13: 中等窗口
     std::vector<int> seq = {7, 11, 8, 12, 8, 11, 8};
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
     int ret = kadd_seq_to_feature(seq.data(), seq.size(), 4,
-                                  feature.data(), TEST_FEATURE_DIM);
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "中等窗口应该成功转换";
 
@@ -960,10 +958,10 @@ TEST_F(FeatureEngineTest, FeatureVector_TestCase13_MediumWindow) {
 TEST_F(FeatureEngineTest, FeatureVector_TestCase14_HighTokenValues) {
     // 测试用例 14: 高 token 值
     std::vector<int> seq = {20, 25, 20, 25, 20};
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
     int ret = kadd_seq_to_feature(seq.data(), seq.size(), 3,
-                                  feature.data(), TEST_FEATURE_DIM);
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "高 token 值应该成功转换";
 
@@ -975,10 +973,10 @@ TEST_F(FeatureEngineTest, FeatureVector_TestCase14_HighTokenValues) {
 TEST_F(FeatureEngineTest, FeatureVector_TestCase15_AdjacentDuplicates) {
     // 测试用例 15: 相邻相同值
     std::vector<int> seq = {7, 7, 11, 11, 8, 8};
-    std::vector<int> feature(TEST_FEATURE_DIM, 0);
+    std::vector<int> feature(config.ml.feature_dim, 0);
 
     int ret = kadd_seq_to_feature(seq.data(), seq.size(), 3,
-                                  feature.data(), TEST_FEATURE_DIM);
+                                  feature.data(), config.ml.feature_dim);
 
     EXPECT_EQ(ret, 0) << "相邻相同值应该成功转换";
 

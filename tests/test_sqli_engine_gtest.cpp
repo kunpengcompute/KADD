@@ -10,6 +10,7 @@
 #include <string>
 #include <chrono>
 #include "kadd_sqli_engine.h"
+#include "kadd_config_loader.h"
 
 /* ========== 测试夹具 ========== */
 

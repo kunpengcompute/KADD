@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "kadd_ml_engine.h"
+#include "kadd_config_loader.h"
 #include "tools.h"
 
 #ifdef _WIN32
@@ -14,24 +15,6 @@
 #else
 #include <sys/time.h>
 #endif
-
-// 默认模型路径（CMake 复制到 build/demo/assets/model/）
-const char *default_model_paths[] = {
-    "assets/model/model_tokens_rf.onnx",
-    NULL
-};
-
-// 查找模型文件
-const char *find_model_path() {
-    for (int i = 0; default_model_paths[i] != NULL; i++) {
-        FILE *f = fopen(default_model_paths[i], "rb");
-        if (f) {
-            fclose(f);
-            return default_model_paths[i];
-        }
-    }
-    return default_model_paths[0];
-}
 
 // 从字符串解析特征向量
 int parse_features(const char *input, float *features, int feature_dim) {
@@ -161,8 +144,16 @@ int main() {
     SetConsoleOutputCP(CP_UTF8);
 #endif
 
+    // 加载配置
+    kadd_config_t config;
+    if (kadd_config_load(NULL, &config) != 0) {
+        printf("警告: 无法加载 config.json，使用默认配置\n");
+        config.ml.feature_dim = 28;
+        strcpy(config.ml.model_path, "assets/model/model_tokens_rf.onnx");
+    }
+
     kadd_model_handle_t *model = NULL;
-    int feature_dim = 28;
+    int feature_dim = config.ml.feature_dim;
     int running = 1;
 
     while (running) {
@@ -193,9 +184,9 @@ int main() {
                     break;
                 }
 
-                const char *model_path = find_model_path();
+                const char *model_path = config.ml.model_path;
                 printf("使用模型路径: %s\n", model_path);
-                printf("请输入特征维度 (直接回车使用默认值28): ");
+                printf("请输入特征维度 (直接回车使用配置值%d): ", config.ml.feature_dim);
 
                 char dim_input[64];
                 fgets(dim_input, sizeof(dim_input), stdin);
@@ -203,12 +194,12 @@ int main() {
 
                 if (strlen(dim_input) > 0 && sscanf(dim_input, "%d", &feature_dim) == 1) {
                     if (feature_dim <= 0 || feature_dim > 1024) {
-                        printf("特征维度无效，使用默认值28\n");
-                        feature_dim = 28;
+                        printf("特征维度无效，使用配置值%d\n", config.ml.feature_dim);
+                        feature_dim = config.ml.feature_dim;
                     }
                 } else {
-                    feature_dim = 28;
-                    printf("使用默认特征维度: 28\n");
+                    feature_dim = config.ml.feature_dim;
+                    printf("使用配置特征维度: %d\n", feature_dim);
                 }
 
                 if (kadd_model_load(&model, model_path, feature_dim) == 0) {

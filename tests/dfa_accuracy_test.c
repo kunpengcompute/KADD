@@ -11,6 +11,7 @@
 #include <ctype.h>
 #include <stdint.h>
 #include "../include/kadd_dfa_engine.h"
+#include "../include/kadd_config_loader.h"
 
 #include "cJSON.h"
 #include "libinjection_sqli.h"
@@ -57,14 +58,26 @@ static dfa_engine_t *dfa_engine_create_wrapper(const char *table_dir) {
     kadd_dfa_engine_t *engine = NULL;
     (void)table_dir;
 
-    // 使用 CMake 复制的统一路径: build/tests/assets/data/
-    kadd_dfa_table_paths_t table_paths = {
-        "assets/data/transition_table.bin",
-        "assets/data/output_table.bin",
-        "assets/data/eod_table.bin"
-    };
+    // 从config.json加载配置
+    kadd_config_t config;
+    if (kadd_config_load(NULL, &config) != 0) {
+        fprintf(stderr, "警告: 无法加载config.json，使用默认配置\n");
+        // 使用默认配置
+        kadd_dfa_table_paths_t table_paths = {
+            "assets/data/transition_table.bin",
+            "assets/data/output_table.bin",
+            "assets/data/eod_table.bin"
+        };
+        if (kadd_dfa_engine_create(&engine, &table_paths, 8192, 8192) == 0) {
+            return (dfa_engine_t *)engine;
+        }
+        return NULL;
+    }
 
-    if (kadd_dfa_engine_create(&engine, &table_paths, 8192, 8192) == 0) {
+    // 使用配置文件中的路径
+    if (kadd_dfa_engine_create(&engine, &config.dfa.table_paths,
+                               config.dfa.max_input_length,
+                               config.dfa.max_output_dim) == 0) {
         return (dfa_engine_t *)engine;
     }
 

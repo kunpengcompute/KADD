@@ -21,18 +21,11 @@
 #include <string>
 #include "kadd_ml_engine.h"
 #include "kadd_feature_engine.h"
+#include "kadd_config_loader.h"
 #include "cJSON.h"
-
-#ifndef TEST_MODEL_PATH
-#define TEST_MODEL_PATH "assets/model/model_tokens_rf.onnx"
-#endif
 
 #ifndef TEST_DATA_PATH
 #define TEST_DATA_PATH "assets/data/parsed_results_fixed.json"
-#endif
-
-#ifndef TEST_FEATURE_DIM
-#define TEST_FEATURE_DIM 28
 #endif
 
 // ========== 工具函数 ==========
@@ -40,17 +33,17 @@
 /**
  * @brief 检查模型文件是否存在
  */
-static bool ModelFileExists() {
-    std::ifstream file(TEST_MODEL_PATH);
+static bool ModelFileExists(const char *path) {
+    std::ifstream file(path);
     return file.good();
 }
 
 /**
  * @brief 检查是否应该跳过 ML 测试
  */
-static bool ShouldSkipMLTests() {
-    if (!ModelFileExists()) {
-        std::cout << "[WARNING] 模型文件不存在: " << TEST_MODEL_PATH << std::endl;
+static bool ShouldSkipMLTests(const char *model_path) {
+    if (!ModelFileExists(model_path)) {
+        std::cout << "[WARNING] 模型文件不存在: " << model_path << std::endl;
         std::cout << "[WARNING] 跳过 ML 引擎测试" << std::endl;
         return true;
     }
@@ -62,17 +55,25 @@ class MLEngineTest : public ::testing::Test {
 protected:
     kadd_model_handle_t *model = nullptr;
     std::vector<float> test_features;
+    kadd_config_t config;
     bool skip_test = false;
 
     void SetUp() override {
+        // 从config.json加载配置
+        if (kadd_config_load(nullptr, &config) != 0) {
+            std::cout << "[WARNING] 无法加载config.json，跳过 ML 引擎测试" << std::endl;
+            skip_test = true;
+            return;
+        }
+
         // 检查是否应该跳过测试
-        if (ShouldSkipMLTests()) {
+        if (ShouldSkipMLTests(config.ml.model_path)) {
             skip_test = true;
             return;
         }
 
         // 初始化测试特征向量 (全零)
-        test_features.resize(TEST_FEATURE_DIM, 0.0f);
+        test_features.resize(config.ml.feature_dim, 0.0f);
     }
 
     void TearDown() override {
@@ -88,7 +89,7 @@ protected:
         std::mt19937 gen(rd());
         std::uniform_real_distribution<float> dis(min_val, max_val);
 
-        features.resize(TEST_FEATURE_DIM);
+        features.resize(config.ml.feature_dim);
         for (auto &f : features) {
             f = dis(gen);
         }
@@ -97,7 +98,7 @@ protected:
     // 辅助函数：创建有效的模型
     int CreateValidModel() {
         if (skip_test) return -1;
-        return kadd_model_load(&model, TEST_MODEL_PATH, TEST_FEATURE_DIM);
+        return kadd_model_load(&model, config.ml.model_path, config.ml.feature_dim);
     }
 
     // 辅助函数：验证概率值有效性（允许浮点误差）
@@ -112,7 +113,7 @@ TEST_F(MLEngineTest, LoadValidModel) {
     if (skip_test) GTEST_SKIP() << "模型文件不可用";
 
     int ret = CreateValidModel();
-    ASSERT_EQ(ret, 0) << "应该成功加载模型，路径: " << TEST_MODEL_PATH;
+    ASSERT_EQ(ret, 0) << "应该成功加载模型，路径: " << config.ml.model_path;
     ASSERT_NE(model, nullptr) << "模型句柄不应为空";
 }
 
@@ -140,11 +141,11 @@ TEST_F(MLEngineTest, PredictWithVariousFeatures) {
     };
 
     std::vector<TestCase> test_cases = {
-        {std::vector<float>(TEST_FEATURE_DIM, 0.0f), "全零特征"},
-        {std::vector<float>(TEST_FEATURE_DIM, 1.0f), "全一特征"},
-        {std::vector<float>(TEST_FEATURE_DIM, 100.0f), "大值特征"},
-        {std::vector<float>(TEST_FEATURE_DIM, -50.0f), "负值特征"},
-        {std::vector<float>(TEST_FEATURE_DIM, 0.5f), "中等值特征"},
+        {std::vector<float>(config.ml.feature_dim, 0.0f), "全零特征"},
+        {std::vector<float>(config.ml.feature_dim, 1.0f), "全一特征"},
+        {std::vector<float>(config.ml.feature_dim, 100.0f), "大值特征"},
+        {std::vector<float>(config.ml.feature_dim, -50.0f), "负值特征"},
+        {std::vector<float>(config.ml.feature_dim, 0.5f), "中等值特征"},
     };
 
     for (size_t i = 0; i < test_cases.size(); i++) {
@@ -164,7 +165,7 @@ TEST_F(MLEngineTest, PredictBatchSize1) {
     ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
 
     const int n = 1;
-    std::vector<float> features(TEST_FEATURE_DIM * n, 0.0f);
+    std::vector<float> features(config.ml.feature_dim * n, 0.0f);
     std::vector<float> probabilities(n);
 
     int ret = kadd_model_predict_batch(model, features.data(), n, probabilities.data(), 1);
@@ -179,7 +180,7 @@ TEST_F(MLEngineTest, PredictBatchSize10) {
     ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
 
     const int n = 10;
-    std::vector<float> features(TEST_FEATURE_DIM * n, 0.0f);
+    std::vector<float> features(config.ml.feature_dim * n, 0.0f);
     std::vector<float> probabilities(n);
 
     int ret = kadd_model_predict_batch(model, features.data(), n, probabilities.data(), 10);
@@ -198,7 +199,7 @@ TEST_F(MLEngineTest, PredictBatchWithAutoBatchSize) {
     ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
 
     const int n = 50;
-    std::vector<float> features(TEST_FEATURE_DIM * n, 0.0f);
+    std::vector<float> features(config.ml.feature_dim * n, 0.0f);
     std::vector<float> probabilities(n);
 
     // batch_size = 0 表示自动选择
@@ -217,20 +218,20 @@ TEST_F(MLEngineTest, PredictBatchConsistencyWithSingle) {
     ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
 
     const int n = 10;
-    std::vector<float> features(TEST_FEATURE_DIM * n);
+    std::vector<float> features(config.ml.feature_dim * n);
     std::vector<float> single_probs(n);
     std::vector<float> batch_probs(n);
 
     // 生成随机特征
     for (int i = 0; i < n; i++) {
         GenerateRandomFeatures(features);
-        std::copy(features.begin(), features.begin() + TEST_FEATURE_DIM,
-                  features.data() + i * TEST_FEATURE_DIM);
+        std::copy(features.begin(), features.begin() + config.ml.feature_dim,
+                  features.data() + i * config.ml.feature_dim);
     }
 
     // 单样本推理
     for (int i = 0; i < n; i++) {
-        kadd_model_predict(model, features.data() + i * TEST_FEATURE_DIM, &single_probs[i]);
+        kadd_model_predict(model, features.data() + i * config.ml.feature_dim, &single_probs[i]);
     }
 
     // 批量推理
@@ -267,7 +268,7 @@ TEST_F(MLEngineTest, PredictBatchDifferentBatchSizes) {
     std::vector<int> batch_sizes = {1, 2, 5, 10, 16, 32, 64, 128};
 
     for (int batch_size : batch_sizes) {
-        std::vector<float> features(TEST_FEATURE_DIM * batch_size, 0.0f);
+        std::vector<float> features(config.ml.feature_dim * batch_size, 0.0f);
         std::vector<float> probabilities(batch_size);
 
         int ret = kadd_model_predict_batch(model, features.data(), batch_size,
@@ -288,20 +289,20 @@ TEST_F(MLEngineTest, PredictBatchDifferentBatchSizes) {
 TEST_F(MLEngineTest, LoadWithNullHandle) {
     if (skip_test) GTEST_SKIP() << "模型文件不可用";
 
-    int ret = kadd_model_load(nullptr, TEST_MODEL_PATH, TEST_FEATURE_DIM);
+    int ret = kadd_model_load(nullptr, config.ml.model_path, config.ml.feature_dim);
     EXPECT_NE(ret, 0) << "传入 NULL 句柄指针应该失败";
 }
 
 TEST_F(MLEngineTest, LoadWithInvalidPath) {
     if (skip_test) GTEST_SKIP() << "模型文件不可用";
 
-    int ret = kadd_model_load(&model, "nonexistent_model.onnx", TEST_FEATURE_DIM);
+    int ret = kadd_model_load(&model, "nonexistent_model.onnx", config.ml.feature_dim);
     EXPECT_NE(ret, 0) << "加载不存在的模型应该失败";
     EXPECT_EQ(model, nullptr) << "失败时句柄应为 NULL";
 }
 
 TEST_F(MLEngineTest, LoadWithEmptyPath) {
-    int ret = kadd_model_load(&model, "", TEST_FEATURE_DIM);
+    int ret = kadd_model_load(&model, "", config.ml.feature_dim);
     EXPECT_NE(ret, 0) << "加载空路径模型应该失败";
 }
 
@@ -341,7 +342,7 @@ TEST_F(MLEngineTest, PredictBeforeLoad) {
 
 TEST_F(MLEngineTest, PredictBatchWithNullHandle) {
     const int n = 10;
-    std::vector<float> features(TEST_FEATURE_DIM * n, 0.0f);
+    std::vector<float> features(config.ml.feature_dim * n, 0.0f);
     std::vector<float> probabilities(n);
 
     int ret = kadd_model_predict_batch(nullptr, features.data(), n, probabilities.data(), 10);
@@ -362,7 +363,7 @@ TEST_F(MLEngineTest, PredictBatchWithNullProbabilities) {
     ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
 
     const int n = 10;
-    std::vector<float> features(TEST_FEATURE_DIM * n, 0.0f);
+    std::vector<float> features(config.ml.feature_dim * n, 0.0f);
 
     int ret = kadd_model_predict_batch(model, features.data(), n, nullptr, 10);
     EXPECT_NE(ret, 0) << "NULL 概率数组批量推理应该失败";
@@ -455,7 +456,7 @@ TEST_F(MLEngineTest, Performance_BatchPrediction) {
     const int iterations = 100;
     const int total_samples = batch_size * iterations;
 
-    std::vector<float> features(TEST_FEATURE_DIM * batch_size, 0.0f);
+    std::vector<float> features(config.ml.feature_dim * batch_size, 0.0f);
     std::vector<float> probabilities(batch_size);
 
     auto start = std::chrono::high_resolution_clock::now();
@@ -485,7 +486,7 @@ TEST_F(MLEngineTest, Performance_Scalability) {
     std::vector<int> batch_sizes = {1, 10, 32, 64, 128, 256};
 
     for (int batch_size : batch_sizes) {
-        std::vector<float> features(TEST_FEATURE_DIM * batch_size, 0.0f);
+        std::vector<float> features(config.ml.feature_dim * batch_size, 0.0f);
         std::vector<float> probabilities(batch_size);
 
         const int iterations = std::max(10, 1000 / batch_size);
@@ -516,7 +517,7 @@ TEST_F(MLEngineTest, Performance_ModelLoading) {
 
     for (int i = 0; i < iterations; i++) {
         kadd_model_handle_t *temp_model = nullptr;
-        kadd_model_load(&temp_model, TEST_MODEL_PATH, TEST_FEATURE_DIM);
+        kadd_model_load(&temp_model, config.ml.model_path, config.ml.feature_dim);
         kadd_model_free(temp_model);
     }
 
@@ -538,7 +539,7 @@ TEST_F(MLEngineTest, Performance_MemoryStress) {
 
     // 大批量推理测试内存管理
     const int large_batch = 1000;
-    std::vector<float> features(TEST_FEATURE_DIM * large_batch, 0.0f);
+    std::vector<float> features(config.ml.feature_dim * large_batch, 0.0f);
     std::vector<float> probabilities(large_batch);
 
     auto start = std::chrono::high_resolution_clock::now();
@@ -568,7 +569,7 @@ TEST_F(MLEngineTest, Consistency_SameInputSameOutput) {
     ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
 
     // 同一输入多次推理应该得到相同结果
-    std::vector<float> features(TEST_FEATURE_DIM, 1.0f);
+    std::vector<float> features(config.ml.feature_dim, 1.0f);
 
     std::vector<float> results(5);
     for (int i = 0; i < 5; i++) {
@@ -589,7 +590,7 @@ TEST_F(MLEngineTest, Consistency_DeterministicBehavior) {
 
     // 测试模型行为是确定性的
     const int n = 10;
-    std::vector<float> features(TEST_FEATURE_DIM * n);
+    std::vector<float> features(config.ml.feature_dim * n);
     std::vector<float> probabilities1(n);
     std::vector<float> probabilities2(n);
 
@@ -700,19 +701,24 @@ static bool LoadTestData(const char *json_path,
 /**
  * @brief 将 tokens 转换为特征向量
  */
-static bool TokensToFeatures(const std::vector<int> &tokens, std::vector<float> &features) {
-    features.resize(TEST_FEATURE_DIM, 0.0f);
+static bool TokensToFeatures(const std::vector<int> &tokens, std::vector<float> &features, int feature_dim) {
+    // 检查 tokens 是否为空
+    if (tokens.empty()) {
+        return false;
+    }
+
+    features.resize(feature_dim, 0.0f);
 
     // 使用特征引擎将 token 序列转换为特征
-    std::vector<int> int_features(TEST_FEATURE_DIM, 0);
+    std::vector<int> int_features(feature_dim, 0);
     int ret = kadd_seq_to_feature(tokens.data(), tokens.size(), 5,
-                                  int_features.data(), TEST_FEATURE_DIM);
+                                  int_features.data(), feature_dim);
     if (ret != 0) {
         return false;
     }
 
     // 转换为 float
-    for (int i = 0; i < TEST_FEATURE_DIM; i++) {
+    for (int i = 0; i < feature_dim; i++) {
         features[i] = static_cast<float>(int_features[i]);
     }
 
@@ -751,7 +757,7 @@ TEST_F(MLEngineTest, AccuracyOnParsedResultsDataset) {
     // 逐个推理
     for (size_t i = 0; i < tokens_list.size(); i++) {
         std::vector<float> features;
-        if (!TokensToFeatures(tokens_list[i], features)) {
+        if (!TokensToFeatures(tokens_list[i], features, config.ml.feature_dim)) {
             std::cerr << "样本 " << i << " 特征转换失败" << std::endl;
             continue;
         }
@@ -836,14 +842,14 @@ TEST_F(MLEngineTest, BatchAccuracyOnParsedResultsDataset) {
 
     // 将所有 tokens 转换为特征矩阵
     std::vector<float> features;
-    features.reserve(tokens_list.size() * TEST_FEATURE_DIM);
+    features.reserve(tokens_list.size() * config.ml.feature_dim);
 
     std::vector<int> valid_labels;
     std::vector<size_t> valid_indices;
 
     for (size_t i = 0; i < tokens_list.size(); i++) {
         std::vector<float> feat;
-        if (TokensToFeatures(tokens_list[i], feat)) {
+        if (TokensToFeatures(tokens_list[i], feat, config.ml.feature_dim)) {
             features.insert(features.end(), feat.begin(), feat.end());
             valid_labels.push_back(labels[i]);
             valid_indices.push_back(i);
@@ -914,16 +920,27 @@ TEST_F(MLEngineTest, BatchAccuracyOnParsedResultsDataset) {
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
 
+    // 从 config.json 加载配置
+    kadd_config_t config;
+    bool config_loaded = (kadd_config_load(nullptr, &config) == 0);
+
+    const char *model_path = "assets/model/model_tokens_rf.onnx";  // 默认路径
+    if (config_loaded) {
+        model_path = config.ml.model_path;
+    } else {
+        std::cout << "[WARNING] 无法加载 config.json，使用默认模型路径" << std::endl;
+    }
+
     // 检查是否应该跳过 ML 测试
-    if (ShouldSkipMLTests()) {
+    if (ShouldSkipMLTests(model_path)) {
         std::cout << "\n========================================" << std::endl;
         std::cout << "  ML 引擎测试已跳过" << std::endl;
         std::cout << "========================================" << std::endl;
         std::cout << "原因: 模型文件不存在" << std::endl;
-        std::cout << "预期路径: " << TEST_MODEL_PATH << std::endl;
+        std::cout << "预期路径: " << model_path << std::endl;
         std::cout << "\n提示:" << std::endl;
-        std::cout << "  1. 确保已下载模型文件到 assets/model/ 目录" << std::endl;
-        std::cout << "  2. 或使用 -DUSE_ONNX=OFF 构建以跳过 ML 测试" << std::endl;
+        std::cout << "  1. 确保已下载模型文件到正确路径" << std::endl;
+        std::cout << "  2. 检查 config.json 中的 kadd_ml_engine.model_path 配置" << std::endl;
         std::cout << "========================================\n" << std::endl;
         return 0;
     }
@@ -931,8 +948,10 @@ int main(int argc, char **argv) {
     std::cout << "\n========================================" << std::endl;
     std::cout << "  ML 引擎测试" << std::endl;
     std::cout << "========================================" << std::endl;
-    std::cout << "模型路径: " << TEST_MODEL_PATH << std::endl;
-    std::cout << "特征维度: " << TEST_FEATURE_DIM << std::endl;
+    std::cout << "模型路径: " << model_path << std::endl;
+    if (config_loaded) {
+        std::cout << "特征维度: " << config.ml.feature_dim << std::endl;
+    }
     std::cout << "========================================\n" << std::endl;
 
     return RUN_ALL_TESTS();

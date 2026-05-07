@@ -13,6 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "kadd_sqli_engine.h"
+#include "kadd_config_loader.h"
 #include "tools.h"
 
 #ifdef _WIN32
