@@ -56,20 +56,23 @@ int kadd_config_load(const char *config_path, kadd_config_t *config) {
 
         item = cJSON_GetObjectItem(dfa, "transition_table_path");
         if (item && item->valuestring) {
-            strncpy(config->dfa.table_paths.transition_table_path,
+            strncpy(config->dfa.transition_table_path,
                     item->valuestring, 511);
+            config->dfa.transition_table_path[511] = '\0';
         }
 
         item = cJSON_GetObjectItem(dfa, "output_table_path");
         if (item && item->valuestring) {
-            strncpy(config->dfa.table_paths.output_table_path,
+            strncpy(config->dfa.output_table_path,
                     item->valuestring, 511);
+            config->dfa.output_table_path[511] = '\0';
         }
 
         item = cJSON_GetObjectItem(dfa, "eod_table_path");
         if (item && item->valuestring) {
-            strncpy(config->dfa.table_paths.eod_table_path,
+            strncpy(config->dfa.eod_table_path,
                     item->valuestring, 511);
+            config->dfa.eod_table_path[511] = '\0';
         }
 
         item = cJSON_GetObjectItem(dfa, "max_input_length");

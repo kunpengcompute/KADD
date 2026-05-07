@@ -45,6 +45,29 @@ extern "C" {
 /** @brief 文件操作失败 */
 #define KADD_ERROR_FILE_OPERATION_FAILED -108
 
+/* ========== DFA 引擎错误码 ========== */
+
+/** @brief DFA 成功 */
+#define KADD_DFA_OK                0
+
+/** @brief DFA 内存分配失败 */
+#define KADD_DFA_ERROR_MEMORY      -1
+
+/** @brief DFA 输入参数无效 */
+#define KADD_DFA_ERROR_INVALID_INPUT     -2
+
+/** @brief DFA 文件未找到 */
+#define KADD_DFA_ERROR_FILE_NOT_FOUND  -3
+
+/** @brief DFA 文件解析失败 */
+#define KADD_DFA_ERROR_PARSE          -4
+
+/** @brief DFA 缓冲区溢出 */
+#define KADD_DFA_ERROR_BUFFER_OVERFLOW -5
+
+/** @brief DFA 输入长度无效 */
+#define KADD_DFA_ERROR_INVALID_LENGTH  -6
+
 #ifdef __cplusplus
 }
 #endif

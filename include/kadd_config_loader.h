@@ -18,7 +18,9 @@ extern "C" {
 /* ========== DFA引擎配置 ========== */
 
 typedef struct {
-    kadd_dfa_table_paths_t table_paths;
+    char transition_table_path[512];
+    char output_table_path[512];
+    char eod_table_path[512];
     int max_input_length;
     int max_output_dim;
 } kadd_dfa_config_t;

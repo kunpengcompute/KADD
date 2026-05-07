@@ -233,16 +233,22 @@ int main(int argc, char *argv[])
         return 1;
     }
 
-    printf("  transition_table_path: %s\n", config.dfa.table_paths.transition_table_path);
-    printf("  output_table_path: %s\n", config.dfa.table_paths.output_table_path);
-    printf("  eod_table_path: %s\n", config.dfa.table_paths.eod_table_path);
+    printf("  transition_table_path: %s\n", config.dfa.transition_table_path);
+    printf("  output_table_path: %s\n", config.dfa.output_table_path);
+    printf("  eod_table_path: %s\n", config.dfa.eod_table_path);
     printf("  max_input_length: %d\n", config.dfa.max_input_length);
     printf("  max_output_dim: %d\n", config.dfa.max_output_dim);
 
     printf("\n正在初始化 DFA 引擎...\n");
 
+    kadd_dfa_table_paths_t table_paths = {
+        config.dfa.transition_table_path,
+        config.dfa.output_table_path,
+        config.dfa.eod_table_path
+    };
+
     kadd_dfa_engine_t *engine = NULL;
-    int ret = kadd_dfa_engine_create(&engine, &config.dfa.table_paths,
+    int ret = kadd_dfa_engine_create(&engine, &table_paths,
                                      config.dfa.max_input_length,
                                      config.dfa.max_output_dim);
     if (ret != 0) {

@@ -27,7 +27,12 @@ protected:
             << "无法加载config.json配置文件";
 
         // 使用配置文件中的参数
-        ASSERT_EQ(kadd_dfa_engine_create(&engine, &config.dfa.table_paths,
+        kadd_dfa_table_paths_t table_paths = {
+            config.dfa.transition_table_path,
+            config.dfa.output_table_path,
+            config.dfa.eod_table_path
+        };
+        ASSERT_EQ(kadd_dfa_engine_create(&engine, &table_paths,
                                          config.dfa.max_input_length,
                                          config.dfa.max_output_dim), 0);
     }

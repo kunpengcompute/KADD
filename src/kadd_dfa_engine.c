@@ -20,16 +20,6 @@
 #define EOD_TOKEN_SHIFT 2u
 #define EOD_TOKEN_MASK 0x3Fu
 
-typedef enum {
-    KADD_DFA_OK = 0,
-    KADD_DFA_ERROR_MEMORY = -1,
-    KADD_DFA_ERROR_INVALID_INPUT = -2,
-    KADD_DFA_ERROR_FILE_NOT_FOUND = -3,
-    KADD_DFA_ERROR_PARSE = -4,
-    KADD_DFA_ERROR_BUFFER_OVERFLOW = -5,
-    KADD_DFA_ERROR_INVALID_LENGTH = -6
-} kadd_dfa_error_t;
-
 struct kadd_dfa_engine_t {
     uint16_t *transition_table;
     uint16_t *output_table;

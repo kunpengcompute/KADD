@@ -4,6 +4,7 @@
  */
 
 #include "kadd_ml_engine.h"
+#include "kadd_errors.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -110,6 +111,9 @@ static int create_session(kadd_model_handle_t *handle, const char *model_path) {
 #ifdef _WIN32
     int len = MultiByteToWideChar(CP_UTF8, 0, model_path, -1, NULL, 0);
     wchar_t *wide_path = (wchar_t*)malloc(len * sizeof(wchar_t));
+    if (!wide_path) {
+        return KADD_ERROR_OUT_OF_MEMORY;
+    }
     MultiByteToWideChar(CP_UTF8, 0, model_path, -1, wide_path, len);
     status = handle->api->CreateSession(handle->env, (const char *)wide_path, options, &handle->session);
     free(wide_path);
