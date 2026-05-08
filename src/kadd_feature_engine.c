@@ -136,7 +136,8 @@ static void sliding_window_distance_sve(const int *seq, int seq_len, int window_
 int kadd_seq_to_feature(const int *seq, int seq_len, int window_size,
                    int *feature, int feature_dim)
 {
-    if (!seq || !feature || seq_len <= 0 || window_size <= 0 || feature_dim <= 0) {
+    // 输入检查seq_len [0, 300] feature_dim [0, 300]
+    if (!seq || !feature || seq_len <= 0 || window_size <= 0 || feature_dim <= 0 || seq_len > 300 || feature_dim > 300) {
         return -1;
     }
 

@@ -47,96 +47,49 @@ int parse_sequence(const char *input, int **seq_out) {
 
 // 特征转换测试
 void test_feature_conversion(const kadd_config_t *config) {
-    int feature_dim = config->ml.feature_dim;
+    int seq_len;
+    printf("请输入序列长度: ");
+    scanf("%d", &seq_len);
+    getchar();
+
+    int *seq = NULL;
+    printf("请输入序列 (用逗号或空格分隔): ");
+    char input[4096];
+    fgets(input, sizeof(input), stdin);
+    input[strcspn(input, "\n")] = 0;
+    parse_sequence(input, &seq);
+
+    int window_size;
+    printf("请输入窗口大小: ");
+    scanf("%d", &window_size);
+    getchar();
+
+    int feature_dim;
+    printf("请输入输出特征维度: ");
+    scanf("%d", &feature_dim);
+    getchar();
+
     int *feature = (int *)calloc(feature_dim, sizeof(int));
     if (!feature) {
         printf("内存分配失败\n");
+        free(seq);
         return;
-    }
-
-    printf("请输入序列 (用逗号或空格分隔，直接回车使用默认值): ");
-
-    char input[1024];
-    fgets(input, sizeof(input), stdin);
-    input[strcspn(input, "\n")] = 0;
-
-    int *seq = NULL;
-    int seq_len = 0;
-
-    if (strlen(input) == 0) {
-        // 默认序列
-        int default_seq[] = {7, 11, 8, 12, 8, 11, 8};
-        seq_len = 7;
-        seq = (int *)malloc(seq_len * sizeof(int));
-        if (seq) {
-            memcpy(seq, default_seq, seq_len * sizeof(int));
-            printf("使用默认序列: ");
-            for (int i = 0; i < seq_len; i++) {
-                printf("%d", seq[i]);
-                if (i < seq_len - 1) printf(", ");
-            }
-            printf("\n");
-        }
-    } else {
-        seq_len = parse_sequence(input, &seq);
-        if (seq_len < 0) {
-            printf("序列解析失败\n");
-            free(feature);
-            return;
-        }
-        printf("解析到 %d 个值\n", seq_len);
-    }
-
-    if (!seq) {
-        free(feature);
-        return;
-    }
-
-    printf("请输入窗口大小 (直接回车使用配置值%d): ", config->ml.window_size);
-
-    char window_input[64];
-    fgets(window_input, sizeof(window_input), stdin);
-    window_input[strcspn(window_input, "\n")] = 0;
-
-    int window_size = config->ml.window_size;
-    if (strlen(window_input) > 0 && sscanf(window_input, "%d", &window_size) == 1) {
-        if (window_size <= 0) {
-            printf("窗口大小必须大于0，使用配置值%d\n", config->ml.window_size);
-            window_size = config->ml.window_size;
-        }
-    } else {
-        printf("使用配置窗口大小: %d\n", window_size);
-    }
-
-    printf("请输入输出特征维度 (直接回车使用配置值%d): ", config->ml.feature_dim);
-
-    char dim_input[64];
-    fgets(dim_input, sizeof(dim_input), stdin);
-    dim_input[strcspn(dim_input, "\n")] = 0;
-
-    if (strlen(dim_input) > 0 && sscanf(dim_input, "%d", &feature_dim) == 1) {
-        if (feature_dim <= 0 || feature_dim > 1024) {
-            printf("特征维度无效，使用配置值%d\n", config->ml.feature_dim);
-            feature_dim = config->ml.feature_dim;
-        }
-    } else {
-        printf("使用配置特征维度: %d\n", feature_dim);
     }
 
     void *timer = timer_start();
     int ret = kadd_seq_to_feature(seq, seq_len, window_size, feature, feature_dim);
     double elapsed = timer_end(timer);
 
-    if (ret == 0) {
-        printf("转换成功，耗时: %.2f μs\n", elapsed);
+    printf("返回值: %d\n", ret);
+
+    if (ret >= 0) {
+        printf("耗时: %.2f μs\n", elapsed);
         printf("特征向量: [");
         for (int i = 0; i < feature_dim; i++) {
             printf("%d", feature[i]);
             if (i < feature_dim - 1) printf(", ");
         }
         printf("]\n");
-    } else {
-        printf("转换失败\n");
     }
 
     free(seq);
@@ -145,29 +98,37 @@ void test_feature_conversion(const kadd_config_t *config) {
 
 // 性能测试
 void test_performance(const kadd_config_t *config) {
-    int iterations = 0;
-    printf("请输入测试次数 (100-100000, 直接回车使用默认值10000): ");
+    int iterations;
+    printf("请输入测试次数: ");
+    scanf("%d", &iterations);
+    getchar();
 
-    char input[64];
+    int seq_len;
+    printf("请输入序列长度: ");
+    scanf("%d", &seq_len);
+    getchar();
+
+    int *seq = NULL;
+    printf("请输入序列: ");
+    char input[4096];
     fgets(input, sizeof(input), stdin);
     input[strcspn(input, "\n")] = 0;
+    parse_sequence(input, &seq);
 
-    if (strlen(input) == 0) {
-        iterations = 10000;
-        printf("使用默认测试次数: 10000\n");
-    } else if (sscanf(input, "%d", &iterations) != 1 || iterations < 100 || iterations > 100000) {
-        printf("测试次数无效，使用默认值10000\n");
-        iterations = 10000;
-    }
+    int window_size;
+    printf("请输入窗口大小: ");
+    scanf("%d", &window_size);
+    getchar();
 
-    int feature_dim = config->ml.feature_dim;
+    int feature_dim;
+    printf("请输入特征维度: ");
+    scanf("%d", &feature_dim);
+    getchar();
+
     int *feature = (int *)calloc(feature_dim, sizeof(int));
-    int seq[] = {7, 11, 8, 12, 8, 11, 8};
-    int seq_len = 7;
-    int window_size = config->ml.window_size;
-
     if (!feature) {
         printf("内存分配失败\n");
+        free(seq);
         return;
     }
 
@@ -179,10 +140,13 @@ void test_performance(const kadd_config_t *config) {
     }
 
     double elapsed = timer_end(timer);
+    int ret = kadd_seq_to_feature(seq, seq_len, window_size, feature, feature_dim);
+
+    printf("返回值: %d\n", ret);
     printf("总耗时: %.2f μs\n", elapsed);
     printf("平均耗时: %.3f μs/次\n", elapsed / iterations);
-    printf("吞吐量: %.0f 次/秒\n", 1000.0 / (elapsed / iterations));
 
+    free(seq);
     free(feature);
 }
 
@@ -192,25 +156,21 @@ void test_batch_feature(const kadd_config_t *config) {
     printf("║                    批处理测试                                ║\n");
     printf("╚════════════════════════════════════════════════════════════╝\n\n");
 
-    int batch_count = 0;
-    printf("请输入要处理的序列数量 (1-100, 直接回车使用默认值10): ");
+    int batch_count;
+    printf("请输入序列数量: ");
+    scanf("%d", &batch_count);
+    getchar();
 
-    char input[64];
-    fgets(input, sizeof(input), stdin);
-    input[strcspn(input, "\n")] = 0;
+    int feature_dim;
+    printf("请输入特征维度: ");
+    scanf("%d", &feature_dim);
+    getchar();
 
-    if (strlen(input) == 0) {
-        batch_count = 10;
-        printf("使用默认数量: 10\n");
-    } else if (sscanf(input, "%d", &batch_count) != 1 || batch_count < 1 || batch_count > 100) {
-        printf("数量无效，使用默认值10\n");
-        batch_count = 10;
-    }
+    int window_size;
+    printf("请输入窗口大小: ");
+    scanf("%d", &window_size);
+    getchar();
 
-    int feature_dim = config->ml.feature_dim;
-    int window_size = config->ml.window_size;
-
-    // 准备批处理数据
     const int **seqs = (const int **)malloc(batch_count * sizeof(int *));
     int *seq_lens = (int *)malloc(batch_count * sizeof(int));
     int *features = (int *)calloc(batch_count * feature_dim, sizeof(int));
@@ -223,38 +183,14 @@ void test_batch_feature(const kadd_config_t *config) {
         return;
     }
 
-    // 读取序列
-    printf("\n请输入 %d 个序列（用逗号或空格分隔，直接回车使用默认值）:\n", batch_count);
+    printf("\n请输入 %d 个序列:\n", batch_count);
     for (int i = 0; i < batch_count; i++) {
         printf("[%d]> ", i + 1);
         char seq_input[1024];
         if (!fgets(seq_input, sizeof(seq_input), stdin)) break;
         seq_input[strcspn(seq_input, "\n")] = 0;
-
-        if (strlen(seq_input) == 0) {
-            // 使用默认序列
-            int *default_seq = (int *)malloc(7 * sizeof(int));
-            if (default_seq) {
-                int temp[] = {7, 11, 8, 12, 8, 11, 8};
-                memcpy(default_seq, temp, 7 * sizeof(int));
-                seqs[i] = default_seq;
-                seq_lens[i] = 7;
-                printf("使用默认序列: [7, 11, 8, 12, 8, 11, 8]\n");
-            }
-        } else {
-            seq_lens[i] = parse_sequence(seq_input, (int **)&seqs[i]);
-            if (seq_lens[i] < 0) {
-                printf("序列解析失败\n");
-                seq_lens[i] = 0;
-            } else {
-                printf("解析到 %d 个值\n", seq_lens[i]);
-            }
-        }
+        seq_lens[i] = parse_sequence(seq_input, (int **)&seqs[i]);
     }
-
-    // 执行批处理
-    printf("\n正在执行批处理...\n");
-    void *timer = timer_start();
 
     kadd_feature_batch_t batch = {
         .seqs = seqs,
@@ -266,36 +202,37 @@ void test_batch_feature(const kadd_config_t *config) {
         .batch_size = 32
     };
 
+    printf("\n正在执行批处理...\n");
+    void *timer = timer_start();
     int result = kadd_seq_to_feature_batch(&batch);
     double batch_time = timer_end(timer);
 
-    // 打印结果
-    printf("\n批处理完成！\n");
-    printf("┌─────────────────────────────────────────────────────────────┐\n");
-    printf("│ 批处理结果                                                  │\n");
-    printf("├─────────────────────────────────────────────────────────────┤\n");
-    printf("│ 总序列数:     %5d                                         │\n", batch_count);
-    printf("│ 成功处理:     %5d                                         │\n", result > 0 ? result : 0);
-    printf("│ 总耗时:       %8.2f μs                                 │\n", batch_time);
-    printf("│ 平均耗时:     %8.2f μs/条                               │\n", batch_time / batch_count);
-    printf("└─────────────────────────────────────────────────────────────┘\n\n");
+    printf("返回值: %d\n", result);
 
-    // 详细结果
-    for (int i = 0; i < batch_count; i++) {
-        printf("  [%d] 序列长度: %d, 特征前5维: [", i + 1, seq_lens[i]);
-        int *feat = &features[i * feature_dim];
-        for (int j = 0; j < 5 && j < feature_dim; j++) {
-            printf("%d", feat[j]);
-            if (j < 4) printf(", ");
+    if (result >= 0) {
+        printf("\n批处理完成！\n");
+        printf("┌─────────────────────────────────────────────────────────────┐\n");
+        printf("│ 批处理结果                                                  │\n");
+        printf("├─────────────────────────────────────────────────────────────┤\n");
+        printf("│ 总序列数:     %5d                                         │\n", batch_count);
+        printf("│ 成功处理:     %5d                                         │\n", result);
+        printf("│ 总耗时:       %8.2f μs                                 │\n", batch_time);
+        printf("│ 平均耗时:     %8.2f μs/条                               │\n", batch_time / batch_count);
+        printf("└─────────────────────────────────────────────────────────────┘\n\n");
+
+        for (int i = 0; i < batch_count; i++) {
+            printf("  [%d] 序列长度: %d, 特征前5维: [", i + 1, seq_lens[i]);
+            int *feat = &features[i * feature_dim];
+            for (int j = 0; j < 5 && j < feature_dim; j++) {
+                printf("%d", feat[j]);
+                if (j < 4) printf(", ");
+            }
+            printf("]\n");
         }
-        printf("]\n");
     }
 
-    // 清理
     for (int i = 0; i < batch_count; i++) {
-        if (seq_lens[i] > 0) {
-            free((void *)seqs[i]);
-        }
+        free((void *)seqs[i]);
     }
     free(seqs);
     free(seq_lens);

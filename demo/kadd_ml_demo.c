@@ -37,35 +37,23 @@ void test_single_predict(kadd_model_handle_t *model, int feature_dim) {
         return;
     }
 
-    printf("请输入特征向量 (%d维，用逗号或空格分隔，直接回车使用默认值): ", feature_dim);
+    printf("请输入特征向量 (%d维，用逗号或空格分隔): ", feature_dim);
 
     char input[2048];
     fgets(input, sizeof(input), stdin);
     input[strcspn(input, "\n")] = 0;
 
-    // 使用默认值或解析输入
-    if (strlen(input) == 0) {
-        float defaults[] = {0.0f, 152.0f, 0.0f, 0.0f, 0.0f, 0.0f, 185.0f, 1717.0f, 4152.0f, 0.0f, 0.0f, 4494.0f, 190.0f,
-                           0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 129.0f, 0.0f, 0.0f, 0.0f, 0.0f, 173.0f, 0.0f, 0.0f, 0.0f};
-        memcpy(features, defaults, feature_dim * sizeof(float));
-        printf("使用默认特征向量\n");
-    } else {
-        int count = parse_features(input, features, feature_dim);
-        if (count != feature_dim) {
-            printf("错误: 需要 %d 个值，实际解析到 %d 个\n", feature_dim, count);
-            free(features);
-            return;
-        }
-    }
+    parse_features(input, features, feature_dim);
 
     float probability = 0.0f;
     void *timer = timer_start();
+    int ret = kadd_model_predict(model, features, &probability);
+    double elapsed = timer_end(timer);
 
-    if (kadd_model_predict(model, features, &probability) == 0) {
-        double elapsed = timer_end(timer);
-        printf("结果: %.4f (%.2f%%), 耗时: %.2f μs\n", probability, probability * 100, elapsed);
-    } else {
-        printf("推理失败\n");
+    printf("返回值: %d\n", ret);
+
+    if (ret >= 0) {
+        printf("概率: %.4f (%.2f%%), 耗时: %.2f μs\n", probability, probability * 100, elapsed);
     }
 
     free(features);
@@ -73,20 +61,10 @@ void test_single_predict(kadd_model_handle_t *model, int feature_dim) {
 
 // 批量推理测试
 void test_batch_predict(kadd_model_handle_t *model, int feature_dim) {
-    int batch_size = 0;
-    printf("请输入批量大小 (1-100, 直接回车使用默认值10): ");
-
-    char input[64];
-    fgets(input, sizeof(input), stdin);
-    input[strcspn(input, "\n")] = 0;
-
-    if (strlen(input) == 0) {
-        batch_size = 10;
-        printf("使用默认批量大小: 10\n");
-    } else if (sscanf(input, "%d", &batch_size) != 1 || batch_size < 1 || batch_size > 100) {
-        printf("批量大小无效，使用默认值10\n");
-        batch_size = 10;
-    }
+    int batch_size;
+    printf("请输入批量大小: ");
+    scanf("%d", &batch_size);
+    getchar();
 
     float *features = (float *)calloc(batch_size * feature_dim, sizeof(float));
     float *probabilities = (float *)calloc(batch_size, sizeof(float));
@@ -97,26 +75,26 @@ void test_batch_predict(kadd_model_handle_t *model, int feature_dim) {
         return;
     }
 
-    // 填充特征数据（使用默认值）
-    float defaults[] = {0.0f, 152.0f, 0.0f, 0.0f, 0.0f, 0.0f, 185.0f, 1717.0f, 4152.0f, 0.0f, 0.0f, 4494.0f, 190.0f,
-                       0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 129.0f, 0.0f, 0.0f, 0.0f, 0.0f, 173.0f, 0.0f, 0.0f, 0.0f};
+    printf("请输入 %d 个特征向量:\n", batch_size);
     for (int i = 0; i < batch_size; i++) {
-        memcpy(features + i * feature_dim, defaults, feature_dim * sizeof(float));
+        printf("[%d]> ", i + 1);
+        char input[2048];
+        fgets(input, sizeof(input), stdin);
+        input[strcspn(input, "\n")] = 0;
+        parse_features(input, features + i * feature_dim, feature_dim);
     }
 
     void *timer = timer_start();
     int count = kadd_model_predict_batch(model, features, batch_size, probabilities, batch_size);
     double elapsed = timer_end(timer);
 
-    if (count > 0) {
-        printf("批量推理完成: %d/%d, 总耗时: %.2f μs, 平均: %.2f μs/样本\n",
-               count, batch_size, elapsed, elapsed / batch_size);
-        printf("结果:\n");
+    printf("返回值: %d\n", count);
+
+    if (count >= 0) {
+        printf("总耗时: %.2f μs, 平均: %.2f μs/样本\n", elapsed, elapsed / batch_size);
         for (int i = 0; i < batch_size; i++) {
             printf("  [%2d] %.4f (%.2f%%)\n", i + 1, probabilities[i], probabilities[i] * 100);
         }
-    } else {
-        printf("批量推理失败\n");
     }
 
     free(features);
@@ -186,27 +164,13 @@ int main() {
 
                 const char *model_path = config.ml.model_path;
                 printf("使用模型路径: %s\n", model_path);
-                printf("请输入特征维度 (直接回车使用配置值%d): ", config.ml.feature_dim);
 
-                char dim_input[64];
-                fgets(dim_input, sizeof(dim_input), stdin);
-                dim_input[strcspn(dim_input, "\n")] = 0;
+                printf("请输入特征维度: ");
+                scanf("%d", &feature_dim);
+                getchar();
 
-                if (strlen(dim_input) > 0 && sscanf(dim_input, "%d", &feature_dim) == 1) {
-                    if (feature_dim <= 0 || feature_dim > 1024) {
-                        printf("特征维度无效，使用配置值%d\n", config.ml.feature_dim);
-                        feature_dim = config.ml.feature_dim;
-                    }
-                } else {
-                    feature_dim = config.ml.feature_dim;
-                    printf("使用配置特征维度: %d\n", feature_dim);
-                }
-
-                if (kadd_model_load(&model, model_path, feature_dim) == 0) {
-                    printf("模型加载成功\n");
-                } else {
-                    printf("模型加载失败\n");
-                }
+                int ret = kadd_model_load(&model, model_path, feature_dim);
+                printf("返回值: %d\n", ret);
                 break;
             }
             case 2: {

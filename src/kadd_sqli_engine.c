@@ -203,8 +203,6 @@ int kadd_sqli_detect(kadd_sqli_engine_t *engine, const char *input, float *proba
     }
 
     /* 步骤 2: 特征提取 - 使用内存池 */
-    memset(engine->feature_buffer, 0, engine->feature_dim * sizeof(int));
-
     if (kadd_seq_to_feature(engine->token_buffer, token_count, engine->window_size,
                              engine->feature_buffer, engine->feature_dim) != 0) {
         return KADD_SQLI_ERROR_FEATURE;

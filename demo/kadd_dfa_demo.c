@@ -284,22 +284,15 @@ int main(int argc, char *argv[])
         }
 
         if (strcmp(input, "batch") == 0) {
-            // ========== 批处理模式 ==========
             printf("\n╔════════════════════════════════════════════════════════════╗\n");
             printf("║                    批处理模式                              ║\n");
             printf("╚════════════════════════════════════════════════════════════╝\n\n");
 
+            int batch_count;
             printf("请输入要处理的字符串数量: ");
-            int batch_count = 0;
-            if (scanf("%d", &batch_count) != 1 || batch_count <= 0 || batch_count > 100) {
-                printf("无效的数量，退出批处理模式\n");
-                while (getchar() != '\n'); // 清空输入缓冲区
-                line_num++;
-                continue;
-            }
-            while (getchar() != '\n'); // 清空换行符
+            scanf("%d", &batch_count);
+            getchar();
 
-            // 准备批处理输入
             const char **batch_inputs = (const char **)malloc(batch_count * sizeof(char *));
             int **batch_outputs = (int **)malloc(batch_count * sizeof(int *));
             int *batch_dims = (int *)malloc(batch_count * sizeof(int));
@@ -313,8 +306,7 @@ int main(int argc, char *argv[])
                 continue;
             }
 
-            // 读取输入
-            printf("请输入 %d 个字符串（每行一个，空行结束）:\n", batch_count);
+            printf("请输入 %d 个字符串:\n", batch_count);
             for (int i = 0; i < batch_count; i++) {
                 printf("[%d]> ", i + 1);
                 char batch_input[2048];
@@ -322,10 +314,6 @@ int main(int argc, char *argv[])
                 batch_input[strcspn(batch_input, "\n")] = '\0';
                 batch_inputs[i] = strdup(batch_input);
             }
-
-            // 执行批处理
-            printf("\n正在执行批处理...\n");
-            void *timer = timer_start();
 
             kadd_dfa_batch_t batch = {
                 .inputs = batch_inputs,
@@ -337,51 +325,23 @@ int main(int argc, char *argv[])
             };
 
             int result = kadd_dfa_engine_tokenize_batch(engine, &batch);
-            double batch_time = timer_end(timer);
+            printf("返回值: %d\n", result);
 
-            // 打印结果
-            printf("\n批处理完成！\n");
-            printf("┌─────────────────────────────────────────────────────────────┐\n");
-            printf("│ 批处理结果                                                  │\n");
-            printf("├─────────────────────────────────────────────────────────────┤\n");
-            printf("│ 总输入数:     %5d                                         │\n", batch_count);
-            printf("│ 成功处理:     %5d                                         │\n", result > 0 ? result : 0);
-            printf("│ 总耗时:       %8.2f μs                                 │\n", batch_time);
-            printf("│ 平均耗时:     %8.2f μs/条                               │\n", batch_time / batch_count);
-            printf("└─────────────────────────────────────────────────────────────┘\n\n");
-
-            // 详细结果
-            for (int i = 0; i < batch_count; i++) {
-                printf("  [%d] \"%s\"\n", i + 1, batch_inputs[i]);
-                if (batch_dims[i] >= 0) {
-                    printf("      Tokens: [");
-                    int line_pos = 0;
-                    for (int j = 0; j < batch_dims[i]; j++) {
-                        char num_buf[16];
-                        int num_len = snprintf(num_buf, sizeof(num_buf), "%d", batch_outputs[i][j]);
-
-                        // 如果当前行放不下，换行并对齐
-                        if (line_pos > 0 && line_pos + num_len + 2 > 60) {
-                            printf("\n                ");
-                            line_pos = 0;
+            if (result >= 0) {
+                for (int i = 0; i < batch_count; i++) {
+                    printf("  [%d] \"%s\"\n", i + 1, batch_inputs[i]);
+                    if (batch_dims[i] >= 0) {
+                        printf("      Tokens: [");
+                        for (int j = 0; j < batch_dims[i]; j++) {
+                            printf("%d", batch_outputs[i][j]);
+                            if (j < batch_dims[i] - 1) printf(", ");
                         }
-
-                        printf("%s", num_buf);
-                        line_pos += num_len;
-
-                        if (j < batch_dims[i] - 1) {
-                            printf(", ");
-                            line_pos += 2;
-                        }
+                        printf("]\n");
+                        free(batch_outputs[i]);
                     }
-                    printf("] (%d个)\n", batch_dims[i]);
-                    free(batch_outputs[i]);
-                } else {
-                    printf("      ✗ 处理失败\n");
                 }
             }
 
-            // 清理
             for (int i = 0; i < batch_count; i++) {
                 free((void *)batch_inputs[i]);
             }

@@ -151,22 +151,15 @@ int main(int argc, char *argv[])
         }
 
         if (strcmp(input, "batch") == 0) {
-            // ========== 批处理模式 ==========
             printf("\n╔════════════════════════════════════════════════════════════╗\n");
             printf("║                    批处理模式                              ║\n");
             printf("╚════════════════════════════════════════════════════════════╝\n\n");
 
+            int batch_count;
             printf("请输入要检测的字符串数量: ");
-            int batch_count = 0;
-            if (scanf("%d", &batch_count) != 1 || batch_count <= 0 || batch_count > 100) {
-                printf("无效的数量，退出批处理模式\n");
-                while (getchar() != '\n'); // 清空输入缓冲区
-                line_num++;
-                continue;
-            }
-            while (getchar() != '\n'); // 清空换行符
+            scanf("%d", &batch_count);
+            getchar();
 
-            // 准备批处理输入
             const char **batch_inputs = (const char **)malloc(batch_count * sizeof(char *));
             float *batch_probs = (float *)malloc(batch_count * sizeof(float));
 
@@ -178,8 +171,7 @@ int main(int argc, char *argv[])
                 continue;
             }
 
-            // 读取输入
-            printf("请输入 %d 个字符串（每行一个，空行结束）:\n", batch_count);
+            printf("请输入 %d 个字符串:\n", batch_count);
             for (int i = 0; i < batch_count; i++) {
                 printf("[%d]> ", i + 1);
                 char batch_input[2048];
@@ -188,35 +180,20 @@ int main(int argc, char *argv[])
                 batch_inputs[i] = strdup(batch_input);
             }
 
-            // 执行批处理
-            printf("\n正在执行批处理...\n");
-            void *timer = timer_start();
-
             int result = kadd_sqli_detect_batch(engine, batch_inputs, batch_count,
                                                 batch_probs, 32);
-            double batch_time = timer_end(timer);
+            printf("返回值: %d\n", result);
 
-            // 打印结果
-            printf("\n批处理完成！\n");
-            printf("┌─────────────────────────────────────────────────────────────┐\n");
-            printf("│ 批处理结果                                                  │\n");
-            printf("├─────────────────────────────────────────────────────────────┤\n");
-            printf("│ 总输入数:     %5d                                         │\n", batch_count);
-            printf("│ 成功处理:     %5d                                         │\n", result > 0 ? result : 0);
-            printf("│ 总耗时:       %8.2f μs                                 │\n", batch_time);
-            printf("│ 平均耗时:     %8.2f μs/条                               │\n", batch_time / batch_count);
-            printf("└─────────────────────────────────────────────────────────────┘\n\n");
-
-            // 详细结果
-            for (int i = 0; i < batch_count; i++) {
-                int is_sqli = (batch_probs[i] >= 0.5f) ? 1 : 0;
-                const char *status = is_sqli ? "[SQL 注入]" : "[安全]";
-                const char *icon = is_sqli ? "⚠" : "✓";
-                printf("  [%d] \"%s\"\n", i + 1, batch_inputs[i]);
-                printf("      %s %-10s  概率: %5.2f%%\n", icon, status, batch_probs[i] * 100);
+            if (result >= 0) {
+                for (int i = 0; i < batch_count; i++) {
+                    int is_sqli = (batch_probs[i] >= 0.5f) ? 1 : 0;
+                    const char *status = is_sqli ? "[SQL 注入]" : "[安全]";
+                    const char *icon = is_sqli ? "⚠" : "✓";
+                    printf("  [%d] \"%s\"\n", i + 1, batch_inputs[i]);
+                    printf("      %s %-10s  概率: %5.2f%%\n", icon, status, batch_probs[i] * 100);
+                }
             }
 
-            // 清理
             for (int i = 0; i < batch_count; i++) {
                 free((void *)batch_inputs[i]);
             }
