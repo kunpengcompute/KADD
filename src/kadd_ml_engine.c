@@ -89,8 +89,9 @@ static int create_session(kadd_model_handle_t *handle, const char *model_path) {
         return -1;
     }
 
-    // 设置图优化级别
-    status = handle->api->SetSessionGraphOptimizationLevel(options, ORT_ENABLE_BASIC);
+    // 设置图优化级别为全优化，让 ONNX Runtime 在 session 创建时完成所有优化
+    // 避免首次推理时仍需执行内核选择等延迟操作
+    status = handle->api->SetSessionGraphOptimizationLevel(options, ORT_ENABLE_ALL);
     if (status) {
         handle->api->ReleaseSessionOptions(options);
         handle->api->ReleaseStatus(status);
@@ -191,6 +192,16 @@ int kadd_model_load(kadd_model_handle_t **handle, const char *model_path, int fe
     }
 
     *handle = h;
+
+    // warmup: 用全零特征做一次 dummy 推理，让 ONNX Runtime 完成内核选择和内存池初始化
+    // 将首次推理延迟移到模型加载阶段，后续真实推理不再有首次延迟
+    float *warmup_features = (float *)calloc(feature_dim, sizeof(float));
+    if (warmup_features) {
+        float warmup_prob = 0.0f;
+        kadd_model_predict(h, warmup_features, &warmup_prob);
+        free(warmup_features);
+    }
+
     return 0;
 }
 
@@ -234,22 +245,6 @@ int kadd_model_predict(kadd_model_handle_t *handle, const float *features, float
         if (data_status) handle->api->ReleaseStatus(data_status);
         handle->api->ReleaseValue(output);
         return -1;
-    }
-
-    /* 获取输出张量信息，确认形状 */
-    OrtTensorTypeAndShapeInfo *tensor_info = NULL;
-    size_t output_dim_count = 0;
-    int64_t output_shape[4] = {0};
-
-    OrtStatus *tensor_status = handle->api->GetTensorTypeAndShape(output, &tensor_info);
-    if (!tensor_status && tensor_info) {
-        OrtStatus *dim_status = handle->api->GetDimensionsCount(tensor_info, &output_dim_count);
-        if (!dim_status && output_dim_count <= 4) {
-            (void)handle->api->GetDimensions(tensor_info, output_shape, 4);
-        }
-        handle->api->ReleaseTensorTypeAndShapeInfo(tensor_info);
-    } else if (tensor_status) {
-        handle->api->ReleaseStatus(tensor_status);
     }
 
     /*
