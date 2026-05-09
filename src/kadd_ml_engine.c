@@ -179,16 +179,17 @@ static int create_session(kadd_model_handle_t *handle, const char *model_path) {
 
 /* ========== 公共接口 ========== */
 int kadd_model_load(kadd_model_handle_t **handle, const char *model_path, int feature_dim) {
-    if (!handle || !model_path || feature_dim <= 0) return -1;
+    if (!handle || !model_path) return KADD_ERROR_NULL_PTR;
+    if (feature_dim <= 0) return KADD_ERROR_INVALID_PARAM;
 
     kadd_model_handle_t *h = (kadd_model_handle_t *)calloc(1, sizeof(kadd_model_handle_t));
-    if (!h) return -1;
+    if (!h) return KADD_ERROR_OUT_OF_MEMORY;
 
     h->feature_dim = feature_dim;
 
     if (create_session(h, model_path) != 0) {
         free(h);
-        return -1;
+        return KADD_ERROR_MODEL_LOAD_FAILED;
     }
 
     *handle = h;
@@ -206,7 +207,7 @@ int kadd_model_load(kadd_model_handle_t **handle, const char *model_path, int fe
 }
 
 int kadd_model_predict(kadd_model_handle_t *handle, const float *features, float *probability) {
-    if (!handle || !features || !probability) return -1;
+    if (!handle || !features || !probability) return KADD_ERROR_NULL_PTR;
 
     int64_t shape[] = {1, handle->feature_dim};
     OrtValue *input = NULL;
@@ -261,7 +262,8 @@ int kadd_model_predict(kadd_model_handle_t *handle, const float *features, float
 }
 
 int kadd_model_predict_batch(kadd_model_handle_t *handle, const float *features, int n, float *probabilities, int batch_size) {
-    if (!handle || !features || !probabilities || n <= 0) return -1;
+    if (!handle || !features || !probabilities) return KADD_ERROR_NULL_PTR;
+    if (n <= 0) return KADD_ERROR_INVALID_PARAM;
 
     // 限制 batch_size 范围，防止过大或过小
     if (batch_size > 1024) {

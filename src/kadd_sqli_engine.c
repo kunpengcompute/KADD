@@ -229,7 +229,7 @@ int kadd_sqli_detect(kadd_sqli_engine_t *engine, const char *input, float *proba
  */
 int kadd_sqli_detect_batch(kadd_sqli_engine_t *engine, const char **inputs, int count, float *probabilities, int batch_size) {
     if (!engine || !inputs || !probabilities || count <= 0) {
-        return KADD_ERROR_INVALID_INPUT;
+        return KADD_SQLI_ERROR_INVALID_INPUT;
     }
 
     if (batch_size <= 0) batch_size = 64;

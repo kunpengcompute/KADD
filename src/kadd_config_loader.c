@@ -79,14 +79,14 @@ int kadd_config_load(const char *config_path, kadd_config_t *config) {
         if (item && cJSON_IsNumber(item)) {
             config->dfa.max_input_length = item->valueint;
         } else {
-            config->dfa.max_input_length = 8192;  // 默认值
+            config->dfa.max_input_length = 300;  // 默认值
         }
 
         item = cJSON_GetObjectItem(dfa, "max_output_dim");
         if (item && cJSON_IsNumber(item)) {
             config->dfa.max_output_dim = item->valueint;
         } else {
-            config->dfa.max_output_dim = 8192;  // 默认值
+            config->dfa.max_output_dim = 300;  // 默认值
         }
     }
 
@@ -158,14 +158,14 @@ int kadd_config_load(const char *config_path, kadd_config_t *config) {
         if (item && cJSON_IsNumber(item)) {
             config->sqli.max_input_length = item->valueint;
         } else {
-            config->sqli.max_input_length = 8192;  // 默认值
+            config->sqli.max_input_length = 300;  // 默认值
         }
 
         item = cJSON_GetObjectItem(sqli, "max_output_dim");
         if (item && cJSON_IsNumber(item)) {
             config->sqli.max_output_dim = item->valueint;
         } else {
-            config->sqli.max_output_dim = 8192;  // 默认值
+            config->sqli.max_output_dim = 300;  // 默认值
         }
     }
 

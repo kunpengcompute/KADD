@@ -22,6 +22,7 @@
 #include "kadd_ml_engine.h"
 #include "kadd_feature_engine.h"
 #include "kadd_config_loader.h"
+#include "kadd_errors.h"
 #include "cJSON.h"
 
 #ifndef TEST_DATA_PATH
@@ -290,7 +291,7 @@ TEST_F(MLEngineTest, LoadWithNullHandle) {
     if (skip_test) GTEST_SKIP() << "模型文件不可用";
 
     int ret = kadd_model_load(nullptr, config.ml.model_path, config.ml.feature_dim);
-    EXPECT_NE(ret, 0) << "传入 NULL 句柄指针应该失败";
+    EXPECT_EQ(ret, KADD_ERROR_NULL_PTR) << "传入 NULL 句柄指针应该返回 KADD_ERROR_NULL_PTR";
 }
 
 TEST_F(MLEngineTest, LoadWithInvalidPath) {
@@ -307,37 +308,31 @@ TEST_F(MLEngineTest, LoadWithEmptyPath) {
 }
 
 TEST_F(MLEngineTest, PredictWithNullHandle) {
-    if (skip_test) GTEST_SKIP() << "模型文件不可用";
-
     float probability = 0.0f;
     int ret = kadd_model_predict(nullptr, test_features.data(), &probability);
-    EXPECT_NE(ret, 0) << "NULL 句柄推理应该失败";
+    EXPECT_EQ(ret, KADD_ERROR_NULL_PTR) << "NULL 句柄推理应该返回 KADD_ERROR_NULL_PTR";
 }
 
 TEST_F(MLEngineTest, PredictWithNullFeatures) {
-    if (skip_test) GTEST_SKIP() << "模型文件不可用";
-
     ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
 
     float probability = 0.0f;
     int ret = kadd_model_predict(model, nullptr, &probability);
-    EXPECT_NE(ret, 0) << "NULL 特征向量推理应该失败";
+    EXPECT_EQ(ret, KADD_ERROR_NULL_PTR) << "NULL 特征向量推理应该返回 KADD_ERROR_NULL_PTR";
 }
 
 TEST_F(MLEngineTest, PredictWithNullProbability) {
-    if (skip_test) GTEST_SKIP() << "模型文件不可用";
-
     ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
 
     int ret = kadd_model_predict(model, test_features.data(), nullptr);
-    EXPECT_NE(ret, 0) << "NULL 概率输出指针应该失败";
+    EXPECT_EQ(ret, KADD_ERROR_NULL_PTR) << "NULL 概率输出指针应该返回 KADD_ERROR_NULL_PTR";
 }
 
 TEST_F(MLEngineTest, PredictBeforeLoad) {
     kadd_model_handle_t *invalid_model = nullptr;
     float probability = 0.0f;
     int ret = kadd_model_predict(invalid_model, test_features.data(), &probability);
-    EXPECT_NE(ret, 0) << "未加载模型前推理应该失败";
+    EXPECT_EQ(ret, KADD_ERROR_NULL_PTR) << "未加载模型前推理应该返回 KADD_ERROR_NULL_PTR";
 }
 
 TEST_F(MLEngineTest, PredictBatchWithNullHandle) {
@@ -346,7 +341,7 @@ TEST_F(MLEngineTest, PredictBatchWithNullHandle) {
     std::vector<float> probabilities(n);
 
     int ret = kadd_model_predict_batch(nullptr, features.data(), n, probabilities.data(), 10);
-    EXPECT_NE(ret, 0) << "NULL 句柄批量推理应该失败";
+    EXPECT_EQ(ret, KADD_ERROR_NULL_PTR) << "NULL 句柄批量推理应该返回 KADD_ERROR_NULL_PTR";
 }
 
 TEST_F(MLEngineTest, PredictBatchWithNullFeatures) {
@@ -356,7 +351,7 @@ TEST_F(MLEngineTest, PredictBatchWithNullFeatures) {
     std::vector<float> probabilities(n);
 
     int ret = kadd_model_predict_batch(model, nullptr, n, probabilities.data(), 10);
-    EXPECT_NE(ret, 0) << "NULL 特征矩阵批量推理应该失败";
+    EXPECT_EQ(ret, KADD_ERROR_NULL_PTR) << "NULL 特征矩阵批量推理应该返回 KADD_ERROR_NULL_PTR";
 }
 
 TEST_F(MLEngineTest, PredictBatchWithNullProbabilities) {
@@ -366,16 +361,14 @@ TEST_F(MLEngineTest, PredictBatchWithNullProbabilities) {
     std::vector<float> features(config.ml.feature_dim * n, 0.0f);
 
     int ret = kadd_model_predict_batch(model, features.data(), n, nullptr, 10);
-    EXPECT_NE(ret, 0) << "NULL 概率数组批量推理应该失败";
+    EXPECT_EQ(ret, KADD_ERROR_NULL_PTR) << "NULL 概率数组批量推理应该返回 KADD_ERROR_NULL_PTR";
 }
 
 TEST_F(MLEngineTest, PredictBatchWithZeroCount) {
-    ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
-
     std::vector<float> probabilities(0);
 
     int ret = kadd_model_predict_batch(model, nullptr, 0, probabilities.data(), 10);
-    EXPECT_EQ(ret, -1) << "零样本批量应该失败并返回 -1（当前实现行为）";
+    EXPECT_EQ(ret, KADD_ERROR_NULL_PTR) << "NULL 样本批量应该返回 KADD_ERROR_NULL_PTR";
 }
 
 TEST_F(MLEngineTest, PredictBatchWithNegativeCount) {
@@ -383,14 +376,29 @@ TEST_F(MLEngineTest, PredictBatchWithNegativeCount) {
 
     std::vector<float> probabilities(10);
 
-    int ret = kadd_model_predict_batch(model, nullptr, -1, probabilities.data(), 10);
-    EXPECT_NE(ret, 0) << "负样本数批量推理应该失败";
+    int ret = kadd_model_predict_batch(model, test_features.data(), -1, probabilities.data(), 10);
+    EXPECT_EQ(ret, KADD_ERROR_INVALID_PARAM) << "负样本数批量推理应该返回 KADD_ERROR_INVALID_PARAM";
 }
 
 TEST_F(MLEngineTest, FreeNullHandle) {
     // 不应该崩溃
     kadd_model_free(nullptr);
     SUCCEED();
+}
+
+TEST_F(MLEngineTest, LoadWithNullModelPath) {
+    int ret = kadd_model_load(&model, nullptr, config.ml.feature_dim);
+    EXPECT_EQ(ret, KADD_ERROR_NULL_PTR) << "NULL 模型路径应该返回 KADD_ERROR_NULL_PTR";
+}
+
+TEST_F(MLEngineTest, LoadWithNegativeFeatureDim) {
+    int ret = kadd_model_load(&model, config.ml.model_path, -1);
+    EXPECT_EQ(ret, KADD_ERROR_INVALID_PARAM) << "负 feature_dim 应该返回 KADD_ERROR_INVALID_PARAM";
+}
+
+TEST_F(MLEngineTest, LoadWithZeroFeatureDim) {
+    int ret = kadd_model_load(&model, config.ml.model_path, 0);
+    EXPECT_EQ(ret, KADD_ERROR_INVALID_PARAM) << "零 feature_dim 应该返回 KADD_ERROR_INVALID_PARAM";
 }
 
 TEST_F(MLEngineTest, FreeAfterPredict) {
@@ -404,7 +412,7 @@ TEST_F(MLEngineTest, FreeAfterPredict) {
 
     // 验证释放后不能再使用
     int ret = kadd_model_predict(model, test_features.data(), &probability);
-    EXPECT_NE(ret, 0) << "释放后推理应该失败";
+    EXPECT_EQ(ret, KADD_ERROR_NULL_PTR) << "释放后推理应该返回 KADD_ERROR_NULL_PTR";
 }
 
 TEST_F(MLEngineTest, MultipleFree) {

@@ -125,8 +125,11 @@ int kadd_dfa_engine_create(kadd_dfa_engine_t **engine,
     kadd_dfa_engine_t *e;
     int rc;
 
-    if (engine == NULL || table_paths == NULL ||
-        table_paths->transition_table_path == NULL ||
+    if (engine == NULL || table_paths == NULL) {
+        return KADD_ERROR_NULL_PTR;
+    }
+
+    if (table_paths->transition_table_path == NULL ||
         table_paths->output_table_path == NULL ||
         table_paths->eod_table_path == NULL ||
         table_paths->transition_table_path[0] == '\0' ||
@@ -177,8 +180,11 @@ int kadd_dfa_engine_tokenize(const kadd_dfa_engine_t *e,
     const uint16_t *output_table;
     const uint16_t *eod_table;
 
-    if (e == NULL || input == NULL || output == NULL || dim == NULL ||
-        e->transition_table == NULL || e->output_table == NULL || e->eod_table == NULL) {
+    if (e == NULL || input == NULL || output == NULL || dim == NULL) {
+        return KADD_ERROR_NULL_PTR;
+    }
+
+    if (e->transition_table == NULL || e->output_table == NULL || e->eod_table == NULL) {
         return KADD_DFA_ERROR_INVALID_INPUT;
     }
 

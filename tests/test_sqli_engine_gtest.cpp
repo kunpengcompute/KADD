@@ -334,29 +334,48 @@ TEST_F(SQLiEngineTest, MixedCase) {
 /* ========== 3. 异常测试 ========== */
 
 TEST_F(SQLiEngineTest, NullEngine) {
-    // 测试空引擎指针
     float prob = 0.0f;
     int ret = kadd_sqli_detect(nullptr, "test", &prob);
-    EXPECT_NE(ret, KADD_SQLI_OK) << "空引擎应该返回错误";
+    EXPECT_EQ(ret, KADD_SQLI_ERROR_INVALID_INPUT) << "空引擎应该返回 KADD_SQLI_ERROR_INVALID_INPUT";
 }
 
 TEST_F(SQLiEngineTest, NullInput) {
-    // 测试空输入指针
     float prob = 0.0f;
     int ret = kadd_sqli_detect(engine, nullptr, &prob);
-    EXPECT_NE(ret, KADD_SQLI_OK) << "空输入应该返回错误";
+    EXPECT_EQ(ret, KADD_SQLI_ERROR_INVALID_INPUT) << "空输入应该返回 KADD_SQLI_ERROR_INVALID_INPUT";
 }
 
 TEST_F(SQLiEngineTest, NullProbability) {
-    // 测试空概率指针
     int ret = kadd_sqli_detect(engine, "test", nullptr);
-    EXPECT_NE(ret, KADD_SQLI_OK) << "空概率指针应该返回错误";
+    EXPECT_EQ(ret, KADD_SQLI_ERROR_INVALID_INPUT) << "空概率指针应该返回 KADD_SQLI_ERROR_INVALID_INPUT";
 }
 
 TEST_F(SQLiEngineTest, NullEngineWithAllOtherNull) {
-    // 测试全部为空指针
     int ret = kadd_sqli_detect(nullptr, nullptr, nullptr);
-    EXPECT_NE(ret, KADD_SQLI_OK) << "全部空指针应该返回错误";
+    EXPECT_EQ(ret, KADD_SQLI_ERROR_INVALID_INPUT) << "全部空指针应该返回 KADD_SQLI_ERROR_INVALID_INPUT";
+}
+
+TEST_F(SQLiEngineTest, CreateWithNullEnginePtr) {
+    int ret = kadd_sqli_engine_create_from_file(nullptr, "config.json");
+    EXPECT_NE(ret, KADD_SQLI_OK) << "NULL engine 指针应该返回错误";
+}
+
+TEST_F(SQLiEngineTest, CreateWithNullConfigFile) {
+    kadd_sqli_engine_t *tmp = nullptr;
+    int ret = kadd_sqli_engine_create_from_file(&tmp, nullptr);
+    EXPECT_EQ(ret, KADD_SQLI_ERROR_CONFIG) << "NULL 配置文件应该返回 KADD_SQLI_ERROR_CONFIG";
+}
+
+TEST_F(SQLiEngineTest, CreateWithEmptyConfigFile) {
+    kadd_sqli_engine_t *tmp = nullptr;
+    int ret = kadd_sqli_engine_create_from_file(&tmp, "");
+    EXPECT_NE(ret, KADD_SQLI_OK) << "空配置文件路径应该返回错误";
+}
+
+TEST_F(SQLiEngineTest, CreateWithNonexistentConfigFile) {
+    kadd_sqli_engine_t *tmp = nullptr;
+    int ret = kadd_sqli_engine_create_from_file(&tmp, "nonexistent_config.json");
+    EXPECT_NE(ret, KADD_SQLI_OK) << "不存在配置文件应该返回错误";
 }
 
 TEST_F(SQLiEngineTest, EngineReuse) {

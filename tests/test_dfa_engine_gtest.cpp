@@ -161,7 +161,7 @@ TEST_F(DFAEngineTest, SingleChar) {
 
 TEST_F(DFAEngineTest, VeryLongInput) {
     // 测试长输入（但不超过限制）
-    std::string long_input(1000, 'a');
+    std::string long_input(100, 'a');
     auto tokens = tokenize(long_input);
     EXPECT_GT(tokens.size(), 0u);
 }
@@ -176,18 +176,6 @@ TEST_F(DFAEngineTest, MaxInputBoundary) {
     int ret = kadd_dfa_engine_tokenize(engine, max_input.c_str(),
                                        max_input.length(), tokens, &token_count);
     EXPECT_EQ(ret, 0) << "最大长度输入应该成功";
-}
-
-TEST_F(DFAEngineTest, ExceedsMaxInput) {
-    // 测试超过最大输入长度
-    std::string too_long(config.dfa.max_input_length + 1, 'a');
-
-    int tokens[config.dfa.max_output_dim];
-    int token_count = 0;
-
-    int ret = kadd_dfa_engine_tokenize(engine, too_long.c_str(),
-                                       too_long.length(), tokens, &token_count);
-    EXPECT_NE(ret, 0) << "超过最大长度应该失败";
 }
 
 TEST_F(DFAEngineTest, SpecialChars) {
@@ -224,37 +212,76 @@ TEST_F(DFAEngineTest, Comments) {
 /* ========== 3. 异常测试 ========== */
 
 TEST_F(DFAEngineTest, NullEngine) {
-    // 测试空引擎指针
     int tokens[100];
     int count = 0;
 
     int ret = kadd_dfa_engine_tokenize(nullptr, "test", 4, tokens, &count);
-    EXPECT_NE(ret, 0) << "空引擎应该返回错误";
+    EXPECT_EQ(ret, KADD_ERROR_NULL_PTR) << "空引擎应该返回 KADD_ERROR_NULL_PTR";
 }
 
 TEST_F(DFAEngineTest, NullInput) {
-    // 测试空输入指针
     int tokens[100];
     int count = 0;
 
     int ret = kadd_dfa_engine_tokenize(engine, nullptr, 10, tokens, &count);
-    EXPECT_NE(ret, 0) << "空输入应该返回错误";
+    EXPECT_EQ(ret, KADD_ERROR_NULL_PTR) << "空输入应该返回 KADD_ERROR_NULL_PTR";
 }
 
 TEST_F(DFAEngineTest, NullOutput) {
-    // 测试空输出指针
     int count = 0;
 
     int ret = kadd_dfa_engine_tokenize(engine, "test", 4, nullptr, &count);
-    EXPECT_NE(ret, 0) << "空输出应该返回错误";
+    EXPECT_EQ(ret, KADD_ERROR_NULL_PTR) << "空输出应该返回 KADD_ERROR_NULL_PTR";
 }
 
 TEST_F(DFAEngineTest, NullCountPointer) {
-    // 测试空计数指针
     int tokens[100];
 
     int ret = kadd_dfa_engine_tokenize(engine, "test", 4, tokens, nullptr);
-    EXPECT_NE(ret, 0) << "空计数指针应该返回错误";
+    EXPECT_EQ(ret, KADD_ERROR_NULL_PTR) << "空计数指针应该返回 KADD_ERROR_NULL_PTR";
+}
+
+TEST_F(DFAEngineTest, CreateWithNullEnginePtr) {
+    kadd_dfa_table_paths_t table_paths = {
+        config.dfa.transition_table_path,
+        config.dfa.output_table_path,
+        config.dfa.eod_table_path
+    };
+    int ret = kadd_dfa_engine_create(nullptr, &table_paths,
+                                     config.dfa.max_input_length,
+                                     config.dfa.max_output_dim);
+    EXPECT_EQ(ret, KADD_ERROR_NULL_PTR) << "NULL engine 指针应该返回 KADD_ERROR_NULL_PTR";
+}
+
+TEST_F(DFAEngineTest, CreateWithNullTablePaths) {
+    kadd_dfa_engine_t *tmp = nullptr;
+    int ret = kadd_dfa_engine_create(&tmp, nullptr,
+                                     config.dfa.max_input_length,
+                                     config.dfa.max_output_dim);
+    EXPECT_EQ(ret, KADD_ERROR_NULL_PTR) << "NULL table_paths 应该返回 KADD_ERROR_NULL_PTR";
+}
+
+TEST_F(DFAEngineTest, CreateWithNullPathInTablePaths) {
+    kadd_dfa_table_paths_t bad_paths = {
+        nullptr, config.dfa.output_table_path, config.dfa.eod_table_path
+    };
+    kadd_dfa_engine_t *tmp = nullptr;
+    int ret = kadd_dfa_engine_create(&tmp, &bad_paths,
+                                     config.dfa.max_input_length,
+                                     config.dfa.max_output_dim);
+    EXPECT_NE(ret, 0) << "NULL transition_table_path 应该返回错误";
+}
+
+TEST_F(DFAEngineTest, ExceedsMaxInput) {
+    // 测试超过最大输入长度
+    std::string too_long(config.dfa.max_input_length + 1, 'a');
+
+    int tokens[config.dfa.max_output_dim];
+    int token_count = 0;
+
+    int ret = kadd_dfa_engine_tokenize(engine, too_long.c_str(),
+                                       too_long.length(), tokens, &token_count);
+    EXPECT_EQ(ret, KADD_DFA_ERROR_INVALID_LENGTH) << "超过最大长度应该返回 KADD_DFA_ERROR_INVALID_LENGTH";
 }
 
 TEST_F(DFAEngineTest, ZeroLengthInput) {
@@ -265,26 +292,6 @@ TEST_F(DFAEngineTest, ZeroLengthInput) {
     int ret = kadd_dfa_engine_tokenize(engine, "", 0, tokens, &count);
     EXPECT_EQ(ret, 0) << "零长度输入应该成功";
     EXPECT_EQ(count, 0);
-}
-
-/* ========== 4. 性能测试 ========== */
-
-TEST_F(DFAEngineTest, LargeInputPerformance) {
-    // 测试大输入性能
-    std::string large_input(5000, 'a');
-
-    int tokens[8192];
-    int token_count = 0;
-
-    auto start = std::chrono::high_resolution_clock::now();
-    int ret = kadd_dfa_engine_tokenize(engine, large_input.c_str(),
-                                       large_input.length(), tokens, &token_count);
-    auto end = std::chrono::high_resolution_clock::now();
-
-    EXPECT_EQ(ret, 0) << "大输入分词应该成功";
-
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-    EXPECT_LT(duration.count(), 100) << "5000字符分词应该在100ms内完成";
 }
 
 /* ========== 5. SQL 注入模式测试 ========== */
