@@ -4,6 +4,9 @@
 #include <stddef.h>
 #include "kadd_errors.h"
 
+#define MAX_SEQ_LEN 300
+#define MAX_FEATURE_DIM 300
+
 #ifdef __cplusplus
 extern "C" {
 #endif

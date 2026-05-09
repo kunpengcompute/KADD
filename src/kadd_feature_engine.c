@@ -19,11 +19,11 @@
 /**
  * @brief 循环展开优化版滑窗距离
  */
-static void sliding_window_distance_shift_fast(const int *seq, int seq_len, int window_size, int *result)
+static int sliding_window_distance_shift_fast(const int *seq, int seq_len, int window_size, int *result)
 {
     memset(result, 0, seq_len * sizeof(int));
     int *weighted = (int *)malloc(seq_len * sizeof(int));
-    if (!weighted) return;
+    if (!weighted) return KADD_ERROR_OUT_OF_MEMORY;
 
     for (int d = 1; d < window_size; d++) {
         const int weight = window_size - d;
@@ -62,17 +62,18 @@ static void sliding_window_distance_shift_fast(const int *seq, int seq_len, int 
         }
     }
     free(weighted);
+    return KADD_SUCCESS;
 }
 
 #if defined(__aarch64__) && defined(__ARM_FEATURE_SVE)
 /**
  * @brief ARM SVE 向量化实现
  */
-static void sliding_window_distance_sve(const int *seq, int seq_len, int window_size, int *result)
+static int sliding_window_distance_sve(const int *seq, int seq_len, int window_size, int *result)
 {
     memset(result, 0, seq_len * sizeof(int));
     int *weighted = (int *)malloc(seq_len * sizeof(int));
-    if (!weighted) return;
+    if (!weighted) return KADD_ERROR_OUT_OF_MEMORY;
 
     for (int d = 1; d < window_size; d++) {
         const int weight = window_size - d;
@@ -117,6 +118,7 @@ static void sliding_window_distance_sve(const int *seq, int seq_len, int window_
         }
     }
     free(weighted);
+    return KADD_SUCCESS;
 }
 #endif
 
@@ -136,21 +138,33 @@ static void sliding_window_distance_sve(const int *seq, int seq_len, int window_
 int kadd_seq_to_feature(const int *seq, int seq_len, int window_size,
                    int *feature, int feature_dim)
 {
-    // 输入检查seq_len [0, 300] feature_dim [0, 300]
-    if (!seq || !feature || seq_len <= 0 || window_size <= 0 || feature_dim <= 0 || seq_len > 300 || feature_dim > 300) {
-        return -1;
+    if (!seq || !feature)
+        return KADD_ERROR_NULL_PTR;
+    if (seq_len <= 0 || window_size <= 0 || feature_dim <= 0 ||
+        seq_len > MAX_SEQ_LEN || feature_dim > MAX_FEATURE_DIM)
+        return KADD_ERROR_INVALID_PARAM;
+
+    // 校验 seq[i] 范围：token ID 必须 < feature_dim
+    for (int i = 0; i < seq_len; i++) {
+        if (seq[i] < 0 || seq[i] >= feature_dim)
+            return KADD_FEATURE_ERROR_VALUE_OUT_OF_RANGE;
     }
 
     // 分配临时结果数组
     int *result = (int *)malloc(seq_len * sizeof(int));
-    if (!result) return -1;
+    if (!result) return KADD_ERROR_OUT_OF_MEMORY;
 
     // 计算滑窗距离
+    int window_ret;
 #if defined(__aarch64__) && defined(__ARM_FEATURE_SVE)
-    sliding_window_distance_sve(seq, seq_len, window_size, result);
+    window_ret = sliding_window_distance_sve(seq, seq_len, window_size, result);
 #else
-    sliding_window_distance_shift_fast(seq, seq_len, window_size, result);
+    window_ret = sliding_window_distance_shift_fast(seq, seq_len, window_size, result);
 #endif
+    if (window_ret != KADD_SUCCESS) {
+        free(result);
+        return window_ret;
+    }
 
     // 映射到固定维度特征向量
     memset(feature, 0, feature_dim * sizeof(int));

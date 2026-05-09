@@ -68,6 +68,14 @@ extern "C" {
 /** @brief DFA 输入长度无效 */
 #define KADD_DFA_ERROR_INVALID_LENGTH  -6
 
+/* ========== Feature 引擎错误码 ========== */
+
+/** @brief Feature 序列元素超出范围 */
+#define KADD_FEATURE_ERROR_VALUE_OUT_OF_RANGE  -200
+
+/** @brief Feature 滑窗计算失败 */
+#define KADD_FEATURE_ERROR_WINDOW_FAILED       -201
+
 #ifdef __cplusplus
 }
 #endif
