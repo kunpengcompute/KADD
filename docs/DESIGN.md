@@ -89,7 +89,7 @@ kadd_sqli_engine
 - 状态类型分类优化（哈希快速查找）
 
 #### Token 类型
-- 28 种 token 类型（参考 libinjection）
+- 28 种 token 类型
 - 支持特殊语法：q-string、B'、X'、E'、N'、U&' 前缀字符串
 - 多字符操作符：`||`、`&&`、`==`、`!=`、`<=`、`>=` 等
 

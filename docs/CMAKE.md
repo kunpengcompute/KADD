@@ -91,7 +91,6 @@ cmake --build .
 | `kadd_feature_demo` | 特征转换演示 |
 | `kadd_ml_demo` | ML 推理演示 |
 | `kadd_sqli_demo` | SQL 注入检测演示 |
-| `kadd_libinjection_demo` | libinjection 对比演示 |
 
 ### 3.4 测试程序
 

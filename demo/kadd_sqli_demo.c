@@ -20,77 +20,26 @@
 #include <windows.h>
 #endif
 
-/* libinjection 头文件 */
-#include "libinjection_sqli.h"
-
 /* ========== 检测和打印函数 ========== */
 
-/**
- * @brief 检测输入并打印结果
- * 同时对比 KADD SQLi 和 libinjection 的判断结果及耗时
- */
 static void detect_and_print(kadd_sqli_engine_t *engine, const char *input) {
     float probability = 0.0f;
 
     printf("  输入: \"%s\"\n", input);
 
-    // ========== KADD SQLi 检测 ==========
     void *timer = timer_start();
     int ret = kadd_sqli_detect(engine, input, &probability);
-    double kadd_time = timer_end(timer);
+    double elapsed = timer_end(timer);
 
-    int kadd_is_sqli = 0;
-    if (ret == KADD_SQLI_OK) {
-        kadd_is_sqli = (probability >= 0.5f) ? 1 : 0;
+    if (ret != KADD_SQLI_OK) {
+        printf("  检测失败 (错误码: %d)\n\n", ret);
+        return;
     }
 
-    // ========== libinjection 检测 ==========
-    char fingerprint[8];
+    int is_sqli = (probability >= 0.5f) ? 1 : 0;
+    const char *icon = is_sqli ? "[SQL 注入]" : "[安全]";
 
-    timer = timer_start();
-    int lib_is_sqli = libinjection_sqli(input, strlen(input), fingerprint);
-    double lib_time = timer_end(timer);
-
-    // ========== 打印结果对比 ==========
-    const char *kadd_icon = kadd_is_sqli ? "⚠"  : "✓";
-    const char *kadd_status = kadd_is_sqli ? "[SQL 注入]" : "[安全]";
-
-    const char *lib_icon = lib_is_sqli ? "⚠"  : "✓";
-    const char *lib_status = lib_is_sqli ? "[SQL 注入]" : "[安全]";
-
-    printf("  ┌─────────────────────────────────────────────────────────────┐\n");
-    printf("  │ KADD SQLi 引擎                                              │\n");
-    printf("  ├─────────────────────────────────────────────────────────────┤\n");
-    printf("  │ 结果:       %s %-10s                                 │\n", kadd_icon, kadd_status);
-    if (ret == KADD_SQLI_OK) {
-        printf("  │ 概率:       %6.2f%%                                          │\n", probability * 100);
-    }
-    printf("  │ 耗时:       %8.2f μs                                      │\n", kadd_time);
-    printf("  └─────────────────────────────────────────────────────────────┘\n");
-
-    printf("  ┌─────────────────────────────────────────────────────────────┐\n");
-    printf("  │ libinjection                                               │\n");
-    printf("  ├─────────────────────────────────────────────────────────────┤\n");
-    printf("  │ 结果:       %s %-10s                                 │\n", lib_icon, lib_status);
-    printf("  │ 指纹:       %-6s                                            │\n", fingerprint);
-    printf("  │ 耗时:       %8.2f μs                                      │\n", lib_time);
-    printf("  └─────────────────────────────────────────────────────────────┘\n");
-
-    // ========== 对比总结 ==========
-    int result_match = (kadd_is_sqli == lib_is_sqli);
-    const char *match_icon = result_match ? "✓" : "✗";
-    const char *match_text = result_match ? "一致" : "不一致";
-
-    double speed_ratio = (lib_time > 0) ? (kadd_time / lib_time) : 0.0;
-
-    printf("  ┌─────────────────────────────────────────────────────────────┐\n");
-    printf("  │ 对比总结                                                    │\n");
-    printf("  ├─────────────────────────────────────────────────────────────┤\n");
-    printf("  │ 判断结果:   %s %-8s                                   │\n", match_icon, match_text);
-    printf("  │ 性能对比:   KADD %.2fx %s                         │\n",
-           speed_ratio >= 1.0 ? speed_ratio : 1.0/speed_ratio,
-           speed_ratio >= 1.0 ? "libinjection" : "KADD");
-    printf("  └─────────────────────────────────────────────────────────────┘\n\n");
+    printf("  %s 概率: %.2f%% | 耗时: %.2f us\n\n", icon, probability * 100, elapsed);
 }
 
 /* ========== 主程序 ========== */
@@ -104,23 +53,21 @@ int main(int argc, char *argv[])
     setbuf(stdout, NULL);
     setbuf(stderr, NULL);
 
-    printf("╔════════════════════════════════════════════════════════════╗\n");
-    printf("║        SQL 注入检测引擎交互式演示 (kadd_sqli_engine)       ║\n");
-    printf("╚════════════════════════════════════════════════════════════╝\n\n");
+    printf("=== SQL 注入检测引擎交互式演示 ===\n\n");
 
-    // ========== 创建引擎 ==========
+    /* 创建引擎 */
     printf("正在初始化引擎...\n");
 
     kadd_sqli_engine_t *engine = NULL;
     if (kadd_sqli_engine_create_from_file(&engine, "config.json") != KADD_SQLI_OK) {
-        printf("✗ 引擎创建失败，请检查 config.json\n");
+        printf("引擎创建失败，请检查 config.json\n");
         return 1;
     }
 
-    printf("✓ 引擎初始化成功\n\n");
+    printf("引擎初始化成功\n\n");
     printf("输入 'quit' 或 'exit' 退出，'help' 查看帮助\n\n");
 
-    // ========== 交互式检测 ==========
+    /* 交互式检测 */
     char input[2048];
     int line_num = 1;
 
@@ -151,9 +98,7 @@ int main(int argc, char *argv[])
         }
 
         if (strcmp(input, "batch") == 0) {
-            printf("\n╔════════════════════════════════════════════════════════════╗\n");
-            printf("║                    批处理模式                              ║\n");
-            printf("╚════════════════════════════════════════════════════════════╝\n\n");
+            printf("\n=== 批处理模式 ===\n\n");
 
             int batch_count;
             printf("请输入要检测的字符串数量: ");
@@ -188,9 +133,8 @@ int main(int argc, char *argv[])
                 for (int i = 0; i < batch_count; i++) {
                     int is_sqli = (batch_probs[i] >= 0.5f) ? 1 : 0;
                     const char *status = is_sqli ? "[SQL 注入]" : "[安全]";
-                    const char *icon = is_sqli ? "⚠" : "✓";
-                    printf("  [%d] \"%s\"\n", i + 1, batch_inputs[i]);
-                    printf("      %s %-10s  概率: %5.2f%%\n", icon, status, batch_probs[i] * 100);
+                    printf("  [%d] \"%s\"  %s 概率: %.2f%%\n",
+                           i + 1, batch_inputs[i], status, batch_probs[i] * 100);
                 }
             }
 
@@ -211,9 +155,9 @@ int main(int argc, char *argv[])
         line_num++;
     }
 
-    // ========== 释放资源 ==========
+    /* 释放资源 */
     kadd_sqli_engine_free(engine);
-    printf("\n✓ 引擎已释放\n");
+    printf("\n引擎已释放\n");
 
     return 0;
 }
