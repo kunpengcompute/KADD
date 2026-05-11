@@ -66,7 +66,7 @@ cd onnxruntime-linux-*
 
 # 安装到系统目录
 sudo cp lib/libonnxruntime.so* /usr/local/lib/
-sudo cp -r include/onnxruntime /usr/local/include/
+sudo cp -r include/onnxruntime /usr/local/include/onnxruntime/
 sudo ldconfig
 
 # 验证安装
