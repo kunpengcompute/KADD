@@ -38,12 +38,12 @@ static int create_engine_internal(kadd_sqli_engine_t **engine,
                                    const char *model_path, int feature_dim,
                                    int window_size, int max_output_dim, int max_input_length) {
     if (!engine || !table_paths || !model_path) {
-        return KADD_SQLI_ERROR_INVALID_INPUT;
+        return KADD_ERROR_INVALID_INPUT;
     }
 
     kadd_sqli_engine_t *e = (kadd_sqli_engine_t *)calloc(1, sizeof(kadd_sqli_engine_t));
     if (!e) {
-        return KADD_SQLI_ERROR_MEMORY;
+        return KADD_ERROR_OUT_OF_MEMORY;
     }
 
     e->feature_dim = feature_dim;
@@ -68,7 +68,7 @@ static int create_engine_internal(kadd_sqli_engine_t **engine,
         if (e->feature_buffer) free(e->feature_buffer);
         if (e->float_feature_buffer) free(e->float_feature_buffer);
         free(e);
-        return KADD_SQLI_ERROR_MEMORY;
+        return KADD_ERROR_OUT_OF_MEMORY;
     }
 
     if (kadd_dfa_engine_create(&e->dfa_engine, table_paths, e->max_input_length, e->max_output_dim) != 0) {
@@ -89,7 +89,7 @@ static int create_engine_internal(kadd_sqli_engine_t **engine,
     }
 
     *engine = e;
-    return KADD_SQLI_OK;
+    return KADD_SUCCESS;
 }
 
 /**
@@ -97,12 +97,12 @@ static int create_engine_internal(kadd_sqli_engine_t **engine,
  */
 int kadd_sqli_engine_create_from_file(kadd_sqli_engine_t **engine, const char *config_file) {
     if (!engine || !config_file) {
-        return KADD_SQLI_ERROR_INVALID_INPUT;
+        return KADD_ERROR_INVALID_INPUT;
     }
 
     FILE *fp = fopen(config_file, "r");
     if (!fp) {
-        return KADD_SQLI_ERROR_CONFIG;
+        return KADD_ERROR_CONFIG;
     }
 
     fseek(fp, 0, SEEK_END);
@@ -111,13 +111,13 @@ int kadd_sqli_engine_create_from_file(kadd_sqli_engine_t **engine, const char *c
 
     if (file_size <= 0) {
         fclose(fp);
-        return KADD_SQLI_ERROR_CONFIG;
+        return KADD_ERROR_CONFIG;
     }
 
     char *json_content = (char *)malloc(file_size + 1);
     if (!json_content) {
         fclose(fp);
-        return KADD_SQLI_ERROR_MEMORY;
+        return KADD_ERROR_OUT_OF_MEMORY;
     }
 
     size_t read_size = fread(json_content, 1, file_size, fp);
@@ -128,14 +128,14 @@ int kadd_sqli_engine_create_from_file(kadd_sqli_engine_t **engine, const char *c
     free(json_content);
 
     if (!root) {
-        return KADD_SQLI_ERROR_CONFIG;
+        return KADD_ERROR_CONFIG;
     }
 
     /* DFA 配置 */
     cJSON *dfa_obj = cJSON_GetObjectItemCaseSensitive(root, "kadd_dfa_engine");
     if (!dfa_obj) {
         cJSON_Delete(root);
-        return KADD_SQLI_ERROR_CONFIG;
+        return KADD_ERROR_CONFIG;
     }
 
     cJSON *dfa_transition = cJSON_GetObjectItemCaseSensitive(dfa_obj, "transition_table_path");
@@ -143,20 +143,20 @@ int kadd_sqli_engine_create_from_file(kadd_sqli_engine_t **engine, const char *c
     cJSON *dfa_eod = cJSON_GetObjectItemCaseSensitive(dfa_obj, "eod_table_path");
     if (!cJSON_IsString(dfa_transition) || !cJSON_IsString(dfa_output) || !cJSON_IsString(dfa_eod)) {
         cJSON_Delete(root);
-        return KADD_SQLI_ERROR_CONFIG;
+        return KADD_ERROR_CONFIG;
     }
 
     /* ML 配置 */
     cJSON *ml_obj = cJSON_GetObjectItemCaseSensitive(root, "kadd_ml_engine");
     if (!ml_obj) {
         cJSON_Delete(root);
-        return KADD_SQLI_ERROR_CONFIG;
+        return KADD_ERROR_CONFIG;
     }
 
     cJSON *ml_model = cJSON_GetObjectItemCaseSensitive(ml_obj, "model_path");
     if (!cJSON_IsString(ml_model)) {
         cJSON_Delete(root);
-        return KADD_SQLI_ERROR_CONFIG;
+        return KADD_ERROR_CONFIG;
     }
 
     cJSON *ml_dim = cJSON_GetObjectItemCaseSensitive(ml_obj, "feature_dim");
@@ -190,7 +190,7 @@ int kadd_sqli_engine_create_from_file(kadd_sqli_engine_t **engine, const char *c
  */
 int kadd_sqli_detect(kadd_sqli_engine_t *engine, const char *input, float *probability) {
     if (!engine || !input || !probability) {
-        return KADD_SQLI_ERROR_INVALID_INPUT;
+        return KADD_ERROR_INVALID_INPUT;
     }
 
     *probability = 0.0f;
@@ -221,7 +221,7 @@ int kadd_sqli_detect(kadd_sqli_engine_t *engine, const char *input, float *proba
     }
 
     *probability = prob;
-    return KADD_SQLI_OK;
+    return KADD_SUCCESS;
 }
 
 /**
@@ -229,7 +229,7 @@ int kadd_sqli_detect(kadd_sqli_engine_t *engine, const char *input, float *proba
  */
 int kadd_sqli_detect_batch(kadd_sqli_engine_t *engine, const char **inputs, int count, float *probabilities, int batch_size) {
     if (!engine || !inputs || !probabilities || count <= 0) {
-        return KADD_SQLI_ERROR_INVALID_INPUT;
+        return KADD_ERROR_INVALID_INPUT;
     }
 
     if (batch_size <= 0) batch_size = 64;

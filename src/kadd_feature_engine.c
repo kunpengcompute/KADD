@@ -138,7 +138,7 @@ int kadd_seq_to_feature(const int *seq, int seq_len, int window_size,
 {
     if (!seq || !feature)
         return KADD_ERROR_NULL_PTR;
-    if (seq_len <= 0 || window_size <= 0 || feature_dim <= 0 ||
+    if (seq_len < 0 || window_size < 0 || feature_dim <= 0 ||
         seq_len > MAX_SEQ_LEN || feature_dim > MAX_FEATURE_DIM)
         return KADD_ERROR_INVALID_PARAM;
 

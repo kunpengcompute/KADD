@@ -31,7 +31,7 @@ static void detect_and_print(kadd_sqli_engine_t *engine, const char *input) {
     int ret = kadd_sqli_detect(engine, input, &probability);
     double elapsed = timer_end(timer);
 
-    if (ret != KADD_SQLI_OK) {
+    if (ret != KADD_SUCCESS) {
         printf("  检测失败 (错误码: %d)\n\n", ret);
         return;
     }
@@ -59,7 +59,7 @@ int main(int argc, char *argv[])
     printf("正在初始化引擎...\n");
 
     kadd_sqli_engine_t *engine = NULL;
-    if (kadd_sqli_engine_create_from_file(&engine, "config.json") != KADD_SQLI_OK) {
+    if (kadd_sqli_engine_create_from_file(&engine, "config.json") != KADD_SUCCESS) {
         printf("引擎创建失败，请检查 config.json\n");
         return 1;
     }

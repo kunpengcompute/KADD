@@ -3,31 +3,11 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include "kadd_errors.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-/**
- * @file kadd_sqli_engine.h
- * @brief SQL 注入检测引擎接口
- *
- * 整合 DFA 引擎和 ML 引擎，提供完整的 SQL 注入检测功能
- * 流程: 输入 -> DFA 分词 -> 特征提取 -> ML 推理 -> 结果
- */
-
-/**
- * @brief SQL 注入检测引擎错误代码
- */
-typedef enum {
-    KADD_SQLI_OK = 0,                   /**< 成功 */
-    KADD_SQLI_ERROR_MEMORY = -1,         /**< 内存分配失败 */
-    KADD_SQLI_ERROR_INVALID_INPUT = -2,  /**< 输入参数无效 */
-    KADD_SQLI_ERROR_DFA = -3,            /**< DFA 引擎错误 */
-    KADD_SQLI_ERROR_FEATURE = -4,        /**< 特征提取错误 */
-    KADD_SQLI_ERROR_ML = -5,             /**< ML 推理错误 */
-    KADD_SQLI_ERROR_CONFIG = -6,         /**< 配置文件错误或缺失必需字段 */
-} kadd_sqli_error_code_t;
 
 /**
  * @brief SQL 注入检测引擎句柄（不透明指针）
