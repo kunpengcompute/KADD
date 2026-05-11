@@ -105,7 +105,7 @@ set(OTHER_ENGINE_SOURCES
 )
 
 if(CJSON_FOUND)
-    list(APPEND OTHER_ENGINE_SOURCES kadd_sqli_engine.c)
+    list(APPEND OTHER_ENGINE_SOURCES kadd_sqli_engine.c kadd_config_loader.c)
 endif()
 
 add_library(kadd_other_engines STATIC ${OTHER_ENGINE_SOURCES})
