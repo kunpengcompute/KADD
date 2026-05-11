@@ -22,14 +22,14 @@ gcc -c -I. demo/tools.c -o /tmp/tools.o
 # 编译 DFA demo
 gcc -Iinclude -Ithird_party/include demo/kadd_dfa_demo.c /tmp/tools.o \
     build/src/libkadd_other_engines.a \
-    third_party/lib/libonnxruntime.a \
+    third_party/onnxruntime/lib/libonnxruntime.so \
     third_party/src/cJSON.c -lstdc++ \
     -o kadd_dfa_demo.exe
 
 # 编译 SQLi demo
 gcc -Iinclude -Ithird_party/include demo/kadd_sqli_demo.c /tmp/tools.o \
     build/src/libkadd_other_engines.a \
-    third_party/lib/libonnxruntime.a \
+    third_party/onnxruntime/lib/libonnxruntime.so \
     third_party/src/cJSON.c -lstdc++ \
     -o kadd_sqli_demo.exe
 ```

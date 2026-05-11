@@ -150,7 +150,7 @@ src/kadd_feature_engine.c        - 实现 (165 行)
 - 支持动态批次大小
 
 #### 版本兼容
-- 支持 ONNX Runtime 1.17+ (API 版本 17+)
+- 支持 ONNX Runtime 1.16+ (API 版本 15-17)
 - 自动版本回退机制
 
 #### 文件结构

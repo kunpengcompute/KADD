@@ -36,7 +36,7 @@ typedef struct kadd_model_handle_t kadd_model_handle_t;
  *
  * @example
  * kadd_model_handle_t *model = NULL;
- * if (kadd_model_load(&model, "model/model_tokens.onnx", 28) == KADD_SUCCESS) {
+ * if (kadd_model_load(&model, "assets/model/model_tokens_rf.onnx", 28) == KADD_SUCCESS) {
  *     // 使用模型
  *     kadd_model_free(model);
  * }
