@@ -235,8 +235,8 @@ int kadd_sqli_detect_batch(kadd_sqli_engine_t *engine, const char **inputs, int 
     if (batch_size <= 0) batch_size = 64;
     if (batch_size > 1024) batch_size = 1024;
 
-    // 初始化所有概率为-1（表示失败）
-    memset(probabilities, 0, count * sizeof(float));
+    // 初始化所有概率为0（表示失败）
+    for (int i = 0; i < count; i++) probabilities[i] = 0.0f;
 
     int success_count = 0;
 

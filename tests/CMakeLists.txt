@@ -73,6 +73,14 @@ function(add_kadd_gtest TEST_NAME SOURCE_FILE)
     add_dependencies(${TEST_NAME} copy_test_resources)
 
     add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
+
+    # 设置 RPATH 以便运行时找到 libonnxruntime.so
+    if(UNIX AND NOT APPLE)
+        set_target_properties(${TEST_NAME} PROPERTIES
+            INSTALL_RPATH "$ORIGIN:${ONNXRUNTIME_LIB_DIR}"
+            BUILD_WITH_INSTALL_RPATH TRUE
+        )
+    endif()
 endfunction()
 
 # ============================================================================

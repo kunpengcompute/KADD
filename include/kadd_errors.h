@@ -16,65 +16,65 @@ extern "C" {
 #endif
 
 /** @brief 成功 */
-#define KADD_SUCCESS                0
+#define KADD_SUCCESS                (0)
 
 /** @brief 通用错误 */
-#define KADD_ERROR                 -100
+#define KADD_ERROR                 (-100)
 
 /** @brief 无效输入 */
-#define KADD_ERROR_INVALID_INPUT   -101
+#define KADD_ERROR_INVALID_INPUT   (-101)
 
 /** @brief 空指针 */
-#define KADD_ERROR_NULL_PTR        -102
+#define KADD_ERROR_NULL_PTR        (-102)
 
 /** @brief 内存不足 */
-#define KADD_ERROR_OUT_OF_MEMORY   -103
+#define KADD_ERROR_OUT_OF_MEMORY   (-103)
 
 /** @brief 引擎未初始化 */
-#define KADD_ERROR_NOT_INIT       -104
+#define KADD_ERROR_NOT_INIT       (-104)
 
 /** @brief 无效参数 */
-#define KADD_ERROR_INVALID_PARAM  -105
+#define KADD_ERROR_INVALID_PARAM  (-105)
 
 /** @brief 缓冲区太小 */
-#define KADD_ERROR_BUFFER_TOO_SMALL -106
+#define KADD_ERROR_BUFFER_TOO_SMALL (-106)
 
 /** @brief 模型加载失败 */
-#define KADD_ERROR_MODEL_LOAD_FAILED -107
+#define KADD_ERROR_MODEL_LOAD_FAILED (-107)
 
 /** @brief 文件操作失败 */
-#define KADD_ERROR_FILE_OPERATION_FAILED -108
+#define KADD_ERROR_FILE_OPERATION_FAILED (-108)
 
 /* ========== DFA 引擎错误码 ========== */
 
 /** @brief DFA 成功 */
-#define KADD_DFA_OK                0
+#define KADD_DFA_OK                (0)
 
 /** @brief DFA 内存分配失败 */
-#define KADD_DFA_ERROR_MEMORY      -1
+#define KADD_DFA_ERROR_MEMORY      (-1)
 
 /** @brief DFA 输入参数无效 */
-#define KADD_DFA_ERROR_INVALID_INPUT     -2
+#define KADD_DFA_ERROR_INVALID_INPUT     (-2)
 
 /** @brief DFA 文件未找到 */
-#define KADD_DFA_ERROR_FILE_NOT_FOUND  -3
+#define KADD_DFA_ERROR_FILE_NOT_FOUND  (-3)
 
 /** @brief DFA 文件解析失败 */
-#define KADD_DFA_ERROR_PARSE          -4
+#define KADD_DFA_ERROR_PARSE          (-4)
 
 /** @brief DFA 缓冲区溢出 */
-#define KADD_DFA_ERROR_BUFFER_OVERFLOW -5
+#define KADD_DFA_ERROR_BUFFER_OVERFLOW (-5)
 
 /** @brief DFA 输入长度无效 */
-#define KADD_DFA_ERROR_INVALID_LENGTH  -6
+#define KADD_DFA_ERROR_INVALID_LENGTH  (-6)
 
 /* ========== Feature 引擎错误码 ========== */
 
 /** @brief Feature 序列元素超出范围 */
-#define KADD_FEATURE_ERROR_VALUE_OUT_OF_RANGE  -200
+#define KADD_FEATURE_ERROR_VALUE_OUT_OF_RANGE  (-200)
 
 /** @brief Feature 滑窗计算失败 */
-#define KADD_FEATURE_ERROR_WINDOW_FAILED       -201
+#define KADD_FEATURE_ERROR_WINDOW_FAILED       (-201)
 
 #ifdef __cplusplus
 }

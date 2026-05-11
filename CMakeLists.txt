@@ -144,6 +144,10 @@ endif()
 get_filename_component(ONNXRUNTIME_LIB_DIR ${ONNXRUNTIME_LIBRARIES} DIRECTORY)
 message(STATUS "Found ONNX Runtime: ${ONNXRUNTIME_LIBRARIES}")
 
+# 将 ONNX Runtime 库目录加入可执行文件 RPATH，确保运行时能找到 libonnxruntime.so
+list(APPEND CMAKE_BUILD_RPATH "${ONNXRUNTIME_LIB_DIR}")
+list(APPEND CMAKE_INSTALL_RPATH "${ONNXRUNTIME_LIB_DIR}")
+
 # ============================================================================
 # cJSON 依赖
 # ============================================================================

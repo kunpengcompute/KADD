@@ -94,14 +94,14 @@ add_dependencies(kadd_sqli_demo copy_demo_resources)
 
 message(STATUS "Demos configured: kadd_dfa_demo, kadd_feature_demo, kadd_ml_demo, kadd_sqli_demo")
 
-# 设置 RPATH 以便在当前目录和 src 目录查找库（仅对需要动态库的程序）
+# 设置 RPATH 以便在当前目录、src 目录和 ONNX Runtime 目录查找库
 if(UNIX AND NOT APPLE)
     set_target_properties(kadd_ml_demo PROPERTIES
-        INSTALL_RPATH "$ORIGIN:$ORIGIN/../src:${CMAKE_BINARY_DIR}/src"
+        INSTALL_RPATH "$ORIGIN:$ORIGIN/../src:${CMAKE_BINARY_DIR}/src:${ONNXRUNTIME_LIB_DIR}"
         BUILD_WITH_INSTALL_RPATH TRUE
     )
     set_target_properties(kadd_sqli_demo PROPERTIES
-        INSTALL_RPATH "$ORIGIN:$ORIGIN/../src:${CMAKE_BINARY_DIR}/src"
+        INSTALL_RPATH "$ORIGIN:$ORIGIN/../src:${CMAKE_BINARY_DIR}/src:${ONNXRUNTIME_LIB_DIR}"
         BUILD_WITH_INSTALL_RPATH TRUE
     )
 endif()

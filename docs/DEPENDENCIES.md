@@ -38,13 +38,13 @@ third_party/
 
 ## ONNX Runtime
 
-**必需依赖**，用于 ML 模型推理。推荐版本：1.16.x 或 1.20.x
+**必需依赖**，用于 ML 模型推理。推荐版本：1.17.x 或 1.20.x
 
 ### 版本选择
 
 | 版本 | 特点 | 适用场景 |
 |------|------|----------|
-| 1.16.x | 稳定版，ARM64 支持完善 | 生产环境推荐 |
+| 1.17.x | 稳定版，ARM64 支持完善 | 生产环境推荐 |
 | 1.20.x | 最新特性，性能优化 | 开发测试 |
 | 1.10.x | 旧版本，兼容性好 | 旧系统 |
 
@@ -57,9 +57,9 @@ uname -m
 # x86_64 → Intel/AMD 64位
 
 # 下载预编译包
-wget https://github.com/microsoft/onnxruntime/releases/download/v1.16.3/onnxruntime-linux-x64-1.16.3.tgz
+wget https://github.com/microsoft/onnxruntime/releases/download/v1.17.3/onnxruntime-linux-x64-1.17.3.tgz
 # 或 ARM64:
-wget https://github.com/microsoft/onnxruntime/releases/download/v1.16.3/onnxruntime-linux-aarch64-1.16.3.tgz
+wget https://github.com/microsoft/onnxruntime/releases/download/v1.17.3/onnxruntime-linux-aarch64-1.17.3.tgz
 
 # 解压
 tar xzf onnxruntime-linux-*.tgz
@@ -78,7 +78,7 @@ ldconfig -p | grep onnxruntime       # 检查库是否被找到
 ### third_party 方式
 
 ```bash
-wget https://github.com/microsoft/onnxruntime/releases/download/v1.16.3/onnxruntime-linux-aarch64-1.16.3.tgz
+wget https://github.com/microsoft/onnxruntime/releases/download/v1.17.3/onnxruntime-linux-aarch64-1.17.3.tgz
 tar xzf onnxruntime-linux-*.tgz
 
 mkdir -p third_party/onnxruntime/lib third_party/onnxruntime/include/onnxruntime
@@ -148,7 +148,7 @@ CMake 按以下顺序查找：环境变量 → 系统库 → third_party 目录
 
 ```bash
 # 指定版本
-export ONNXRUNTIME_HOME=/opt/onnxruntime-1.16.0
+export ONNXRUNTIME_HOME=/opt/onnxruntime-1.17.0
 
 # 强制使用 third_party
 cmake -DUSE_SYSTEM_LIBS=OFF ..
@@ -160,7 +160,7 @@ cmake -DUSE_SYSTEM_LIBS=OFF ..
 
 | 库 | 推荐版本 | 说明 |
 |---|---|---|
-| ONNX Runtime | 1.16.x / 1.20.x | ARM 优化版 / 最新稳定版 |
+| ONNX Runtime | 1.17.x / 1.20.x | ARM 优化版 / 最新稳定版 |
 | cJSON | master | 稳定 |
 | Google Test | 1.12.1 | 稳定 |
 

@@ -36,8 +36,14 @@ static void test_array_init(TestArray *a) {
 
 static void test_array_push(TestArray *a, TestItem item) {
     if (a->count >= a->capacity) {
+        size_t old_cap = a->capacity;
         a->capacity *= 2;
-        a->items = realloc(a->items, sizeof(TestItem) * a->capacity);
+        size_t new_size = sizeof(TestItem) * a->capacity;
+        TestItem *new_items = (TestItem *)malloc(new_size);
+        if (!new_items) return;
+        for (int i = 0; i < a->count; i++) new_items[i] = a->items[i];
+        free(a->items);
+        a->items = new_items;
     }
     a->items[a->count++] = item;
 }
@@ -123,7 +129,7 @@ static int *dfa_tokenize(const kadd_dfa_engine_t *engine, const char *s, int *ou
         return NULL;
 
     int *result = malloc(sizeof(int) * dim);
-    memcpy(result, buf, sizeof(int) * dim);
+    for (int i = 0; i < dim; i++) result[i] = buf[i];
     *out_count = dim;
     return result;
 }
@@ -143,7 +149,7 @@ typedef struct {
 
 static void run_test(const kadd_dfa_engine_t *engine, TestArray *arr,
                      Stats *stats, cJSON *mismatch_arr) {
-    memset(stats, 0, sizeof(Stats));
+    *stats = (Stats){0};
 
     for (int i = 0; i < arr->count; i++) {
         TestItem *ti = &arr->items[i];

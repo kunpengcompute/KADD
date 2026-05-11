@@ -10,6 +10,16 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* 安全字符串拷贝：逐字符拷贝，保证null结尾 */
+static void copy_str_field(char *dest, const char *src, size_t max_len) {
+    size_t i = 0;
+    while (i < max_len - 1 && src[i] != '\0') {
+        dest[i] = src[i];
+        i++;
+    }
+    dest[i] = '\0';
+}
+
 int kadd_config_load(const char *config_path, kadd_config_t *config) {
     if (!config) return -1;
 
@@ -47,7 +57,7 @@ int kadd_config_load(const char *config_path, kadd_config_t *config) {
     }
 
     // 初始化默认值
-    memset(config, 0, sizeof(kadd_config_t));
+    *config = (kadd_config_t){0};
 
     // 解析DFA引擎配置
     cJSON *dfa = cJSON_GetObjectItem(root, "kadd_dfa_engine");
@@ -56,23 +66,20 @@ int kadd_config_load(const char *config_path, kadd_config_t *config) {
 
         item = cJSON_GetObjectItem(dfa, "transition_table_path");
         if (item && item->valuestring) {
-            strncpy(config->dfa.transition_table_path,
-                    item->valuestring, 511);
-            config->dfa.transition_table_path[511] = '\0';
+            copy_str_field(config->dfa.transition_table_path,
+                    item->valuestring, 512);
         }
 
         item = cJSON_GetObjectItem(dfa, "output_table_path");
         if (item && item->valuestring) {
-            strncpy(config->dfa.output_table_path,
-                    item->valuestring, 511);
-            config->dfa.output_table_path[511] = '\0';
+            copy_str_field(config->dfa.output_table_path,
+                    item->valuestring, 512);
         }
 
         item = cJSON_GetObjectItem(dfa, "eod_table_path");
         if (item && item->valuestring) {
-            strncpy(config->dfa.eod_table_path,
-                    item->valuestring, 511);
-            config->dfa.eod_table_path[511] = '\0';
+            copy_str_field(config->dfa.eod_table_path,
+                    item->valuestring, 512);
         }
 
         item = cJSON_GetObjectItem(dfa, "max_input_length");
@@ -97,7 +104,7 @@ int kadd_config_load(const char *config_path, kadd_config_t *config) {
 
         item = cJSON_GetObjectItem(ml, "model_path");
         if (item && item->valuestring) {
-            strncpy(config->ml.model_path, item->valuestring, 511);
+            copy_str_field(config->ml.model_path, item->valuestring, 512);
         }
 
         item = cJSON_GetObjectItem(ml, "feature_dim");
@@ -122,22 +129,22 @@ int kadd_config_load(const char *config_path, kadd_config_t *config) {
 
         item = cJSON_GetObjectItem(sqli, "transition_table_path");
         if (item && item->valuestring) {
-            strncpy(config->sqli.transition_table_path, item->valuestring, 511);
+            copy_str_field(config->sqli.transition_table_path, item->valuestring, 512);
         }
 
         item = cJSON_GetObjectItem(sqli, "output_table_path");
         if (item && item->valuestring) {
-            strncpy(config->sqli.output_table_path, item->valuestring, 511);
+            copy_str_field(config->sqli.output_table_path, item->valuestring, 512);
         }
 
         item = cJSON_GetObjectItem(sqli, "eod_table_path");
         if (item && item->valuestring) {
-            strncpy(config->sqli.eod_table_path, item->valuestring, 511);
+            copy_str_field(config->sqli.eod_table_path, item->valuestring, 512);
         }
 
         item = cJSON_GetObjectItem(sqli, "ml_model_path");
         if (item && item->valuestring) {
-            strncpy(config->sqli.ml_model_path, item->valuestring, 511);
+            copy_str_field(config->sqli.ml_model_path, item->valuestring, 512);
         }
 
         item = cJSON_GetObjectItem(sqli, "feature_dim");
@@ -176,7 +183,7 @@ int kadd_config_load(const char *config_path, kadd_config_t *config) {
 
         item = cJSON_GetObjectItem(feature, "ml_model_path");
         if (item && item->valuestring) {
-            strncpy(config->feature.ml_model_path, item->valuestring, 511);
+            copy_str_field(config->feature.ml_model_path, item->valuestring, 512);
         }
 
         item = cJSON_GetObjectItem(feature, "feature_dim");
@@ -200,7 +207,7 @@ int kadd_config_load(const char *config_path, kadd_config_t *config) {
 
             item = cJSON_GetObjectItem(ml_item, "model_path");
             if (item && item->valuestring) {
-                strncpy(config->feature.ml_model_path, item->valuestring, 511);
+                copy_str_field(config->feature.ml_model_path, item->valuestring, 512);
             }
 
             item = cJSON_GetObjectItem(ml_item, "feature_dim");

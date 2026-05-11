@@ -21,7 +21,6 @@
  */
 static int sliding_window_distance_shift_fast(const int *seq, int seq_len, int window_size, int *result)
 {
-    memset(result, 0, seq_len * sizeof(int));
     int *weighted = (int *)malloc(seq_len * sizeof(int));
     if (!weighted) return KADD_ERROR_OUT_OF_MEMORY;
 
@@ -71,7 +70,6 @@ static int sliding_window_distance_shift_fast(const int *seq, int seq_len, int w
  */
 static int sliding_window_distance_sve(const int *seq, int seq_len, int window_size, int *result)
 {
-    memset(result, 0, seq_len * sizeof(int));
     int *weighted = (int *)malloc(seq_len * sizeof(int));
     if (!weighted) return KADD_ERROR_OUT_OF_MEMORY;
 
@@ -151,7 +149,7 @@ int kadd_seq_to_feature(const int *seq, int seq_len, int window_size,
     }
 
     // 分配临时结果数组
-    int *result = (int *)malloc(seq_len * sizeof(int));
+    int *result = (int *)calloc(seq_len, sizeof(int));
     if (!result) return KADD_ERROR_OUT_OF_MEMORY;
 
     // 计算滑窗距离
@@ -167,7 +165,7 @@ int kadd_seq_to_feature(const int *seq, int seq_len, int window_size,
     }
 
     // 映射到固定维度特征向量
-    memset(feature, 0, feature_dim * sizeof(int));
+    for (int i = 0; i < feature_dim; i++) feature[i] = 0;
     for (int i = 0; i < seq_len; i++) {
         if (seq[i] >= 0 && seq[i] < feature_dim) {
             feature[seq[i]] += result[i];
@@ -201,7 +199,8 @@ int kadd_seq_to_feature_batch(kadd_feature_batch_t *batch) {
     }
 
     // 初始化输出特征为0
-    memset(batch->features, 0, batch->count * batch->feature_dim * sizeof(int));
+    int total = batch->count * batch->feature_dim;
+    for (int i = 0; i < total; i++) batch->features[i] = 0;
 
     int success_count = 0;
 
@@ -231,7 +230,7 @@ int kadd_seq_to_feature_batch(kadd_feature_batch_t *batch) {
                 success_count++;
             } else {
                 // 失败则保持特征为0
-                memset(feature, 0, batch->feature_dim * sizeof(int));
+                for (int j = 0; j < batch->feature_dim; j++) feature[j] = 0;
             }
         }
     }
