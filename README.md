@@ -41,7 +41,7 @@ mkdir build && cd build
 cmake ..
 cmake --build .
 
-# 启用优化
+# 启用优化版本构建
 cmake -DKADD_OPTIMIZE=ON -DCMAKE_BUILD_TYPE=Release ..
 cmake --build .
 
@@ -95,6 +95,82 @@ int main() {
 - [第三方库安装指南](docs/DEPENDENCIES.md) - 依赖安装说明
 - [演示程序说明](demo/README.md) - Demo 使用指南
 
+## 📁 目录结构
+
+```
+KADD/
+├── include/          # 头文件
+├── src/              # 源代码
+├── tests/            # 测试代码
+├── demo/             # 示例代码
+├── docs/             # 文档
+├── tools/            # 工具脚本（⚠️ 见下方说明）
+├── assets/           # 模型和数据文件
+└── third_party/      # 第三方依赖
+```
+
+### ⚠️ 关于 tools 目录
+
+`tools/` 目录包含**模型和数据生成工具**，用于：
+
+- 训练和生成检测模型（`tools/train_tokens.py`）
+- 生成 DFA 状态转移表
+
+**重要声明：**
+
+> 本目录代码**仅供学习和参考**，**不保证**：
+> - 代码质量符合生产标准
+> - 无安全漏洞
+> - 与主项目代码规范一致
+>
+> 这些工具是**开发过程中的临时脚本**，可能未经过充分测试和审查。
+> 如需用于生产环境，请自行评估安全性并进行必要的加固。
+
+#### 运行机制说明
+
+**正常使用场景：**
+
+KADD 引擎运行时**仅使用** `tools/` 生成的二进制产物：
+
+| 产物文件 | 说明 | 引擎使用位置 |
+|---------|------|-------------|
+| `assets/model/model_tokens_rf.onnx` | 训练好的 ML 模型 | ML 引擎加载推理 |
+| `assets/data/dfa_states.json` | DFA 状态转移表 | DFA 引擎查表匹配 |
+
+**主项目代码不会执行** `tools/` 中的任何 Python 脚本。
+
+#### 何时需要使用 tools 工具
+
+仅在以下情况才需要运行 `tools/` 中的脚本：
+
+| 场景 | 需要运行的脚本 | 生成的产物 |
+|------|--------------|-----------|
+| 更新检测模型 | `tools/train_tokens.py` | 新的 `.onnx` 模型文件 |
+| 修改分词规则 | `tools/generate_dfa.py`* | 新的 DFA 状态表 |
+| 自定义训练数据 | `tools/train_tokens.py --dataset your_data.csv` | 定制化模型 |
+
+**示例：重新训练模型**
+
+```bash
+# 1. 准备训练数据
+cp your_custom_dataset.csv assets/data/
+
+# 2. 运行训练脚本（⚠️ 谨慎执行）
+python tools/train_tokens.py \
+    --input assets/data/your_custom_dataset.csv \
+    --output assets/model/model_tokens_rf.onnx
+
+# 3. 验证新模型
+./build/kadd_sqli_demo
+```
+
+#### 安全建议
+
+1. **默认不运行**：使用预生成的产物即可满足大部分需求
+2. **隔离环境**：如需定制，在独立的沙箱/容器中运行
+3. **审查代码**：运行前务必检查脚本内容
+4. **验证产物**：对生成的模型和状态表进行充分测试
+
 ## 🏗️ 架构
 
 ```
@@ -123,7 +199,7 @@ int main() {
 
 ```bash
 # 启用 SVE（自动检测 SVE2 支持）
-cmake -DENABLE_ARM_SVE=ON -DCMAKE_BUILD_TYPE=Release -DKADD_OPTIMIZE=ON
+cmake -DENABLE_ARM_SVE=ON -DCMAKE_BUILD_TYPE=Release -DKADD_OPTIMIZE=ON ..
 cmake --build .
 
 # SVE2 支持的系统会自动启用 SVE2
