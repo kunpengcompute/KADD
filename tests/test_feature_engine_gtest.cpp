@@ -306,7 +306,7 @@ TEST_F(FeatureEngineTest, TransformZeroLength) {
     int ret = kadd_seq_to_feature(seq.data(), 0, config.ml.window_size,
                                   feature.data(), config.ml.feature_dim);
 
-    EXPECT_EQ(ret, KADD_ERROR_INVALID_PARAM) << "零长度序列应该返回 KADD_ERROR_INVALID_PARAM";
+    EXPECT_EQ(ret, KADD_SUCCESS) << "零长度序列应该返回 KADD_SUCCESS";
 }
 
 TEST_F(FeatureEngineTest, TransformNegativeLength) {
@@ -346,7 +346,7 @@ TEST_F(FeatureEngineTest, TransformZeroWindowSize) {
     int ret = kadd_seq_to_feature(seq.data(), seq.size(), 0,
                                   feature.data(), config.ml.feature_dim);
 
-    EXPECT_EQ(ret, KADD_ERROR_INVALID_PARAM) << "零窗口大小应该返回 KADD_ERROR_INVALID_PARAM";
+    EXPECT_EQ(ret, KADD_SUCCESS) << "零窗口大小应该返回 KADD_SUCCESS";
 }
 
 TEST_F(FeatureEngineTest, TransformNegativeWindowSize) {

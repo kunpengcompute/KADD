@@ -66,7 +66,7 @@ protected:
             << " (期望: " << expected.size() << ", 实际: " << actual.size() << ")";
 
         for (size_t i = 0; i < std::min(actual.size(), expected.size()); i++) {
-            EXPECT_EQ(actual[i], expected[i])
+            ASSERT_EQ(actual[i], expected[i])
                 << "Token 不匹配在位置 " << i << ": " << input
                 << " (期望: " << expected[i] << ", 实际: " << actual[i] << ")";
         }
@@ -200,7 +200,7 @@ TEST_F(DFAEngineTest, DoubleCharOperators) {
     expect_tokens("a >> b", {7, 11, 7});              // >>
 }
 
-TEST_F(DFAEngineTest, Comments) {
+TEST_F(DFAEngineTest, Comments_Basic) {
     // 测试注释处理
     auto tokens1 = tokenize("-- comment\nSELECT");
     EXPECT_GT(tokens1.size(), 0u) << "单行注释后应该有内容";
@@ -422,7 +422,154 @@ TEST_F(DFAEngineTest, NormalTraffic_WebParams) {
     }
 }
 
-/* ========== 7. 主函数 ========== */
+/* ========== 7. DFA 补充测试用例 ========== */
+
+TEST_F(DFAEngineTest, TSQL_Keywords) {
+    expect_tokens("BEGIN DECLARE @var INT; SET @var = 10; BEGIN GOTO label1; label1: SELECT 1; BEGIN TRY SELECT 1 END TRY BEGIN CATCH SELECT 2 END CATCH; CALL procedure_name();",
+                  {23, 23, 9, 5, 22, 4, 9, 11, 8, 22, 23, 23, 7, 22, 7, 21, 4, 8, 22, 23, 23, 4, 8, 7, 23, 23, 7, 4, 8, 7, 7, 22, 23, 7, 15, 16, 22});
+    expect_tokens("EXEC stored_proc; EXECUTE AS LOGIN = 'user'; EXECUTE AS = 'role'; GOTO end_label; end_label:",
+                  {23, 7, 22, 23, 1, 7, 11, 10, 22, 23, 1, 11, 10, 22, 23, 7, 22, 7, 11});
+}
+
+TEST_F(DFAEngineTest, Transaction_and_Lock) {
+    expect_tokens("BEGIN TRANSACTION; SAVEPOINT sp1; ROLLBACK TO sp1; COMMIT",
+                  {23, 7, 22, 7, 7, 22, 7, 7, 7, 22, 7});
+    expect_tokens("LOCK TABLES t1 READ, t2 WRITE",
+                  {7, 7, 7, 1, 20, 7, 7});
+}
+
+TEST_F(DFAEngineTest, Variables_and_Identifiers) {
+    expect_tokens("SELECT @var, @@global_var, `column`, [field], table.column FROM schema.table",
+                  {4, 9, 20, 9, 20, 7, 20, 7, 20, 7, 1, 1, 19, 7});
+    expect_tokens("SELECT t1.`col1`, t2.[col2], @session_var, @@system_var FROM db1.table1 AS t1 JOIN db2.table2 t2 ON t1.id=t2.id",
+                  {4, 7, 20, 7, 7, 20, 9, 20, 9, 1, 7, 1, 7, 1, 7, 7, 7, 7, 11, 7});
+}
+
+TEST_F(DFAEngineTest, Literals) {
+    expect_tokens("SELECT 123, 'abc', \"def\", 45.67, 0x1A, 0b1010",
+                  {4, 8, 20, 10, 20, 10, 20, 8, 20, 8, 20, 8});
+    expect_tokens("SELECT id, name, email FROM users WHERE age >= 18 AND status = 'active' AND created_date <= '2023-12-31' ORDER BY created_date DESC",
+                  {4, 7, 20, 7, 20, 7, 1, 7, 1, 6, 11, 8, 12, 7, 11, 10, 12, 7, 11, 10, 7, 7, 7, 1});
+    expect_tokens("SELECT 'a+b', 'c-d', 'e*f', 'g/h', 'i=j', 'k<l', 'm>n', 'o?p', 'q!r', 's#t', 'u$v'",
+                  {4, 10, 20, 10, 20, 10, 20, 10, 20, 10, 20, 10, 20, 10, 20, 10, 20, 10, 20, 10, 20, 10});
+}
+
+TEST_F(DFAEngineTest, Operators_and_Logic) {
+    expect_tokens("SELECT * FROM users WHERE id = 1 AND name != 'test'",
+                  {4, 11, 1, 7, 1, 7, 11, 8, 12, 7, 11, 10});
+    expect_tokens("SELECT * FROM users WHERE age > 18 OR status = 'active' AND created_date <= '2023-12-31'",
+                  {4, 11, 1, 7, 1, 6, 11, 8, 12, 7, 11, 10, 12, 7, 11, 10});
+}
+
+TEST_F(DFAEngineTest, Subqueries_and_Parens) {
+    expect_tokens("SELECT * FROM (SELECT * FROM (SELECT * FROM t WHERE EXISTS (SELECT 1 FROM t2 WHERE t2.id = t.id))) AS sub",
+                  {4, 11, 1, 15, 4, 11, 1, 15, 4, 11, 1, 7, 1, 6, 15, 4, 8, 1, 7, 1, 7, 11, 7, 16, 16, 16, 1, 7});
+    expect_tokens("SELECT a, (SELECT b FROM (SELECT b FROM t2 WHERE t2.id = t1.id) AS sub) FROM t1",
+                  {4, 7, 20, 15, 4, 7, 1, 15, 4, 7, 1, 7, 1, 7, 11, 7, 16, 1, 7, 16, 1, 7});
+    expect_tokens("SELECT * FROM (SELECT * FROM t WHERE id IN (SELECT id FROM t2)) AS sub",
+                  {4, 11, 1, 15, 4, 11, 1, 7, 1, 7, 1, 15, 4, 7, 1, 7, 16, 16, 1, 7});
+    expect_tokens("SELECT a, (SELECT MAX(b) FROM t2 WHERE t2.id = t1.id) FROM t1",
+                  {4, 7, 20, 15, 4, 6, 15, 7, 16, 1, 7, 1, 7, 11, 7, 16, 1, 7});
+    expect_tokens("SELECT (a + b) * (c - d) / (e % f) FROM table1 WHERE (x = 1) AND (y = 2)",
+                  {4, 15, 7, 11, 7, 16, 11, 15, 7, 11, 7, 16, 11, 15, 7, 11, 7, 16, 1, 7, 1, 15, 7, 11, 8, 16, 12, 15, 7, 11, 8, 16});
+}
+
+TEST_F(DFAEngineTest, Pattern_Matching_LIKE) {
+    expect_tokens("SELECT * FROM logs WHERE message LIKE '%error%' ESCAPE '!' AND timestamp LIKE '2023-__-__ __:__:__'",
+                  {4, 11, 1, 7, 1, 7, 11, 10, 7, 10, 12, 5, 11, 10});
+    expect_tokens("SELECT customer_id FROM orders WHERE order_id LIKE 'ORD[0-9][0-9][0-9][0-9]' AND notes LIKE '%urgent!%' ESCAPE '!'",
+                  {4, 7, 1, 7, 1, 7, 11, 10, 12, 7, 11, 10, 7, 10});
+    expect_tokens("SELECT * FROM users WHERE username LIKE 'admin%' AND email LIKE '%@gmail.com' AND phone NOT LIKE '1%'",
+                  {4, 11, 1, 7, 1, 7, 11, 10, 12, 7, 11, 10, 12, 7, 11, 11, 10});
+    expect_tokens("SELECT product_name FROM products WHERE product_code LIKE '[A-Z][0-9][0-9][0-9]' AND description LIKE '%special%offer%'",
+                  {4, 7, 1, 7, 1, 7, 11, 10, 12, 7, 11, 10});
+}
+
+TEST_F(DFAEngineTest, Pattern_Matching_REGEX) {
+    expect_tokens("SELECT * FROM logs WHERE message REGEXP 'ERROR:[A-Z]{3}-[0-9]{4}: .* at .*\\.java:[0-9]+' AND timestamp RLIKE '202[0-9]-[0-1][0-9]-[0-3][0-9]'",
+                  {4, 11, 1, 7, 1, 7, 11, 10, 12, 5, 11, 10});
+    expect_tokens("SELECT * FROM transactions WHERE transaction_id REGEXP 'TXN-[A-Z]{2}[0-9]{6}-[A-F0-9]{8}' AND amount RLIKE '^[0-9]+\\.[0-9]{2}$'",
+                  {4, 11, 1, 7, 1, 7, 11, 10, 12, 7, 11, 10});
+    expect_tokens("SELECT * FROM users WHERE username REGEXP '^admin[0-9]{3}$' AND email RLIKE '[a-z]+@company\\.com$'",
+                  {4, 11, 1, 7, 1, 7, 11, 10, 12, 7, 11, 10});
+    auto tokens = tokenize("SELECT product_name FROM products WHERE product_code REGEXP '^PRD-[A-Z]{3}-[0-9]{4}$' OR description RLIKE 'limited.*edition'");
+    EXPECT_GT(tokens.size(), 0u);
+}
+
+TEST_F(DFAEngineTest, DateTime_Keywords) {
+    expect_tokens("SELECT DATE_ADD(NOW(), INTERVAL 1 DAY_HOUR)",
+                  {4, 6, 15, 6, 15, 16, 20, 1, 8, 1, 16});
+    expect_tokens("SELECT DATE_SUB(NOW(), INTERVAL 1 DAY_MICROSECOND)",
+                  {4, 6, 15, 6, 15, 16, 20, 1, 8, 1, 16});
+    expect_tokens("SELECT INTERVAL 1 DAY",
+                  {4, 1, 8, 6});
+    expect_tokens("SELECT DATE_FORMAT(NOW(), '%DAY_MINUTE')",
+                  {4, 6, 15, 6, 15, 16, 20, 10, 16});
+    expect_tokens("SELECT TIMEDIFF(NOW(), INTERVAL 1 DAY_SECOND)",
+                  {4, 6, 15, 6, 15, 16, 20, 1, 8, 1, 16});
+    expect_tokens("SELECT ADDTIME(NOW(), INTERVAL 1 HOUR_MICROSECOND)",
+                  {4, 6, 15, 6, 15, 16, 20, 1, 8, 1, 16});
+    expect_tokens("SELECT SUBTIME(NOW(), INTERVAL 1 HOUR_MINUTE)",
+                  {4, 6, 15, 6, 15, 16, 20, 1, 8, 1, 16});
+    expect_tokens("SELECT DATE_ADD(NOW(), INTERVAL 1 HOUR_SECOND)",
+                  {4, 6, 15, 6, 15, 16, 20, 1, 8, 1, 16});
+}
+
+TEST_F(DFAEngineTest, Comments) {
+    expect_tokens("SELECT 1 -- this is a comment",
+                  {4, 8, 13});
+    expect_tokens("SELECT 2 /* block comment */",
+                  {4, 8, 13});
+    expect_tokens("SELECT * FROM users WHERE id = 1 -- condition commented AND name = 'test'",
+                  {4, 11, 1, 7, 1, 7, 11, 8, 13});
+    expect_tokens("SELECT /* query users */ * FROM users /* user table */ WHERE id = 1 /* user ID */",
+                  {4, 13, 11, 1, 7, 13, 1, 7, 11, 8, 13});
+}
+
+TEST_F(DFAEngineTest, String_Literals) {
+    expect_tokens("SELECT 'it''s', \"he said \"\"hello\"\"\", N'native', X'414243', B'1010'",
+                  {4, 10, 20, 10, 20, 10, 20, 8, 20, 8});
+    expect_tokens("SELECT '''', \"\"\"\"\"\", N'', X'', B'",
+                  {4, 10, 20, 10, 20, 10, 20, 8, 20, 7, 10});
+}
+
+TEST_F(DFAEngineTest, Advanced_Syntax) {
+    expect_tokens("SELECT IFNULL(NULL, 'default'), COALESCE(NULL, NULL, 'value'), NULLIF(1, 1)",
+                  {4, 6, 15, 9, 20, 10, 16, 20, 6, 15, 9, 20, 9, 20, 10, 16, 20, 6, 15, 8, 20, 8, 16});
+    expect_tokens("SELECT CASE WHEN 1=1 THEN 'true' ELSE 'false' END, CAST('123' AS SIGNED), CONVERT('2023-01-01', DATE)",
+                  {4, 4, 1, 8, 11, 8, 1, 10, 1, 10, 7, 20, 6, 15, 10, 1, 7, 16, 20, 6, 15, 10, 20, 6, 16});
+    expect_tokens("SELECT DATABASE(), USER(), VERSION(), NOW(), DATE_FORMAT(NOW(), '%Y-%m-%d %H:%i:%s')",
+                  {4, 7, 15, 16, 20, 7, 15, 16, 20, 6, 15, 16, 20, 6, 15, 16, 20, 6, 15, 6, 15, 16, 20, 10, 16});
+    expect_tokens("SELECT CONCAT('Hello', ' ', 'World'), SUBSTRING('abcdef', 2, 3), LENGTH('test')",
+                  {4, 6, 15, 10, 20, 10, 20, 10, 16, 20, 6, 15, 10, 20, 8, 20, 8, 16, 20, 6, 15, 10, 16});
+}
+
+TEST_F(DFAEngineTest, Window_Functions) {
+    expect_tokens("SELECT ROW_NUMBER() OVER (PARTITION BY dept ORDER BY salary DESC) AS rn FROM employees",
+                  {4, 6, 15, 16, 7, 15, 1, 7, 7, 7, 7, 7, 1, 16, 1, 7, 1, 7});
+    expect_tokens("SELECT id, name, department, salary, AVG(salary) OVER (PARTITION BY department) AS avg_dept_salary FROM employees",
+                  {4, 7, 20, 7, 20, 7, 20, 7, 20, 6, 15, 7, 16, 7, 15, 1, 7, 7, 16, 1, 7, 1, 7});
+}
+
+TEST_F(DFAEngineTest, System_Functions) {
+    expect_tokens("SELECT CURRENT_DATE, CURRENT_TIME, CURRENT_TIMESTAMP, CURRENT_USER, CURRENT_SCHEMA, CURRENT_PATH, CURRENT_SERVER",
+                  {4, 9, 20, 9, 20, 9, 20, 9, 20, 6, 20, 9, 20, 9});
+    expect_tokens("SELECT CURRENT_TIMEZONE, CURRENT_FUNCTION, CURRENT_FUNCTION_PATH",
+                  {4, 9, 20, 7, 20, 7});
+    expect_tokens("SELECT CURRENT_ROLE, CURRENT_CATALOG;SELECT SESSION_USER, SYSTEM_USER",
+                  {4, 7, 20, 7, 22, 4, 6, 20, 6});
+    expect_tokens("SELECT USER(), DATABASE(), VERSION(), NOW(), CURDATE(), CURTIME(), LAST_INSERT_ID()",
+                  {4, 7, 15, 16, 20, 7, 15, 16, 20, 6, 15, 16, 20, 6, 15, 16, 20, 6, 15, 16, 20, 6, 15, 16, 20, 6, 15, 16});
+}
+
+TEST_F(DFAEngineTest, Flow_Control) {
+    expect_tokens("DECLARE var1 INT DEFAULT 0;DECLARE var2 VARCHAR(100) DEFAULT 'test';DECLARE CONTINUE HANDLER FOR 1062;BEGIN;SELECT 'duplicate';END;",
+                  {23, 7, 5, 1, 8, 22, 23, 7, 5, 15, 8, 16, 1, 10, 22, 23, 1, 23, 7, 8, 22, 23, 22, 4, 10, 22, 7, 22});
+    expect_tokens("SELECT 'duplicate'; END; ITERATE loop_label; LEAVE loop_label; LOOP SELECT 1; END LOOP; REPEAT SELECT 1; UNTIL condition END REPEAT; WHILE condition DO SELECT 1;RESIGNAL; GET DIAGNOSTICS",
+                  {4, 10, 22, 7, 22, 1, 7, 22, 1, 7, 22, 1, 4, 8, 22, 7, 1, 22, 1, 4, 8, 22, 7, 1, 7, 1, 22, 23, 1, 7, 4, 8, 22, 1, 22, 7, 7});
+}
+
+/* ========== 8. 主函数 ========== */
 
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);
