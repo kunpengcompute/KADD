@@ -1,4 +1,5 @@
 #include "kadd_dfa_engine.h"
+#include "kadd_errors.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,12 +14,17 @@
 #define OUTPUT_SCAN_DELTA_MASK 0x03u
 #define OUTPUT_START_DELTA_SHIFT 12u
 #define OUTPUT_START_DELTA_MASK 0x03u
+#define OUTPUT_END_DELTA_SHIFT 14u
+#define OUTPUT_END_DELTA_MASK 0x03u
+#define OUTPUT_EMIT_PAIR_FLAG 3u
 
 #define EOD_ACTION_EMIT 1u
 #define EOD_ACTION_CLEAR 2u
+#define EOD_ACTION_EMIT_TWO 3u
 #define EOD_ACTION_MASK 0x03u
 #define EOD_TOKEN_SHIFT 2u
 #define EOD_TOKEN_MASK 0x3Fu
+#define EOD_TOKEN2_SHIFT 8u
 
 struct kadd_dfa_engine_t {
     uint16_t *transition_table;
@@ -125,10 +131,12 @@ int kadd_dfa_engine_create(kadd_dfa_engine_t **engine,
     kadd_dfa_engine_t *e;
     int rc;
 
+    // 空指针检查
     if (engine == NULL || table_paths == NULL) {
         return KADD_ERROR_NULL_PTR;
     }
 
+    // 路径指针和空路径检查
     if (table_paths->transition_table_path == NULL ||
         table_paths->output_table_path == NULL ||
         table_paths->eod_table_path == NULL ||
@@ -185,7 +193,7 @@ int kadd_dfa_engine_tokenize(const kadd_dfa_engine_t *e,
     }
 
     if (e->transition_table == NULL || e->output_table == NULL || e->eod_table == NULL) {
-        return KADD_ERROR_INVALID_INPUT;
+        return KADD_ERROR_NOT_INIT;
     }
 
     if (input_length > e->max_input_length) {
@@ -239,6 +247,8 @@ int kadd_dfa_engine_tokenize(const kadd_dfa_engine_t *e,
                         (uint16_t)((output_code >> OUTPUT_SCAN_DELTA_SHIFT) & OUTPUT_SCAN_DELTA_MASK);
                     int start_delta =
                         (int)((output_code >> OUTPUT_START_DELTA_SHIFT) & OUTPUT_START_DELTA_MASK) - 1;
+                    uint16_t end_delta =
+                        (uint16_t)((output_code >> OUTPUT_END_DELTA_SHIFT) & OUTPUT_END_DELTA_MASK);
                     size_t scan_pos = pos + (size_t)scan_delta;
 
                     if (scan_pos < pos || scan_pos > input_length) {
@@ -248,6 +258,13 @@ int kadd_dfa_engine_tokenize(const kadd_dfa_engine_t *e,
                         return KADD_DFA_ERROR_BUFFER_OVERFLOW;
                     }
                     output[count++] = (int)emit_token_id;
+                    if (end_delta == OUTPUT_EMIT_PAIR_FLAG && edge_accept_info != 0) {
+                        if (count >= e->max_output_dim) {
+                            return KADD_DFA_ERROR_BUFFER_OVERFLOW;
+                        }
+                        output[count++] = (int)edge_accept_info;
+                        edge_accept_info = 0;
+                    }
 
                     if (start_delta < 0) {
                         if (pos == 0) {
@@ -286,6 +303,18 @@ int kadd_dfa_engine_tokenize(const kadd_dfa_engine_t *e,
                     accept_info = 0;
                 } else if (action == EOD_ACTION_EMIT) {
                     accept_info = (uint16_t)((eod_code >> EOD_TOKEN_SHIFT) & EOD_TOKEN_MASK);
+                } else if (action == EOD_ACTION_EMIT_TWO) {
+                    uint16_t first_token =
+                        (uint16_t)((eod_code >> EOD_TOKEN_SHIFT) & EOD_TOKEN_MASK);
+                    uint16_t second_token =
+                        (uint16_t)((eod_code >> EOD_TOKEN2_SHIFT) & EOD_TOKEN_MASK);
+                    if (count + 2u > e->max_output_dim) {
+                        return KADD_DFA_ERROR_BUFFER_OVERFLOW;
+                    }
+                    output[count++] = (int)first_token;
+                    output[count++] = (int)second_token;
+                    accept_info = 0;
+                    token_start_pos = pos;
                 }
             }
             break;
