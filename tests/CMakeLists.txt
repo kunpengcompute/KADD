@@ -74,10 +74,12 @@ function(add_kadd_gtest TEST_NAME SOURCE_FILE)
 
     add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
 
-    # 设置 RPATH 以便运行时找到 libonnxruntime.so
-    if(UNIX AND NOT APPLE)
+    # 设置 RPATH 以便运行时找到 libonnxruntime.so 和 libcjson.so
+    if(UNIX)
+        # 获取 cJSON 库目录
+        get_filename_component(CJSON_LIB_DIR ${CJSON_LIBRARIES} DIRECTORY)
         set_target_properties(${TEST_NAME} PROPERTIES
-            INSTALL_RPATH "$ORIGIN:${ONNXRUNTIME_LIB_DIR}"
+            INSTALL_RPATH "$ORIGIN:${ONNXRUNTIME_LIB_DIR}:${CJSON_LIB_DIR}:/usr/lib:/usr/lib64"
             BUILD_WITH_INSTALL_RPATH TRUE
         )
     endif()
@@ -123,7 +125,10 @@ add_kadd_gtest(feature_engine_test test_feature_engine_gtest.cpp)
 # SQLi 引擎测试
 add_kadd_gtest(sqli_engine_test test_sqli_engine_gtest.cpp)
 
-message(STATUS "Tests configured: dfa_engine_test, ml_engine_test, feature_engine_test, sqli_engine_test")
+# Config Loader 测试
+add_kadd_gtest(config_loader_test test_config_loader_gtest.cpp)
+
+message(STATUS "Tests configured: dfa_engine_test, ml_engine_test, feature_engine_test, sqli_engine_test, config_loader_test")
 if(ENABLE_CODE_COVERAGE)
     message(STATUS "  Run 'make coverage' after tests to generate report")
 endif()

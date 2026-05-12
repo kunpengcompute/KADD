@@ -56,8 +56,24 @@ int kadd_config_load(const char *config_path, kadd_config_t *config) {
         return -1;
     }
 
+    if (root->type != cJSON_Object) {
+        fprintf(stderr, "配置文件JSON必须是对象\n");
+        cJSON_Delete(root);
+        return -1;
+    }
+
     // 初始化默认值
     *config = (kadd_config_t){0};
+    config->dfa.max_input_length = 300;
+    config->dfa.max_output_dim = 300;
+    config->ml.feature_dim = 28;
+    config->ml.window_size = 5;
+    config->sqli.feature_dim = 28;
+    config->sqli.window_size = 5;
+    config->sqli.max_input_length = 300;
+    config->sqli.max_output_dim = 300;
+    config->feature.feature_dim = 28;
+    config->feature.window_size = 5;
 
     // 解析DFA引擎配置
     cJSON *dfa = cJSON_GetObjectItem(root, "kadd_dfa_engine");
@@ -85,15 +101,11 @@ int kadd_config_load(const char *config_path, kadd_config_t *config) {
         item = cJSON_GetObjectItem(dfa, "max_input_length");
         if (item && cJSON_IsNumber(item)) {
             config->dfa.max_input_length = item->valueint;
-        } else {
-            config->dfa.max_input_length = 300;  // 默认值
         }
 
         item = cJSON_GetObjectItem(dfa, "max_output_dim");
         if (item && cJSON_IsNumber(item)) {
             config->dfa.max_output_dim = item->valueint;
-        } else {
-            config->dfa.max_output_dim = 300;  // 默认值
         }
     }
 
@@ -110,15 +122,11 @@ int kadd_config_load(const char *config_path, kadd_config_t *config) {
         item = cJSON_GetObjectItem(ml, "feature_dim");
         if (item && cJSON_IsNumber(item)) {
             config->ml.feature_dim = item->valueint;
-        } else {
-            config->ml.feature_dim = 28;  // 默认值
         }
 
         item = cJSON_GetObjectItem(ml, "window_size");
         if (item && cJSON_IsNumber(item)) {
             config->ml.window_size = item->valueint;
-        } else {
-            config->ml.window_size = 5;  // 默认值
         }
     }
 
@@ -150,29 +158,21 @@ int kadd_config_load(const char *config_path, kadd_config_t *config) {
         item = cJSON_GetObjectItem(sqli, "feature_dim");
         if (item && cJSON_IsNumber(item)) {
             config->sqli.feature_dim = item->valueint;
-        } else {
-            config->sqli.feature_dim = 28;  // 默认值
         }
 
         item = cJSON_GetObjectItem(sqli, "window_size");
         if (item && cJSON_IsNumber(item)) {
             config->sqli.window_size = item->valueint;
-        } else {
-            config->sqli.window_size = 5;  // 默认值
         }
 
         item = cJSON_GetObjectItem(sqli, "max_input_length");
         if (item && cJSON_IsNumber(item)) {
             config->sqli.max_input_length = item->valueint;
-        } else {
-            config->sqli.max_input_length = 300;  // 默认值
         }
 
         item = cJSON_GetObjectItem(sqli, "max_output_dim");
         if (item && cJSON_IsNumber(item)) {
             config->sqli.max_output_dim = item->valueint;
-        } else {
-            config->sqli.max_output_dim = 300;  // 默认值
         }
     }
 
@@ -189,15 +189,11 @@ int kadd_config_load(const char *config_path, kadd_config_t *config) {
         item = cJSON_GetObjectItem(feature, "feature_dim");
         if (item && cJSON_IsNumber(item)) {
             config->feature.feature_dim = item->valueint;
-        } else {
-            config->feature.feature_dim = 28;  // 默认值
         }
 
         item = cJSON_GetObjectItem(feature, "window_size");
         if (item && cJSON_IsNumber(item)) {
             config->feature.window_size = item->valueint;
-        } else {
-            config->feature.window_size = 5;  // 默认值
         }
     } else {
         // 如果没有单独的feature配置，从ml配置复制

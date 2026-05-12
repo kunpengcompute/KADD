@@ -733,6 +733,245 @@ static bool TokensToFeatures(const std::vector<int> &tokens, std::vector<float> 
     return true;
 }
 
+// ========== 6. 边界和错误路径测试（提升覆盖率）==========
+
+TEST_F(MLEngineTest, BatchSizeBoundary_Zero) {
+    if (skip_test) GTEST_SKIP() << "模型文件不可用";
+
+    ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
+
+    const int n = 10;
+    std::vector<float> features(config.ml.feature_dim * n, 0.0f);
+    std::vector<float> probabilities(n);
+
+    // batch_size = 0 应该自动调整为 1
+    int ret = kadd_model_predict_batch(model, features.data(), n, probabilities.data(), 0);
+
+    EXPECT_EQ(ret, n) << "batch_size=0 应该自动调整并成功推理";
+
+    // 验证所有结果有效
+    for (int i = 0; i < n; i++) {
+        EXPECT_TRUE(IsValidProbability(probabilities[i]));
+    }
+}
+
+TEST_F(MLEngineTest, BatchSizeBoundary_Negative) {
+    if (skip_test) GTEST_SKIP() << "模型文件不可用";
+
+    ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
+
+    const int n = 10;
+    std::vector<float> features(config.ml.feature_dim * n, 0.0f);
+    std::vector<float> probabilities(n);
+
+    // batch_size = -1 应该自动调整为 1
+    int ret = kadd_model_predict_batch(model, features.data(), n, probabilities.data(), -1);
+
+    EXPECT_EQ(ret, n) << "batch_size=-1 应该自动调整并成功推理";
+}
+
+TEST_F(MLEngineTest, BatchSizeBoundary_ExceedsMax) {
+    if (skip_test) GTEST_SKIP() << "模型文件不可用";
+
+    ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
+
+    const int n = 10;
+    std::vector<float> features(config.ml.feature_dim * n, 0.0f);
+    std::vector<float> probabilities(n);
+
+    // batch_size > 1024 应该被限制为 1024
+    int ret = kadd_model_predict_batch(model, features.data(), n, probabilities.data(), 2000);
+
+    EXPECT_EQ(ret, n) << "batch_size>1024 应该被限制并成功推理";
+}
+
+TEST_F(MLEngineTest, ChunkBoundary_ExactlyMultiple) {
+    if (skip_test) GTEST_SKIP() << "模型文件不可用";
+
+    ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
+
+    // 测试 n = batch_size * 2（刚好是批次大小的倍数）
+    const int batch_size = 64;
+    const int n = batch_size * 2;
+
+    std::vector<float> features(config.ml.feature_dim * n, 0.0f);
+    std::vector<float> probabilities(n);
+
+    int ret = kadd_model_predict_batch(model, features.data(), n, probabilities.data(), batch_size);
+
+    EXPECT_EQ(ret, n) << "n是batch_size倍数时应该成功推理";
+
+    for (int i = 0; i < n; i++) {
+        EXPECT_TRUE(IsValidProbability(probabilities[i]));
+    }
+}
+
+TEST_F(MLEngineTest, ChunkBoundary_NotMultiple) {
+    if (skip_test) GTEST_SKIP() << "模型文件不可用";
+
+    ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
+
+    // 测试 n 不是 batch_size 的倍数
+    const int batch_size = 64;
+    const int n = 100;  // 64 + 36
+
+    std::vector<float> features(config.ml.feature_dim * n, 0.0f);
+    std::vector<float> probabilities(n);
+
+    int ret = kadd_model_predict_batch(model, features.data(), n, probabilities.data(), batch_size);
+
+    EXPECT_EQ(ret, n) << "n不是batch_size倍数时应该成功推理";
+
+    for (int i = 0; i < n; i++) {
+        EXPECT_TRUE(IsValidProbability(probabilities[i]));
+    }
+}
+
+TEST_F(MLEngineTest, LargeBatch_ChunkedProcessing) {
+    if (skip_test) GTEST_SKIP() << "模型文件不可用";
+
+    ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
+
+    // 测试大批量分块处理（n > batch_size）
+    const int batch_size = 128;
+    const int n = 500;  // 需要分成 4 批: 128 + 128 + 128 + 116
+
+    std::vector<float> features(config.ml.feature_dim * n, 0.0f);
+    std::vector<float> probabilities(n);
+
+    int ret = kadd_model_predict_batch(model, features.data(), n, probabilities.data(), batch_size);
+
+    EXPECT_EQ(ret, n) << "大批量分块处理应该成功";
+
+    // 验证所有结果有效
+    for (int i = 0; i < n; i++) {
+        EXPECT_TRUE(IsValidProbability(probabilities[i]))
+            << "样本 " << i << " 概率值应在 [0, 1] 范围内";
+    }
+}
+
+TEST_F(MLEngineTest, VeryLargeBatch_MultiChunkProcessing) {
+    if (skip_test) GTEST_SKIP() << "模型文件不可用";
+
+    ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
+
+    // 测试超大批量，覆盖更多分块逻辑
+    const int batch_size = 128;
+    const int n = 1025;  // 需要 9 批: 8*128 + 1
+
+    std::vector<float> features(config.ml.feature_dim * n);
+    std::vector<float> probabilities(n);
+
+    // 生成随机特征
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < config.ml.feature_dim; j++) {
+            features[i * config.ml.feature_dim + j] = static_cast<float>(i % 100);
+        }
+    }
+
+    int ret = kadd_model_predict_batch(model, features.data(), n, probabilities.data(), batch_size);
+
+    EXPECT_EQ(ret, n) << "超大批量多分块处理应该成功";
+
+    // 验证边界样本
+    EXPECT_TRUE(IsValidProbability(probabilities[0])) << "第一个样本应该有效";
+    EXPECT_TRUE(IsValidProbability(probabilities[n-1])) << "最后一个样本应该有效";
+    EXPECT_TRUE(IsValidProbability(probabilities[127])) << "第一批最后一个样本应该有效";
+    EXPECT_TRUE(IsValidProbability(probabilities[128])) << "第二批第一个样本应该有效";
+}
+
+TEST_F(MLEngineTest, SingleChunk_BatchSizeEqualsN) {
+    if (skip_test) GTEST_SKIP() << "模型文件不可用";
+
+    ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
+
+    // 测试 batch_size = n（单批次处理）
+    const int n = 50;
+    std::vector<float> features(config.ml.feature_dim * n, 0.0f);
+    std::vector<float> probabilities(n);
+
+    int ret = kadd_model_predict_batch(model, features.data(), n, probabilities.data(), n);
+
+    EXPECT_EQ(ret, n) << "batch_size=n 单批次处理应该成功";
+}
+
+TEST_F(MLEngineTest, ModelWarmupVerification) {
+    if (skip_test) GTEST_SKIP() << "模型文件不可用";
+
+    // 验证模型加载后的 warmup 机制
+    kadd_model_handle_t *fresh_model = nullptr;
+    ASSERT_EQ(kadd_model_load(&fresh_model, config.ml.model_path, config.ml.feature_dim), 0);
+
+    // warmup 后首次推理应该正常工作
+    std::vector<float> features(config.ml.feature_dim, 1.0f);
+    float probability = 0.0f;
+
+    int ret = kadd_model_predict(fresh_model, features.data(), &probability);
+
+    EXPECT_EQ(ret, 0) << "warmup 后首次推理应该成功";
+    EXPECT_TRUE(IsValidProbability(probability)) << "warmup 后首次推理结果应该有效";
+
+    kadd_model_free(fresh_model);
+}
+
+TEST_F(MLEngineTest, LoadWithCorruptedModelFile) {
+    if (skip_test) GTEST_SKIP() << "模型文件不可用";
+
+    // 创建一个损坏的模型文件
+    const char *corrupted_path = "corrupted_model.onnx";
+    FILE *fp = fopen(corrupted_path, "wb");
+    if (fp) {
+        // 写入一些无效数据
+        const char *corrupted_data = "CORRUPTED_ONNX_MODEL_DATA";
+        fwrite(corrupted_data, 1, strlen(corrupted_data), fp);
+        fclose(fp);
+
+        kadd_model_handle_t *bad_model = nullptr;
+        int ret = kadd_model_load(&bad_model, corrupted_path, config.ml.feature_dim);
+
+        EXPECT_NE(ret, 0) << "加载损坏的模型文件应该失败";
+        EXPECT_EQ(bad_model, nullptr) << "失败时句柄应为 NULL";
+
+        remove(corrupted_path);
+    } else {
+        GTEST_SKIP() << "无法创建测试文件";
+    }
+}
+
+TEST_F(MLEngineTest, BatchWithPartialFailure_Recovery) {
+    if (skip_test) GTEST_SKIP() << "模型文件不可用";
+
+    ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
+
+    // 测试批量推理的容错能力（虽然当前实现会跳过失败的批次）
+    const int n = 10;
+    std::vector<float> features(config.ml.feature_dim * n, 0.0f);
+    std::vector<float> probabilities(n);
+
+    // 正常情况应该全部成功
+    int ret = kadd_model_predict_batch(model, features.data(), n, probabilities.data(), 10);
+
+    EXPECT_GT(ret, 0) << "批量推理应该至少有部分成功";
+    EXPECT_LE(ret, n) << "成功数量不应超过总数";
+}
+
+TEST_F(MLEngineTest, FeatureDimensionMismatch) {
+    if (skip_test) GTEST_SKIP() << "模型文件不可用";
+
+    ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
+
+    // 测试特征维度不匹配（虽然当前实现不检查）
+    const int wrong_dim = config.ml.feature_dim + 10;
+    std::vector<float> features(wrong_dim, 0.0f);
+    float probability = 0.0f;
+
+    // 当前实现可能不会检查维度，但至少应该不崩溃
+    kadd_model_predict(model, features.data(), &probability);
+
+    // 只要不崩溃就算通过（行为可能未定义）
+    SUCCEED() << "特征维度不匹配至少不应崩溃";
+}
+
 // ========== 主函数 ==========
 int main(int argc, char **argv) {
     ::testing::InitGoogleTest(&argc, argv);

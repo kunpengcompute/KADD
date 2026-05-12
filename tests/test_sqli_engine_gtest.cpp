@@ -279,7 +279,7 @@ TEST_F(SQLiEngineTest, ModelPerformanceMetrics) {
  * 帮助确定最佳检测阈值
  */
 TEST_F(SQLiEngineTest, PerformanceAtDifferentThresholds) {
-    constexpr size_t total_count = full_dataset.size();
+    size_t total_count = full_dataset.size();
 
     std::vector<float> thresholds = {0.3f, 0.5f, 0.7f};
 

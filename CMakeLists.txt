@@ -126,12 +126,13 @@ find_library(ONNXRUNTIME_LIBRARIES
 )
 
 find_path(ONNXRUNTIME_INCLUDE_DIRS
-    NAMES onnxruntime/onnxruntime_c_api.h
+    NAMES 
+        onnxruntime/onnxruntime_c_api.h  # 优先查这个
+        onnxruntime_c_api.h               # 找不到再查这个
     PATHS ${SEARCH_PATHS}
     PATH_SUFFIXES include
     ${SEARCH_MODE}
 )
-
 # 验证结果
 if(NOT ONNXRUNTIME_LIBRARIES OR NOT ONNXRUNTIME_INCLUDE_DIRS)
     message(FATAL_ERROR "ONNX Runtime not found!"
@@ -154,20 +155,26 @@ list(APPEND CMAKE_INSTALL_RPATH "${ONNXRUNTIME_LIB_DIR}")
 # cJSON 查找
 set(CJSON_FOUND FALSE)
 if(USE_SYSTEM_LIBS)
-    find_package(PkgConfig QUIET)
-    if(PKG_CONFIG_FOUND)
-        pkg_check_modules(CJSON IMPORTED_TARGET cjson)
-    endif()
+    find_path(CJSON_INCLUDE_DIR
+        NAMES cJSON.h
+        PATHS
+            /usr/include /usr/local/include
+            $ENV{CJSON_ROOT_DIR}
+        PATH_SUFFIXES cjson
+    )
 
-    if(NOT CJSON_FOUND)
-        find_path(CJSON_INCLUDE_DIR cJSON.h)
-        find_library(CJSON_LIBRARY cjson)
-        if(CJSON_INCLUDE_DIR AND CJSON_LIBRARY)
-            set(CJSON_FOUND TRUE)
-            set(CJSON_INCLUDE_DIRS "${CJSON_INCLUDE_DIR}")
-            set(CJSON_LIBRARIES "${CJSON_LIBRARY}")
-            message(STATUS "Found system cJSON")
-        endif()
+    find_library(CJSON_LIBRARY
+        NAMES cjson
+        PATHS
+            /usr/lib /usr/local/lib /usr/lib64
+    )
+
+    if(CJSON_INCLUDE_DIR AND CJSON_LIBRARY)
+        set(CJSON_FOUND TRUE)
+        set(CJSON_INCLUDE_DIRS "${CJSON_INCLUDE_DIR}")
+        set(CJSON_LIBRARIES "${CJSON_LIBRARY}")
+        message(STATUS "cJSON include: ${CJSON_INCLUDE_DIR}")
+        message(STATUS "cJSON library: ${CJSON_LIBRARY}")
     endif()
 endif()
 
