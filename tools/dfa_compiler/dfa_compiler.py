@@ -33,6 +33,7 @@ class DFAState:
     ACTION_NONE = 0
     ACTION_EMIT_TOKEN = 1      # EOF/EOD 时发出 token
     ACTION_CLEAR_TOKEN = 2     # EOF/EOD 时清空当前 token
+    ACTION_EMIT_TWO_TOKENS = 3 # EOF/EOD 时按顺序发出两个 token
     OUTPUT_ACCEPT_MASK = 0x1F
     OUTPUT_EMIT_SHIFT = 5
     OUTPUT_TOKEN_MASK = 0x1F
@@ -45,6 +46,7 @@ class DFAState:
     EOD_ACTION_MASK = 0x03
     EOD_TOKEN_SHIFT = 2
     EOD_TOKEN_MASK = 0x3F
+    EOD_TOKEN2_SHIFT = 8
 
     def __init__(self, name, state_id):
         self.name = name
@@ -57,6 +59,7 @@ class DFAState:
         self.eod_target = None
         self.eod_action = self.ACTION_NONE
         self.eod_action_arg = None
+        self.eod_action_arg2 = None
 
     def __repr__(self):
         return f"DFAState({self.id}, {self.name})"
@@ -274,6 +277,8 @@ class DFACompiler:
 
         if edge_output_spec:
             emit_id = self._token_char_id(edge_output_spec['token_type'])
+            if edge_output_spec.get('token_type2'):
+                accept_info = self._token_char_id(edge_output_spec['token_type2'])
             scan_delta = edge_output_spec['scan_delta']
             start_delta = edge_output_spec['start_delta']
             end_delta = edge_output_spec['end_delta']
@@ -297,12 +302,14 @@ class DFACompiler:
             | ((end_delta_encoded & DFAState.OUTPUT_END_DELTA_MASK) << DFAState.OUTPUT_END_DELTA_SHIFT)
         )
 
-    def _pack_eod_code(self, action, token_char):
+    def _pack_eod_code(self, action, token_char, token_char2=None):
         """把 EOF 动作编码成一个 16-bit word。"""
         token_id = self._token_char_id(token_char)
+        token_id2 = self._token_char_id(token_char2)
         return (
             (action & DFAState.EOD_ACTION_MASK)
             | ((token_id & DFAState.EOD_TOKEN_MASK) << DFAState.EOD_TOKEN_SHIFT)
+            | ((token_id2 & DFAState.EOD_TOKEN_MASK) << DFAState.EOD_TOKEN2_SHIFT)
         )
 
     def _is_token_type_spec(self, token_type):
@@ -335,12 +342,24 @@ class DFACompiler:
                 'rewind': 0,
             }
 
+        prepend2_match = re.match(r'^prepend\s+(\S+)\s*,\s*(\S+)$', action_str)
+        if prepend2_match:
+            return {
+                'kind': 'prepend2',
+                'target_state': None,
+                'token_type': prepend2_match.group(1),
+                'token_type2': prepend2_match.group(2),
+                'emit_len': None,
+                'rewind': 0,
+            }
+
         prepend_match = re.match(r'^prepend\s+(\S+)$', action_str)
         if prepend_match:
             return {
                 'kind': 'prepend',
                 'target_state': None,
                 'token_type': prepend_match.group(1),
+                'token_type2': None,
                 'emit_len': None,
                 'rewind': 0,
             }
@@ -357,6 +376,20 @@ class DFACompiler:
                 'emit_len': int(emit_prefix_match.group(1)),
                 'rewind': int(emit_prefix_match.group(2)),
             }
+
+        emit_pair_match = re.match(
+            r'^emit_pair\s+(.+?)\s+prepend\s+(\S+)\s*,\s*(\S+)$',
+            action_str,
+        )
+        if emit_pair_match:
+            return {
+                'kind': 'emit_pair',
+                'target_state': emit_pair_match.group(1).strip(),
+                'token_type': emit_pair_match.group(2),
+                'token_type2': emit_pair_match.group(3),
+                'emit_len': None,
+                'rewind': 0,
+            }
         return None
 
     def _is_valid_action_string(self, action_str):
@@ -367,9 +400,12 @@ class DFACompiler:
 
         target_state = parsed['target_state']
         token_type = parsed['token_type']
+        token_type2 = parsed.get('token_type2')
         if target_state and target_state not in self.states:
             return False
         if token_type and not self._is_token_type_spec(token_type):
+            return False
+        if token_type2 and not self._is_token_type_spec(token_type2):
             return False
         return True
 
@@ -909,6 +945,10 @@ class DFACompiler:
             'NUM_SUFFIX_D_LOWER': 'WORD_D',
             'NUM_SUFFIX_F_UPPER': 'WORD_F',
             'NUM_SUFFIX_F_LOWER': 'WORD_F',
+            'BSTRING': 'STRING_SQ',
+            'BSTRING_BODY': 'STRING_SQ',
+            'XSTRING': 'STRING_SQ',
+            'XSTRING_BODY': 'STRING_SQ',
         }
         base_state_name = prefix_base_by_state.get(state_name)
         if base_state_name is None:
@@ -937,6 +977,25 @@ class DFACompiler:
         for code in codes:
             self._set_edge_accept_status(state_name, code, accept_status, line_desc)
         return {code: synthetic_name for code in codes}
+
+    def _expand_emit_pair_codes(self, state_name, codes, parsed, line_desc):
+        """在边上输出两个 token，然后从指定 target state 继续处理当前字符。"""
+        target_state = parsed['target_state']
+        if target_state not in self.states:
+            self.errors.append(f"{line_desc}: emit_pair 目标状态 '{target_state}' 未定义")
+            return {}
+
+        accept_status = {
+            'token_type': self._normalize_token_type(parsed['token_type']),
+            'token_type2': self._normalize_token_type(parsed['token_type2']),
+            'scan_delta': 0,
+            'start_delta': 0,
+            # end_delta=2 作为 output_table 的 pair-output 标记；runtime 不做 value 裁剪。
+            'end_delta': 2,
+        }
+        for code in codes:
+            self._set_edge_accept_status(state_name, code, accept_status, line_desc)
+        return {code: target_state for code in codes}
 
     def _materialize_accepting_boundaries(self, state_name, queue, queued):
         """把接受态的缺失边界列显式展开成 copy ENTRY，消除 runtime lookahead。"""
@@ -990,6 +1049,11 @@ class DFACompiler:
                 if code in replacements:
                     state.transitions[code] = replacements[code]
                 resolved_count += 1
+            elif parsed['kind'] == 'emit_pair':
+                replacements = self._expand_emit_pair_codes(state_name, [code], parsed, line_desc)
+                if code in replacements:
+                    state.transitions[code] = replacements[code]
+                resolved_count += 1
             else:
                 self.errors.append(f"{line_desc}: 不支持的显式动作 '{target}'")
 
@@ -1009,10 +1073,14 @@ class DFACompiler:
                     replacements = self._expand_copy_codes(state_name, codes, parsed, line_desc, queue, queued)
                 elif parsed['kind'] == 'emit_prefix':
                     replacements = self._expand_prefix_codes(state_name, codes, parsed, line_desc, queue, queued)
+                elif parsed['kind'] == 'emit_pair':
+                    replacements = self._expand_emit_pair_codes(state_name, codes, parsed, line_desc)
                 elif parsed['kind'] == 'prepend':
                     if state.eod_action == DFAState.ACTION_NONE and state.eod_target is None:
                         state.eod_action = DFAState.ACTION_EMIT_TOKEN
                         state.eod_action_arg = self._normalize_token_type(parsed['token_type'])
+                elif parsed['kind'] == 'prepend2':
+                    self.errors.append(f"{line_desc}: prepend2 只能用于 eod，不能用于 default")
                 else:
                     self.errors.append(f"{line_desc}: 不支持的 default 动作 '{state.default}'")
 
@@ -1032,6 +1100,10 @@ class DFACompiler:
                 if parsed['kind'] in ('dup', 'prepend'):
                     state.eod_action = DFAState.ACTION_EMIT_TOKEN
                     state.eod_action_arg = self._normalize_token_type(parsed['token_type'])
+                elif parsed['kind'] == 'prepend2':
+                    state.eod_action = DFAState.ACTION_EMIT_TWO_TOKENS
+                    state.eod_action_arg = self._normalize_token_type(parsed['token_type'])
+                    state.eod_action_arg2 = self._normalize_token_type(parsed['token_type2'])
                 elif parsed['kind'] == 'copy':
                     state.eod_action = DFAState.ACTION_CLEAR_TOKEN
                 else:
@@ -1272,6 +1344,7 @@ class DFACompiler:
         """把 eod_target 链预折叠成最终 EOF 动作。"""
         resolved_action = DFAState.ACTION_NONE
         resolved_arg = None
+        resolved_arg2 = None
         current_name = state_name
         seen_targets = set()
 
@@ -1280,33 +1353,37 @@ class DFACompiler:
             if state.eod_target:
                 target_name = state.eod_target
                 if target_name in seen_targets:
-                    return resolved_action, resolved_arg
+                    return resolved_action, resolved_arg, resolved_arg2
                 seen_targets.add(target_name)
 
                 if target_name not in self.states:
                     self.errors.append(f"{state_name}: 未知 eod 目标 '{target_name}'")
-                    return resolved_action, resolved_arg
+                    return resolved_action, resolved_arg, resolved_arg2
 
                 target_state = self.states[target_name]
                 if target_state.token_type:
                     resolved_action = DFAState.ACTION_EMIT_TOKEN
                     resolved_arg = target_state.token_type
+                    resolved_arg2 = None
                 current_name = target_name
                 continue
 
             if state.eod_action == DFAState.ACTION_EMIT_TOKEN:
-                return DFAState.ACTION_EMIT_TOKEN, state.eod_action_arg
+                return DFAState.ACTION_EMIT_TOKEN, state.eod_action_arg, None
+            if state.eod_action == DFAState.ACTION_EMIT_TWO_TOKENS:
+                return DFAState.ACTION_EMIT_TWO_TOKENS, state.eod_action_arg, state.eod_action_arg2
             if state.eod_action == DFAState.ACTION_CLEAR_TOKEN:
-                return DFAState.ACTION_CLEAR_TOKEN, None
-            return resolved_action, resolved_arg
+                return DFAState.ACTION_CLEAR_TOKEN, None, None
+            return resolved_action, resolved_arg, resolved_arg2
 
     def _collapse_eod_chains(self):
         """把所有 eod_target 链预折叠成最终 eod_action/eod_action_arg。"""
         for state_name, state in self.states.items():
-            resolved_action, resolved_arg = self._resolve_eod_result(state_name)
+            resolved_action, resolved_arg, resolved_arg2 = self._resolve_eod_result(state_name)
             state.eod_target = None
             state.eod_action = resolved_action
             state.eod_action_arg = resolved_arg
+            state.eod_action_arg2 = resolved_arg2
 
     def _build_transition_table(self):
         """构建转移表"""
@@ -1402,7 +1479,11 @@ class DFACompiler:
             if state_id >= num_states:
                 self.errors.append(f"{state_name}: state_id={state_id} 超出 eod table 范围")
                 continue
-            eod_table[state_id] = self._pack_eod_code(state.eod_action, state.eod_action_arg)
+            eod_table[state_id] = self._pack_eod_code(
+                state.eod_action,
+                state.eod_action_arg,
+                state.eod_action_arg2,
+            )
 
         if self.errors:
             return None

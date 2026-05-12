@@ -13,12 +13,27 @@
 #define OUTPUT_SCAN_DELTA_MASK 0x03u
 #define OUTPUT_START_DELTA_SHIFT 12u
 #define OUTPUT_START_DELTA_MASK 0x03u
+#define OUTPUT_END_DELTA_SHIFT 14u
+#define OUTPUT_END_DELTA_MASK 0x03u
+#define OUTPUT_EMIT_PAIR_FLAG 3u
 
 #define EOD_ACTION_EMIT 1u
 #define EOD_ACTION_CLEAR 2u
+#define EOD_ACTION_EMIT_TWO 3u
 #define EOD_ACTION_MASK 0x03u
 #define EOD_TOKEN_SHIFT 2u
 #define EOD_TOKEN_MASK 0x3Fu
+#define EOD_TOKEN2_SHIFT 8u
+
+typedef enum {
+    KADD_DFA_OK = 0,
+    KADD_DFA_ERROR_MEMORY = -1,
+    KADD_DFA_ERROR_INVALID_INPUT = -2,
+    KADD_DFA_ERROR_FILE_NOT_FOUND = -3,
+    KADD_DFA_ERROR_PARSE = -4,
+    KADD_DFA_ERROR_BUFFER_OVERFLOW = -5,
+    KADD_DFA_ERROR_INVALID_LENGTH = -6
+} kadd_dfa_error_t;
 
 struct kadd_dfa_engine_t {
     uint16_t *transition_table;
@@ -54,7 +69,7 @@ static int load_u16_table(
     size_t i;
 
     if (path == NULL || num_states == NULL || out == NULL || cells_per_state == 0) {
-        return KADD_ERROR_INVALID_INPUT;
+        return KADD_DFA_ERROR_INVALID_INPUT;
     }
 
     fp = fopen(path, "rb");
@@ -82,7 +97,7 @@ static int load_u16_table(
     table = (uint16_t *)malloc(total_cells * sizeof(uint16_t));
     if (table == NULL) {
         fclose(fp);
-        return KADD_ERROR_OUT_OF_MEMORY;
+        return KADD_DFA_ERROR_MEMORY;
     }
 
     for (i = 0; i < total_cells; i++) {
@@ -98,7 +113,7 @@ static int load_u16_table(
     fclose(fp);
     *num_states = states;
     *out = table;
-    return KADD_SUCCESS;
+    return KADD_DFA_OK;
 }
 
 static int kadd_dfa_engine_load_tables(kadd_dfa_engine_t *e, const kadd_dfa_table_paths_t *table_paths) {
@@ -106,12 +121,12 @@ static int kadd_dfa_engine_load_tables(kadd_dfa_engine_t *e, const kadd_dfa_tabl
     int rc;
 
     rc = load_u16_table(table_paths->transition_table_path, 0, 256, &states, &e->transition_table);
-    if (rc != KADD_SUCCESS) {
+    if (rc != KADD_DFA_OK) {
         return rc;
     }
 
     rc = load_u16_table(table_paths->output_table_path, states, 256, &states, &e->output_table);
-    if (rc != KADD_SUCCESS) {
+    if (rc != KADD_DFA_OK) {
         return rc;
     }
 
@@ -125,37 +140,34 @@ int kadd_dfa_engine_create(kadd_dfa_engine_t **engine,
     kadd_dfa_engine_t *e;
     int rc;
 
-    if (engine == NULL || table_paths == NULL) {
-        return KADD_ERROR_NULL_PTR;
-    }
-
-    if (table_paths->transition_table_path == NULL ||
+    if (engine == NULL || table_paths == NULL ||
+        table_paths->transition_table_path == NULL ||
         table_paths->output_table_path == NULL ||
         table_paths->eod_table_path == NULL ||
         table_paths->transition_table_path[0] == '\0' ||
         table_paths->output_table_path[0] == '\0' ||
         table_paths->eod_table_path[0] == '\0' ||
         max_input_length == 0 || max_output_dim == 0) {
-        return KADD_ERROR_INVALID_INPUT;
+        return KADD_DFA_ERROR_INVALID_INPUT;
     }
 
     *engine = NULL;
     e = (kadd_dfa_engine_t *)calloc(1, sizeof(kadd_dfa_engine_t));
     if (e == NULL) {
-        return KADD_ERROR_OUT_OF_MEMORY;
+        return KADD_DFA_ERROR_MEMORY;
     }
 
     e->max_input_length = max_input_length;
     e->max_output_dim = max_output_dim;
 
     rc = kadd_dfa_engine_load_tables(e, table_paths);
-    if (rc != KADD_SUCCESS) {
+    if (rc != KADD_DFA_OK) {
         kadd_dfa_engine_free(e);
         return rc;
     }
 
     *engine = e;
-    return KADD_SUCCESS;
+    return KADD_DFA_OK;
 }
 
 void kadd_dfa_engine_free(kadd_dfa_engine_t *e) {
@@ -180,12 +192,9 @@ int kadd_dfa_engine_tokenize(const kadd_dfa_engine_t *e,
     const uint16_t *output_table;
     const uint16_t *eod_table;
 
-    if (e == NULL || input == NULL || output == NULL || dim == NULL) {
-        return KADD_ERROR_NULL_PTR;
-    }
-
-    if (e->transition_table == NULL || e->output_table == NULL || e->eod_table == NULL) {
-        return KADD_ERROR_INVALID_INPUT;
+    if (e == NULL || input == NULL || output == NULL || dim == NULL ||
+        e->transition_table == NULL || e->output_table == NULL || e->eod_table == NULL) {
+        return KADD_DFA_ERROR_INVALID_INPUT;
     }
 
     if (input_length > e->max_input_length) {
@@ -239,6 +248,8 @@ int kadd_dfa_engine_tokenize(const kadd_dfa_engine_t *e,
                         (uint16_t)((output_code >> OUTPUT_SCAN_DELTA_SHIFT) & OUTPUT_SCAN_DELTA_MASK);
                     int start_delta =
                         (int)((output_code >> OUTPUT_START_DELTA_SHIFT) & OUTPUT_START_DELTA_MASK) - 1;
+                    uint16_t end_delta =
+                        (uint16_t)((output_code >> OUTPUT_END_DELTA_SHIFT) & OUTPUT_END_DELTA_MASK);
                     size_t scan_pos = pos + (size_t)scan_delta;
 
                     if (scan_pos < pos || scan_pos > input_length) {
@@ -248,6 +259,13 @@ int kadd_dfa_engine_tokenize(const kadd_dfa_engine_t *e,
                         return KADD_DFA_ERROR_BUFFER_OVERFLOW;
                     }
                     output[count++] = (int)emit_token_id;
+                    if (end_delta == OUTPUT_EMIT_PAIR_FLAG && edge_accept_info != 0) {
+                        if (count >= e->max_output_dim) {
+                            return KADD_DFA_ERROR_BUFFER_OVERFLOW;
+                        }
+                        output[count++] = (int)edge_accept_info;
+                        edge_accept_info = 0;
+                    }
 
                     if (start_delta < 0) {
                         if (pos == 0) {
@@ -286,6 +304,18 @@ int kadd_dfa_engine_tokenize(const kadd_dfa_engine_t *e,
                     accept_info = 0;
                 } else if (action == EOD_ACTION_EMIT) {
                     accept_info = (uint16_t)((eod_code >> EOD_TOKEN_SHIFT) & EOD_TOKEN_MASK);
+                } else if (action == EOD_ACTION_EMIT_TWO) {
+                    uint16_t first_token =
+                        (uint16_t)((eod_code >> EOD_TOKEN_SHIFT) & EOD_TOKEN_MASK);
+                    uint16_t second_token =
+                        (uint16_t)((eod_code >> EOD_TOKEN2_SHIFT) & EOD_TOKEN_MASK);
+                    if (count + 2u > e->max_output_dim) {
+                        return KADD_DFA_ERROR_BUFFER_OVERFLOW;
+                    }
+                    output[count++] = (int)first_token;
+                    output[count++] = (int)second_token;
+                    accept_info = 0;
+                    token_start_pos = pos;
                 }
             }
             break;
@@ -302,81 +332,5 @@ int kadd_dfa_engine_tokenize(const kadd_dfa_engine_t *e,
     }
 
     *dim = (int)count;
-    return KADD_SUCCESS;
-}
-
-int kadd_dfa_engine_tokenize_batch(const kadd_dfa_engine_t *e,
-                                   kadd_dfa_batch_t *batch) {
-    if (e == NULL || batch == NULL) {
-        return KADD_ERROR_NULL_PTR;
-    }
-
-    if (batch->inputs == NULL || batch->outputs == NULL || batch->dims == NULL) {
-        return KADD_ERROR_NULL_PTR;
-    }
-
-    if (batch->count <= 0) {
-        return KADD_ERROR_INVALID_INPUT;
-    }
-
-    // 设置默认批次大小
-    int actual_batch_size = batch->batch_size;
-    if (actual_batch_size <= 0) {
-        actual_batch_size = 64;
-    }
-    if (actual_batch_size > 1024) {
-        actual_batch_size = 1024;
-    }
-
-    // 初始化输出
-    for (int i = 0; i < batch->count; i++) {
-        batch->outputs[i] = NULL;
-        batch->dims[i] = -1;
-    }
-
-    int success_count = 0;
-
-    // 分批处理
-    for (int batch_start = 0; batch_start < batch->count; batch_start += actual_batch_size) {
-        int current_batch = (batch_start + actual_batch_size < batch->count) ?
-                           actual_batch_size : (batch->count - batch_start);
-
-        // 处理当前批次
-        for (int i = 0; i < current_batch; i++) {
-            int idx = batch_start + i;
-            const char *input = batch->inputs[idx];
-            size_t input_len = (batch->lengths != NULL) ? batch->lengths[idx] : 0;
-
-            if (input == NULL) {
-                continue;
-            }
-
-            // 如果没有提供长度，自动计算
-            if (batch->lengths == NULL) {
-                input_len = strlen(input);
-            }
-
-            // 分配输出缓冲区
-            int *output = (int *)malloc(e->max_output_dim * sizeof(int));
-            if (output == NULL) {
-                continue;
-            }
-
-            // 调用单条 tokenize
-            int dim = 0;
-            int result = kadd_dfa_engine_tokenize(e, input, input_len, output, &dim);
-
-            if (result == KADD_SUCCESS && dim > 0) {
-                batch->outputs[idx] = output;
-                batch->dims[idx] = dim;
-                success_count++;
-            } else {
-                free(output);
-                batch->dims[idx] = -1;
-            }
-        }
-    }
-
-    // 返回成功数量（与 KADD_SUCCESS 区分）
-    return (success_count == batch->count) ? KADD_SUCCESS : success_count;
+    return KADD_DFA_OK;
 }
