@@ -15,7 +15,7 @@
 
 - **编译器**: GCC 10+ / Clang / MSVC
 - **CMake**: 3.16+
-- **依赖**: ONNX Runtime（必需）、cJSON（可选）、Google Test（可选）
+- **依赖**: ONNX Runtime（必需）、cJSON（必需）、Google Test（可选）
 
 ### 依赖安装
 
@@ -47,6 +47,9 @@ cmake --build .
 
 # 运行测试
 ctest --verbose
+
+# 生成覆盖率
+make coverage
 ```
 
 ## 📦 模块说明
@@ -89,9 +92,6 @@ int main() {
 
 ## 📚 文档
 
-- [API 参考手册](docs/API.md) - 完整的 API 使用手册
-- [架构设计文档](docs/DESIGN.md) - 系统架构和模块设计
-- [CMake 构建指南](docs/CMAKE.md) - 构建系统说明
 - [第三方库安装指南](docs/DEPENDENCIES.md) - 依赖安装说明
 - [演示程序说明](demo/README.md) - Demo 使用指南
 
@@ -222,6 +222,18 @@ KADD/
 ├── build/           ← 构建目录
 └── CMakeLists.txt
 ```
+
+## 📜 第三方开源库
+
+本项目使用以下开源库：
+
+| 库名 | 许可证 | 仓库地址 |
+|---------|---------|------------|
+| [cJSON](https://github.com/DaveGamble/cJSON) | MIT | https://github.com/DaveGamble/cJSON |
+| [ONNX Runtime](https://github.com/microsoft/onnxruntime) | MIT | https://github.com/microsoft/onnxruntime |
+| [Google Test](https://github.com/google/googletest) | BSD 3-Clause | https://github.com/google/googletest |
+
+完整许可证文本请参见 [THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt)
 
 ## 📄 许可证
 
