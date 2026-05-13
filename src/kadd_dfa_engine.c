@@ -3,6 +3,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #define KADD_DFA_ID_ERROR 65535u
 #define KADD_DFA_ID_ENTRY 0u

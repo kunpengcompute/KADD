@@ -148,14 +148,14 @@ static int create_session(kadd_model_handle_t *handle, const char *model_path) {
                 if (!name_status && name) {
                     if (strstr(name, "probability")) {
                         handle->output_name = strdup(name);
-                        handle->api->AllocatorFree(allocator, name);
+                        { OrtStatus *free_status = handle->api->AllocatorFree(allocator, name); if (free_status) handle->api->ReleaseStatus(free_status); }
                         if (!handle->output_name) {
                             handle->api->ReleaseStatus(count_status);
                             return -1;
                         }
                         break;
                     }
-                    handle->api->AllocatorFree(allocator, name);
+                    { OrtStatus *free_status = handle->api->AllocatorFree(allocator, name); if (free_status) handle->api->ReleaseStatus(free_status); }
                 } else if (name_status) {
                     handle->api->ReleaseStatus(name_status);
                 }
