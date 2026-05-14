@@ -263,14 +263,11 @@ int kadd_model_predict(kadd_model_handle_t *handle, const float *features, float
 
 int kadd_model_predict_batch(kadd_model_handle_t *handle, const float *features, int n, float *probabilities, int batch_size) {
     if (!handle || !features || !probabilities) return KADD_ERROR_NULL_PTR;
-    if (n <= 0) return KADD_ERROR_INVALID_PARAM;
+    if (n <= 0 || batch_size <=0) return KADD_ERROR_INVALID_PARAM;
 
     // 限制 batch_size 范围，防止过大或过小
     if (batch_size > 1024) {
         batch_size = 1024;  // 最大批次限制
-    }
-    if (batch_size <= 1) {
-        batch_size = 1;     // 最小批次限制
     }
 
     int count = 0;
