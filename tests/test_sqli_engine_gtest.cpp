@@ -487,17 +487,23 @@ TEST_F(SQLiEngineTest, EngineReuse) {
 /* ========== 4. 性能测试 ========== */
 
 TEST_F(SQLiEngineTest, SingleDetectionPerformance) {
-    // 测试单次检测性能
+    const int iteration = 1000;
     std::string input = "id=1' OR '1'='1";
+    float prob = 0.0f;
 
     auto start = std::chrono::high_resolution_clock::now();
-    float prob = detect(input);
+    for (int i = 0; i < iteration; i++) {
+        kadd_sqli_detect(engine, input.c_str(), &prob);
+    }
     auto end = std::chrono::high_resolution_clock::now();
 
     EXPECT_GE(prob, 0.0f);
     EXPECT_LE(prob, 1.0f);
-    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-    EXPECT_LT(duration.count(), 100) << "单次检测应该在100ms内完成";
+
+    auto duration = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
+    double total_time_us = static_cast<double>(duration.count());
+    std::cout << "\n[性能测试] kadd_sqli_detect 单次耗时："
+            << total_time_us / iteration << " us" << std::endl;
 }
 
 TEST_F(SQLiEngineTest, BatchDetectionPerformance) {

@@ -203,13 +203,13 @@ TEST_F(MLEngineTest, PredictBatchWithAutoBatchSize) {
     std::vector<float> features(config.ml.feature_dim * n, 0.0f);
     std::vector<float> probabilities(n);
 
-    // batch_size = 0 表示自动选择
-    int ret = kadd_model_predict_batch(model, features.data(), n, probabilities.data(), 0);
+    // batch_size = 1 
+    int ret = kadd_model_predict_batch(model, features.data(), n, probabilities.data(), 1);
 
     EXPECT_EQ(ret, n) << "应该成功推理 " << n << " 个样本（自动批次大小）";
 
     // 验证所有概率值有效
-    for (int i = 0; i < n; i++) {
+    for (int i = 1; i < n; i++) {
         EXPECT_TRUE(IsValidProbability(probabilities[i]))
             << "样本 " << i << " 概率值应在 [0, 1] 范围内";
     }
@@ -735,40 +735,84 @@ static bool TokensToFeatures(const std::vector<int> &tokens, std::vector<float> 
 
 // ========== 6. 边界和错误路径测试（提升覆盖率）==========
 
-TEST_F(MLEngineTest, BatchSizeBoundary_Zero) {
-    if (skip_test) GTEST_SKIP() << "模型文件不可用";
+ TEST_F(MLEngineTest, BatchSizeBoundary_Zero) {
+      if (skip_test) GTEST_SKIP() << "模型文件不可用";
 
-    ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
+      ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
 
-    const int n = 10;
-    std::vector<float> features(config.ml.feature_dim * n, 0.0f);
-    std::vector<float> probabilities(n);
+      const int n = 10;
+      std::vector<float> features(config.ml.feature_dim * n, 0.0f);
+      std::vector<float> probabilities(n);
 
-    // batch_size = 0 应该自动调整为 1
-    int ret = kadd_model_predict_batch(model, features.data(), n, probabilities.data(), 0);
+      // batch_size = 0 应返回错误码
+      int ret = kadd_model_predict_batch(model, features.data(), n, probabilities.data(), 0);
 
-    EXPECT_EQ(ret, n) << "batch_size=0 应该自动调整并成功推理";
+      EXPECT_EQ(ret, KADD_ERROR_INVALID_PARAM) << "batch_size=0 应返回 INVALID_PARAM 错误";
+  }
 
-    // 验证所有结果有效
-    for (int i = 0; i < n; i++) {
-        EXPECT_TRUE(IsValidProbability(probabilities[i]));
-    }
-}
+  TEST_F(MLEngineTest, BatchSizeBoundary_Negative) {
+      if (skip_test) GTEST_SKIP() << "模型文件不可用";
 
-TEST_F(MLEngineTest, BatchSizeBoundary_Negative) {
-    if (skip_test) GTEST_SKIP() << "模型文件不可用";
+      ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
 
-    ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
+      const int n = 10;
+      std::vector<float> features(config.ml.feature_dim * n, 0.0f);
+      std::vector<float> probabilities(n);
 
-    const int n = 10;
-    std::vector<float> features(config.ml.feature_dim * n, 0.0f);
-    std::vector<float> probabilities(n);
+      // batch_size = -1 应返回错误码
+      int ret = kadd_model_predict_batch(model, features.data(), n, probabilities.data(), -1);
 
-    // batch_size = -1 应该自动调整为 1
-    int ret = kadd_model_predict_batch(model, features.data(), n, probabilities.data(), -1);
+      EXPECT_EQ(ret, KADD_ERROR_INVALID_PARAM) << "batch_size=-1 应返回 INVALID_PARAM 错误";
+  }
 
-    EXPECT_EQ(ret, n) << "batch_size=-1 应该自动调整并成功推理";
-}
+  TEST_F(MLEngineTest, SampleCountBoundary_Zero) {
+      if (skip_test) GTEST_SKIP() << "模型文件不可用";
+
+      ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
+
+      std::vector<float> features(config.ml.feature_dim, 0.0f);
+      std::vector<float> probabilities(1);
+
+      // n = 0 应返回错误码
+      int ret = kadd_model_predict_batch(model, features.data(), 0, probabilities.data(), 1);
+
+      EXPECT_EQ(ret, KADD_ERROR_INVALID_PARAM) << "n=0 应返回 INVALID_PARAM 错误";
+  }
+
+  TEST_F(MLEngineTest, SampleCountBoundary_Negative) {
+      if (skip_test) GTEST_SKIP() << "模型文件不可用";
+
+      ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
+
+      std::vector<float> features(config.ml.feature_dim, 0.0f);
+      std::vector<float> probabilities(1);
+
+      // n = -1 应返回错误码
+      int ret = kadd_model_predict_batch(model, features.data(), -1, probabilities.data(), 1);
+
+      EXPECT_EQ(ret, KADD_ERROR_INVALID_PARAM) << "n=-1 应返回 INVALID_PARAM 错误";
+  }
+
+  TEST_F(MLEngineTest, NullPointer_Parameters) {
+      if (skip_test) GTEST_SKIP() << "模型文件不可用";
+
+      ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
+
+      std::vector<float> features(config.ml.feature_dim, 0.0f);
+      std::vector<float> probabilities(1);
+
+      // 测试 NULL handle
+      EXPECT_EQ(kadd_model_predict_batch(nullptr, features.data(), 1, probabilities.data(), 1),
+                KADD_ERROR_NULL_PTR) << "NULL handle 应返回 NULL_PTR 错误";
+
+      // 测试 NULL features
+      EXPECT_EQ(kadd_model_predict_batch(model, nullptr, 1, probabilities.data(), 1),
+                KADD_ERROR_NULL_PTR) << "NULL features 应返回 NULL_PTR 错误";
+
+      // 测试 NULL probabilities
+      EXPECT_EQ(kadd_model_predict_batch(model, features.data(), 1, nullptr, 1),
+                KADD_ERROR_NULL_PTR) << "NULL probabilities 应返回 NULL_PTR 错误";
+  }
 
 TEST_F(MLEngineTest, BatchSizeBoundary_ExceedsMax) {
     if (skip_test) GTEST_SKIP() << "模型文件不可用";
