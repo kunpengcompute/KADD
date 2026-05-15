@@ -202,8 +202,6 @@ int kadd_seq_to_feature_batch(kadd_feature_batch_t *batch) {
     int total = batch->count * batch->feature_dim;
     for (int i = 0; i < total; i++) batch->features[i] = 0;
 
-    int success_count = 0;
-
     // 分批处理
     for (int batch_start = 0; batch_start < batch->count; batch_start += actual_batch_size) {
         int current_batch = (batch_start + actual_batch_size < batch->count) ?
@@ -216,7 +214,8 @@ int kadd_seq_to_feature_batch(kadd_feature_batch_t *batch) {
             int seq_len = batch->seq_lens[idx];
 
             if (seq == NULL || seq_len <= 0) {
-                continue;
+                // NULL 序列或无效长度，返回错误
+                return KADD_ERROR_INVALID_INPUT;
             }
 
             // 获取当前序列的特征输出位置
@@ -226,15 +225,13 @@ int kadd_seq_to_feature_batch(kadd_feature_batch_t *batch) {
             int result = kadd_seq_to_feature(seq, seq_len, batch->window_size,
                                             feature, batch->feature_dim);
 
-            if (result == 0) {
-                success_count++;
-            } else {
-                // 失败则保持特征为0
-                for (int j = 0; j < batch->feature_dim; j++) feature[j] = 0;
+            if (result != 0) {
+                // 特征提取失败，立即返回错误
+                return result;
             }
         }
     }
 
-    // 返回成功数量（与 KADD_SUCCESS 区分）
-    return (success_count == batch->count) ? KADD_SUCCESS : success_count;
+    // 全部成功
+    return KADD_SUCCESS;
 }

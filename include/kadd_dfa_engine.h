@@ -77,10 +77,11 @@ int kadd_dfa_engine_tokenize(const kadd_dfa_engine_t *e,
  *
  * @param e DFA 引擎
  * @param batch 批处理上下文
- * @return 0 完全成功，>0 部分成功（返回成功数量），<0 失败（错误码）
+ * @return KADD_SUCCESS (0) 完全成功，<0 失败（错误码）
  *
+ * @note 任何输入失败都会立即返回错误，不会部分成功
+ * @note 调用者负责释放所有成功的 outputs[i]
  * @note 失败的项目 dims[i] 会被设为 -1，outputs[i] 为 NULL
- * @note 调用者负责释放成功的 outputs[i]
  */
 int kadd_dfa_engine_tokenize_batch(const kadd_dfa_engine_t *e,
                                    kadd_dfa_batch_t *batch);

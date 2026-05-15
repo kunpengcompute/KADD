@@ -35,6 +35,23 @@ struct kadd_dfa_engine_t {
     size_t max_output_dim;
 };
 
+/* ========== 内部辅助函数 ========== */
+
+/**
+ * @brief 清理批处理输出缓冲区
+ */
+static void cleanup_dfa_batch(kadd_dfa_batch_t *batch, int up_to_idx) {
+    if (!batch || !batch->outputs) return;
+
+    int limit = (up_to_idx < 0) ? batch->count : up_to_idx;
+    for (int i = 0; i < limit; i++) {
+        if (batch->outputs[i]) {
+            free(batch->outputs[i]);
+            batch->outputs[i] = NULL;
+        }
+    }
+}
+
 static uint32_t read_le32(const unsigned char bytes[4]) {
     return ((uint32_t)bytes[0]) |
            ((uint32_t)bytes[1] << 8) |
@@ -364,8 +381,6 @@ int kadd_dfa_engine_tokenize_batch(const kadd_dfa_engine_t *e,
         batch->dims[i] = -1;
     }
 
-    int success_count = 0;
-
     // 分批处理
     for (int batch_start = 0; batch_start < batch->count; batch_start += actual_batch_size) {
         int current_batch = (batch_start + actual_batch_size < batch->count) ?
@@ -378,7 +393,8 @@ int kadd_dfa_engine_tokenize_batch(const kadd_dfa_engine_t *e,
             size_t input_len = (batch->lengths != NULL) ? batch->lengths[idx] : 0;
 
             if (input == NULL) {
-                continue;
+                cleanup_dfa_batch(batch, -1);
+                return KADD_ERROR_INVALID_INPUT;
             }
 
             // 如果没有提供长度，自动计算
@@ -389,7 +405,8 @@ int kadd_dfa_engine_tokenize_batch(const kadd_dfa_engine_t *e,
             // 分配输出缓冲区
             int *output = (int *)malloc(e->max_output_dim * sizeof(int));
             if (output == NULL) {
-                continue;
+                cleanup_dfa_batch(batch, -1);
+                return KADD_ERROR_OUT_OF_MEMORY;
             }
 
             // 调用单条 tokenize
@@ -399,14 +416,14 @@ int kadd_dfa_engine_tokenize_batch(const kadd_dfa_engine_t *e,
             if (result == KADD_SUCCESS && dim > 0) {
                 batch->outputs[idx] = output;
                 batch->dims[idx] = dim;
-                success_count++;
             } else {
                 free(output);
-                batch->dims[idx] = -1;
+                cleanup_dfa_batch(batch, -1);
+                return KADD_DFA_ERROR_PARSE;
             }
         }
     }
 
-    // 返回成功数量（与 KADD_SUCCESS 区分）
-    return (success_count == batch->count) ? KADD_SUCCESS : success_count;
+    // 全部成功
+    return KADD_SUCCESS;
 }

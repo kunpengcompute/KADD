@@ -52,9 +52,10 @@ int kadd_seq_to_feature(const int *seq, int seq_len, int window_size,
  * @brief 批量将token序列转换为特征向量
  *
  * @param batch 批处理上下文
- * @return 0 完全成功，>0 部分成功（返回成功数量），<0 失败（错误码）
+ * @return KADD_SUCCESS (0) 完全成功，<0 失败（错误码）
  *
- * @note 失败的序列对应位置特征设为 0
+ * @note 任何序列失败都会立即返回错误，不会部分成功
+ * @note 失败的序列对应位置特征保持为 0
  */
 int kadd_seq_to_feature_batch(kadd_feature_batch_t *batch);
 
