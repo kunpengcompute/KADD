@@ -61,13 +61,15 @@ int kadd_model_predict(kadd_model_handle_t *handle, const float *features, float
  * @param features 特征矩阵 (n x feature_dim)
  * @param n 样本数
  * @param probabilities 输出概率数组
- * @param batch_size 批次大小（推荐值：32/64/128，设置为0则自动选择）
+ * @param batch_size 批次大小（推荐值：32/64/128，范围：1-1024）
  *
- * @return 0 完全成功，>0 部分成功（返回成功数量），<0 失败（错误码）
+ * @return KADD_SUCCESS (0) 完全成功，<0 失败（错误码）
  *
  * @note 使用分块批量推理，每次处理 batch_size 个样本，避免内存峰值过高
  * @note 较大的 batch_size 性能更好，但需要更多内存
- * @note 如果 batch_size <= 0，将使用默认值 64
+ * @note 如果 batch_size > 1024，将自动限制为 1024
+ * @note 如果 batch_size <= 0 或 n <= 0，返回 KADD_ERROR_INVALID_PARAM
+ * @note 任何批次处理失败会立即返回 KADD_ERROR_INFERENCE_FAILED，不会部分成功
  */
 int kadd_model_predict_batch(kadd_model_handle_t *handle, const float *features, int n, float *probabilities, int batch_size);
 

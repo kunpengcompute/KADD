@@ -1,6 +1,9 @@
 /**
- * @file inference_engine.c
+ * @file kadd_ml_engine.c
  * @brief ONNX 推理引擎实现
+ *
+ * 支持平台：Linux (x86_64, aarch64)
+ * 依赖：ONNX Runtime 1.16+
  */
 
 #include "kadd_ml_engine.h"
@@ -8,22 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-// MinGW 环境需要临时取消 _WIN32 宏避免与 onnxruntime 头文件冲突
-#if defined(_WIN32) && defined(__GNUC__)
-#undef _WIN32
-#define _ONNX_TEMP_WIN32_UNDEF_
 #include "onnxruntime/onnxruntime_c_api.h"
-#define _WIN32
-#else
-#include "onnxruntime/onnxruntime_c_api.h"
-#endif
-
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <stdlib.h>  // for setenv
-#endif
 
 /* ========== 内部结构体 ========== */
 struct kadd_model_handle_t {
@@ -100,27 +88,11 @@ static int create_session(kadd_model_handle_t *handle, const char *model_path) {
 
     // 对于 ONNX Runtime 1.20+，设置环境变量以启用受限 opset 支持
     // 注意：这需要在加载会话之前设置环境变量
-    #ifdef _WIN32
-    SetEnvironmentVariableA("ORT_UNRELEASED_OPS", "1");
-    SetEnvironmentVariableA("ORT_ENABLE_OPTIONAL_OPS", "1");
-    #else
     setenv("ORT_UNRELEASED_OPS", "1", 1);
     setenv("ORT_ENABLE_OPTIONAL_OPS", "1", 1);
-    #endif
 
-    // 创建会话
-#ifdef _WIN32
-    int len = MultiByteToWideChar(CP_UTF8, 0, model_path, -1, NULL, 0);
-    wchar_t *wide_path = (wchar_t*)malloc(len * sizeof(wchar_t));
-    if (!wide_path) {
-        return KADD_ERROR_OUT_OF_MEMORY;
-    }
-    MultiByteToWideChar(CP_UTF8, 0, model_path, -1, wide_path, len);
-    status = handle->api->CreateSession(handle->env, (const char *)wide_path, options, &handle->session);
-    free(wide_path);
-#else
+    // 创建会话（使用 UTF-8 路径）
     status = handle->api->CreateSession(handle->env, model_path, options, &handle->session);
-#endif
     handle->api->ReleaseSessionOptions(options);
 
     if (status) {
@@ -263,7 +235,7 @@ int kadd_model_predict(kadd_model_handle_t *handle, const float *features, float
 
 int kadd_model_predict_batch(kadd_model_handle_t *handle, const float *features, int n, float *probabilities, int batch_size) {
     if (!handle || !features || !probabilities) return KADD_ERROR_NULL_PTR;
-    if (n <= 0 || batch_size <=0) return KADD_ERROR_INVALID_PARAM;
+    if (n <= 0 || batch_size <= 0) return KADD_ERROR_INVALID_PARAM;
 
     // 限制 batch_size 范围，防止过大或过小
     if (batch_size > 1024) {
@@ -295,8 +267,8 @@ int kadd_model_predict_batch(kadd_model_handle_t *handle, const float *features,
 
         if (status) {
             handle->api->ReleaseStatus(status);
-            // 当前批次失败，跳过继续处理下一批次
-            continue;
+            // 当前批次失败，立即返回错误
+            return KADD_ERROR_INFERENCE_FAILED;
         }
 
         // 执行推理
@@ -310,8 +282,8 @@ int kadd_model_predict_batch(kadd_model_handle_t *handle, const float *features,
         if (status) {
             handle->api->ReleaseValue(input);
             handle->api->ReleaseStatus(status);
-            // 当前批次推理失败，跳过继续处理下一批次
-            continue;
+            // 推理失败，立即返回错误
+            return KADD_ERROR_INFERENCE_FAILED;
         }
         handle->api->ReleaseValue(input);
 
@@ -321,8 +293,8 @@ int kadd_model_predict_batch(kadd_model_handle_t *handle, const float *features,
         if (status) {
             handle->api->ReleaseStatus(status);
             handle->api->ReleaseValue(output);
-            // 当前批次获取数据失败，跳过继续处理下一批次
-            continue;
+            // 获取输出数据失败，立即返回错误
+            return KADD_ERROR_INFERENCE_FAILED;
         }
 
         // 将当前批次的结果复制到输出数组
@@ -337,7 +309,7 @@ int kadd_model_predict_batch(kadd_model_handle_t *handle, const float *features,
         count += current_batch;
     }
 
-    return count;
+    return KADD_SUCCESS;
 }
 
 void kadd_model_free(kadd_model_handle_t *handle) {

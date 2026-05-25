@@ -171,7 +171,7 @@ TEST_F(MLEngineTest, PredictBatchSize1) {
 
     int ret = kadd_model_predict_batch(model, features.data(), n, probabilities.data(), 1);
 
-    EXPECT_EQ(ret, n) << "应该成功推理 " << n << " 个样本";
+    EXPECT_EQ(ret, KADD_SUCCESS) << "应该成功推理 " << n << " 个样本";
     EXPECT_TRUE(IsValidProbability(probabilities[0])) << "概率值应在 [0, 1] 范围内";
 }
 
@@ -186,7 +186,7 @@ TEST_F(MLEngineTest, PredictBatchSize10) {
 
     int ret = kadd_model_predict_batch(model, features.data(), n, probabilities.data(), 10);
 
-    EXPECT_EQ(ret, n) << "应该成功推理 " << n << " 个样本";
+    EXPECT_EQ(ret, KADD_SUCCESS) << "应该成功推理 " << n << " 个样本";
 
     for (int i = 0; i < n; i++) {
         EXPECT_TRUE(IsValidProbability(probabilities[i]))
@@ -206,7 +206,7 @@ TEST_F(MLEngineTest, PredictBatchWithAutoBatchSize) {
     // batch_size = 1 
     int ret = kadd_model_predict_batch(model, features.data(), n, probabilities.data(), 1);
 
-    EXPECT_EQ(ret, n) << "应该成功推理 " << n << " 个样本（自动批次大小）";
+    EXPECT_EQ(ret, KADD_SUCCESS) << "应该成功推理 " << n << " 个样本（自动批次大小）";
 
     // 验证所有概率值有效
     for (int i = 1; i < n; i++) {
@@ -275,7 +275,7 @@ TEST_F(MLEngineTest, PredictBatchDifferentBatchSizes) {
         int ret = kadd_model_predict_batch(model, features.data(), batch_size,
                                            probabilities.data(), batch_size);
 
-        EXPECT_EQ(ret, batch_size) << "批次大小 " << batch_size << " 应该成功推理";
+        EXPECT_EQ(ret, KADD_SUCCESS) << "批次大小 " << batch_size << " 应该成功推理";
 
         // 验证所有概率值有效
         for (int i = 0; i < batch_size; i++) {
@@ -557,7 +557,7 @@ TEST_F(MLEngineTest, Performance_MemoryStress) {
     auto end = std::chrono::high_resolution_clock::now();
     auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
 
-    EXPECT_EQ(ret, large_batch) << "大批量推理应该成功";
+    EXPECT_EQ(ret, KADD_SUCCESS) << "大批量推理应该成功";
 
     std::cout << "\n[性能测试] 大批量(" << large_batch << "样本)推理耗时: "
               << duration.count() << " ms" << std::endl;
@@ -826,7 +826,7 @@ TEST_F(MLEngineTest, BatchSizeBoundary_ExceedsMax) {
     // batch_size > 1024 应该被限制为 1024
     int ret = kadd_model_predict_batch(model, features.data(), n, probabilities.data(), 2000);
 
-    EXPECT_EQ(ret, n) << "batch_size>1024 应该被限制并成功推理";
+    EXPECT_EQ(ret, KADD_SUCCESS) << "batch_size>1024 应该被限制并成功推理";
 }
 
 TEST_F(MLEngineTest, ChunkBoundary_ExactlyMultiple) {
@@ -843,7 +843,7 @@ TEST_F(MLEngineTest, ChunkBoundary_ExactlyMultiple) {
 
     int ret = kadd_model_predict_batch(model, features.data(), n, probabilities.data(), batch_size);
 
-    EXPECT_EQ(ret, n) << "n是batch_size倍数时应该成功推理";
+    EXPECT_EQ(ret, KADD_SUCCESS) << "n是batch_size倍数时应该成功推理";
 
     for (int i = 0; i < n; i++) {
         EXPECT_TRUE(IsValidProbability(probabilities[i]));
@@ -864,7 +864,7 @@ TEST_F(MLEngineTest, ChunkBoundary_NotMultiple) {
 
     int ret = kadd_model_predict_batch(model, features.data(), n, probabilities.data(), batch_size);
 
-    EXPECT_EQ(ret, n) << "n不是batch_size倍数时应该成功推理";
+    EXPECT_EQ(ret, KADD_SUCCESS) << "n不是batch_size倍数时应该成功推理";
 
     for (int i = 0; i < n; i++) {
         EXPECT_TRUE(IsValidProbability(probabilities[i]));
@@ -885,7 +885,7 @@ TEST_F(MLEngineTest, LargeBatch_ChunkedProcessing) {
 
     int ret = kadd_model_predict_batch(model, features.data(), n, probabilities.data(), batch_size);
 
-    EXPECT_EQ(ret, n) << "大批量分块处理应该成功";
+    EXPECT_EQ(ret, KADD_SUCCESS) << "大批量分块处理应该成功";
 
     // 验证所有结果有效
     for (int i = 0; i < n; i++) {
@@ -915,7 +915,7 @@ TEST_F(MLEngineTest, VeryLargeBatch_MultiChunkProcessing) {
 
     int ret = kadd_model_predict_batch(model, features.data(), n, probabilities.data(), batch_size);
 
-    EXPECT_EQ(ret, n) << "超大批量多分块处理应该成功";
+    EXPECT_EQ(ret, KADD_SUCCESS) << "超大批量多分块处理应该成功";
 
     // 验证边界样本
     EXPECT_TRUE(IsValidProbability(probabilities[0])) << "第一个样本应该有效";
@@ -936,7 +936,7 @@ TEST_F(MLEngineTest, SingleChunk_BatchSizeEqualsN) {
 
     int ret = kadd_model_predict_batch(model, features.data(), n, probabilities.data(), n);
 
-    EXPECT_EQ(ret, n) << "batch_size=n 单批次处理应该成功";
+    EXPECT_EQ(ret, KADD_SUCCESS) << "batch_size=n 单批次处理应该成功";
 }
 
 TEST_F(MLEngineTest, ModelWarmupVerification) {
@@ -987,7 +987,7 @@ TEST_F(MLEngineTest, BatchWithPartialFailure_Recovery) {
 
     ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
 
-    // 测试批量推理的容错能力（虽然当前实现会跳过失败的批次）
+    // 注意：当前实现中，批次处理失败会立即返回 KADD_ERROR_INFERENCE_FAILED
     const int n = 10;
     std::vector<float> features(config.ml.feature_dim * n, 0.0f);
     std::vector<float> probabilities(n);
@@ -995,8 +995,13 @@ TEST_F(MLEngineTest, BatchWithPartialFailure_Recovery) {
     // 正常情况应该全部成功
     int ret = kadd_model_predict_batch(model, features.data(), n, probabilities.data(), 10);
 
-    EXPECT_GT(ret, 0) << "批量推理应该至少有部分成功";
-    EXPECT_LE(ret, n) << "成功数量不应超过总数";
+    EXPECT_EQ(ret, KADD_SUCCESS) << "批量推理应该全部成功";
+
+    // 验证所有结果有效
+    for (int i = 0; i < n; i++) {
+        EXPECT_TRUE(IsValidProbability(probabilities[i]))
+            << "样本 " << i << " 概率值应在 [0, 1] 范围内";
+    }
 }
 
 TEST_F(MLEngineTest, FeatureDimensionMismatch) {

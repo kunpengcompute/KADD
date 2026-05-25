@@ -31,6 +31,25 @@ struct kadd_sqli_engine_t {
     float *float_feature_buffer; /* 浮点特征缓冲区 */
 };
 
+/* ========== 内部辅助函数 ========== */
+
+/**
+ * @brief 清理 SQLi 批处理临时缓冲区
+ */
+static void cleanup_sqli_batch_buffers(int **dfa_outputs, int *dfa_dims,
+                                       int *features, float *float_features,
+                                       int count) {
+    if (dfa_outputs) {
+        for (int i = 0; i < count; i++) {
+            if (dfa_outputs[i]) free(dfa_outputs[i]);
+        }
+        free(dfa_outputs);
+    }
+    if (dfa_dims) free(dfa_dims);
+    if (features) free(features);
+    if (float_features) free(float_features);
+}
+
 /* ========== 公共接口 ========== */
 
 static int create_engine_internal(kadd_sqli_engine_t **engine,
@@ -247,10 +266,7 @@ int kadd_sqli_detect_batch(kadd_sqli_engine_t *engine, const char **inputs, int 
     float *float_features = (float *)malloc(batch_size * engine->feature_dim * sizeof(float));
 
     if (!dfa_outputs || !dfa_dims || !features || !float_features) {
-        free(dfa_outputs);
-        free(dfa_dims);
-        free(features);
-        free(float_features);
+        cleanup_sqli_batch_buffers(dfa_outputs, dfa_dims, features, float_features, 0);
         return KADD_ERROR_OUT_OF_MEMORY;
     }
 
@@ -269,12 +285,9 @@ int kadd_sqli_detect_batch(kadd_sqli_engine_t *engine, const char **inputs, int 
         };
 
         int dfa_result = kadd_dfa_engine_tokenize_batch(engine->dfa_engine, &dfa_batch);
-        if (dfa_result < 0) {
-            // DFA 批处理失败，清理并继续下一批次
-            for (int i = 0; i < current_batch; i++) {
-                if (dfa_outputs[i]) free(dfa_outputs[i]);
-            }
-            continue;
+        if (dfa_result != KADD_SUCCESS) {
+            cleanup_sqli_batch_buffers(dfa_outputs, dfa_dims, features, float_features, current_batch);
+            return KADD_SQLI_ERROR_DFA;
         }
 
         // ========== 步骤2: Feature 批量提取特征 ==========
@@ -289,12 +302,9 @@ int kadd_sqli_detect_batch(kadd_sqli_engine_t *engine, const char **inputs, int 
         };
 
         int feat_result = kadd_seq_to_feature_batch(&feat_batch);
-        if (feat_result < 0) {
-            // Feature 批处理失败，清理 DFA 并继续下一批次
-            for (int i = 0; i < current_batch; i++) {
-                if (dfa_outputs[i]) free(dfa_outputs[i]);
-            }
-            continue;
+        if (feat_result != KADD_SUCCESS) {
+            cleanup_sqli_batch_buffers(dfa_outputs, dfa_dims, features, float_features, current_batch);
+            return KADD_SQLI_ERROR_FEATURE;
         }
 
         // ========== 步骤3: ML 批量推理 ==========
@@ -306,15 +316,17 @@ int kadd_sqli_detect_batch(kadd_sqli_engine_t *engine, const char **inputs, int 
 
         float batch_probs[1024];
         int ml_result = kadd_model_predict_batch(engine->ml_model, float_features, current_batch,
-                                                batch_probs, 64);
+                                                batch_probs, current_batch);
 
-        // 只在 ML 成功时更新概率
-        if (ml_result >= 0) {
-            for (int i = 0; i < current_batch; i++) {
-                if (dfa_dims[i] > 0) {
-                    probabilities[batch_start + i] = batch_probs[i];
-                    success_count++;
-                }
+        if (ml_result != KADD_SUCCESS) {
+            cleanup_sqli_batch_buffers(dfa_outputs, dfa_dims, features, float_features, current_batch);
+            return KADD_SQLI_ERROR_ML;
+        }
+
+        // 更新概率
+        for (int i = 0; i < current_batch; i++) {
+            if (dfa_dims[i] > 0) {
+                probabilities[batch_start + i] = batch_probs[i];
             }
         }
 
@@ -333,7 +345,8 @@ int kadd_sqli_detect_batch(kadd_sqli_engine_t *engine, const char **inputs, int 
     free(features);
     free(float_features);
 
-    return (success_count == count) ? KADD_SUCCESS : success_count;
+    // 全部成功
+    return KADD_SUCCESS;
 }
 
 /**

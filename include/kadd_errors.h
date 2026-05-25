@@ -56,6 +56,9 @@ extern "C" {
 /** @brief 配置文件错误或缺失必需字段 */
 #define KADD_ERROR_CONFIG                (-109)
 
+/** @brief 模型推理失败 */
+#define KADD_ERROR_INFERENCE_FAILED      (-110)
+
 /* ========== DFA 引擎专用错误码 (-10 范围) ========== */
 
 /** @brief DFA 文件未找到 */
