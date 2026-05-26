@@ -11,7 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "onnxruntime/onnxruntime_c_api.h"
+#include "onnxruntime_c_api.h"
 
 /* ========== 内部结构体 ========== */
 struct kadd_model_handle_t {

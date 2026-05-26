@@ -126,9 +126,7 @@ find_library(ONNXRUNTIME_LIBRARIES
 )
 
 find_path(ONNXRUNTIME_INCLUDE_DIRS
-    NAMES 
-        onnxruntime/onnxruntime_c_api.h  # 优先查这个
-        onnxruntime_c_api.h               # 找不到再查这个
+    NAMES onnxruntime_c_api.h
     PATHS ${SEARCH_PATHS}
     PATH_SUFFIXES include
     ${SEARCH_MODE}

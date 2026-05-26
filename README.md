@@ -36,20 +36,16 @@ sudo yum install cjson-devel gtest-devel
 ### 构建与测试
 
 ```bash
-# 标准构建
-mkdir build && cd build
-cmake ..
-cmake --build .
+# 一键构建（下载依赖 + 编译）
+./build.sh
 
-# 启用优化版本构建
-cmake -DKADD_OPTIMIZE=ON -DCMAKE_BUILD_TYPE=Release ..
+# 或手动构建
+mkdir -p build && cd build
+cmake -DUSE_SYSTEM_LIBS=OFF -DKADD_OPTIMIZE=ON -DCMAKE_BUILD_TYPE=Release ..
 cmake --build .
 
 # 运行测试
 ctest --verbose
-
-# 生成覆盖率
-make coverage
 ```
 
 ## 📦 模块说明

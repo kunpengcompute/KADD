@@ -77,16 +77,14 @@ ldconfig -p | grep onnxruntime       # 检查库是否被找到
 ### third_party 方式
 
 ```bash
-wget https://github.com/microsoft/onnxruntime/releases/download/v1.16.0/onnxruntime-linux-x64-1.16.0.tgz
-# 或 ARM64:
-wget https://github.com/microsoft/onnxruntime/releases/download/v1.16.0/onnxruntime-linux-aarch64-1.16.0.tgz
+wget https://buildtools.obs.cn-north-4.myhuaweicloud.com/onnxruntime-linux-aarch64-1.16.0.tgz
 tar xzf onnxruntime-linux-*.tgz
 
 mkdir -p third_party/onnxruntime/lib third_party/onnxruntime/include/onnxruntime
-cp onnxruntime-linux-*/lib/libonnxruntime.so* third_party/onnxruntime/lib/
-cp onnxruntime-linux-*/include/*.h third_party/onnxruntime/include/onnxruntime/
+cp onnxruntime-linux-*/lib/* third_party/onnxruntime/lib/
+cp -r onnxruntime-linux-*/include/* third_party/onnxruntime/include/onnxruntime/
 
-rm -rf onnxruntime-linux-*.tgz onnxruntime-linux-*
+rm -rf onnxruntime-linux-*
 ```
 
 ## cJSON
@@ -106,9 +104,8 @@ sudo make install && sudo ldconfig
 
 ```bash
 mkdir -p third_party/cJSON
-wget https://github.com/DaveGamble/cJSON/archive/refs/heads/master.zip -O cJSON.zip
-unzip cJSON.zip
-mkdir -p third_party/cJSON/
+wget https://buildtools.obs.cn-north-4.myhuaweicloud.com/cJson-master.zip
+unzip -q cJSON*.zip
 cp cJSON-master/cJSON.h third_party/cJSON/
 cp cJSON-master/cJSON.c third_party/cJSON/
 rm -rf cJSON-master cJSON.zip
@@ -133,8 +130,8 @@ sudo make install
 ### third_party 方式
 
 ```bash
-wget https://github.com/google/googletest/archive/refs/tags/release-1.12.1.tar.gz -O gtest.tar.gz
-tar xzf googletest*
+wget https://buildtools.obs.cn-north-4.myhuaweicloud.com/googletest-release-1.12.1.tar.gz
+tar xzf googletest*.tar.gz
 mkdir -p third_party/gtest
 cp -r googletest-release-1.12.1/googletest/include third_party/gtest/
 cp -r googletest-release-1.12.1/googletest/src third_party/gtest/

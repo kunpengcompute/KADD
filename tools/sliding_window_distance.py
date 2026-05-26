@@ -342,7 +342,7 @@ def main():
     # 测试用例 4
     print("\n测试用例 4: 长序列")
     print("=" * 60)
-    sequence = [7, 11, 8, 12, 8, 11, 8]
+    sequence = [7, 7, 11, 11, 8, 8]
     window_size = 5  # 计算距离1、2、3、4
     result = sliding_window_distance_shift(sequence, window_size)
     print(f"序列: {sequence}")
