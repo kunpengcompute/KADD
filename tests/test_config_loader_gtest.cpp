@@ -1,4 +1,6 @@
-/**
+/*
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ *
  * @file test_config_loader_gtest.cpp
  * @brief 配置加载器 Google Test 测试
  *
@@ -18,12 +20,31 @@
 #include "kadd_config_loader.h"
 #include "kadd_errors.h"
 
+constexpr int kDefaultFeatureDim = 28;
+constexpr int kDefaultWindowSize = 5;
+constexpr int kDefaultMaxInputLength = 300;
+constexpr int kDefaultMaxOutputDim = 300;
+constexpr int kMaxPathLength = 512;
+constexpr int kTruncatedPathLength = 511;
+
+constexpr int kDfaInputLen = 500;
+constexpr int kDfaOutputDim = 400;
+constexpr int kMlFeatureDim = 32;
+constexpr int kMlWindowSize = 6;
+constexpr int kSqliFeatureDim = 64;
+constexpr int kSqliWindowSize = 8;
+constexpr int kSqliInputLen = 600;
+constexpr int kSqliOutputDim = 500;
+constexpr int kFeatureFeatureDim = 128;
+constexpr int kFeatureWindowSize = 10;
+
 // ========== 测试辅助函数 ==========
 
 /**
  * @brief 创建一个临时的测试配置文件
  */
-static std::string CreateTestConfigFile(const char *content) {
+static std::string CreateTestConfigFile(const char *content)
+{
     char temp_template[] = "/tmp/kadd_config_XXXXXX";
     int fd = mkstemp(temp_template);
     if (fd == -1) {
@@ -42,13 +63,40 @@ static std::string CreateTestConfigFile(const char *content) {
 /**
  * @brief 删除测试文件
  */
-static void DeleteTestFile(const std::string &path) {
+static void DeleteTestFile(const std::string &path)
+{
     remove(path.c_str());
 }
 
 // ========== 1. 功能测试 ==========
 
-TEST(ConfigLoaderTest, LoadValidConfig) {
+// 验证完整配置的各模块字段
+static void ValidateFullConfig(const kadd_config_t &config)
+{
+    EXPECT_STREQ(config.dfa.transition_table_path, "/path/to/transition.bin");
+    EXPECT_STREQ(config.dfa.output_table_path, "/path/to/output.bin");
+    EXPECT_STREQ(config.dfa.eod_table_path, "/path/to/eod.bin");
+    EXPECT_EQ(config.dfa.max_input_length, kDfaInputLen);
+    EXPECT_EQ(config.dfa.max_output_dim, kDfaOutputDim);
+
+    EXPECT_STREQ(config.ml.model_path, "/path/to/model.onnx");
+    EXPECT_EQ(config.ml.feature_dim, kMlFeatureDim);
+    EXPECT_EQ(config.ml.window_size, kMlWindowSize);
+
+    EXPECT_STREQ(config.sqli.transition_table_path, "/path/to/sqli_transition.bin");
+    EXPECT_STREQ(config.sqli.ml_model_path, "/path/to/sqli_model.onnx");
+    EXPECT_EQ(config.sqli.feature_dim, kSqliFeatureDim);
+    EXPECT_EQ(config.sqli.window_size, kSqliWindowSize);
+    EXPECT_EQ(config.sqli.max_input_length, kSqliInputLen);
+    EXPECT_EQ(config.sqli.max_output_dim, kSqliOutputDim);
+
+    EXPECT_STREQ(config.feature.ml_model_path, "/path/to/feature_model.onnx");
+    EXPECT_EQ(config.feature.feature_dim, kFeatureFeatureDim);
+    EXPECT_EQ(config.feature.window_size, kFeatureWindowSize);
+}
+
+TEST(ConfigLoaderTest, LoadValidConfig)
+{
     const char *config_content = R"(
     {
         "kadd_dfa_engine": {
@@ -83,40 +131,15 @@ TEST(ConfigLoaderTest, LoadValidConfig) {
 
     std::string config_path = CreateTestConfigFile(config_content);
     kadd_config_t config;
-
     int ret = kadd_config_load(config_path.c_str(), &config);
-
     EXPECT_EQ(ret, 0) << "应该成功加载配置";
 
-    // 验证 DFA 配置
-    EXPECT_STREQ(config.dfa.transition_table_path, "/path/to/transition.bin");
-    EXPECT_STREQ(config.dfa.output_table_path, "/path/to/output.bin");
-    EXPECT_STREQ(config.dfa.eod_table_path, "/path/to/eod.bin");
-    EXPECT_EQ(config.dfa.max_input_length, 500);
-    EXPECT_EQ(config.dfa.max_output_dim, 400);
-
-    // 验证 ML 配置
-    EXPECT_STREQ(config.ml.model_path, "/path/to/model.onnx");
-    EXPECT_EQ(config.ml.feature_dim, 32);
-    EXPECT_EQ(config.ml.window_size, 6);
-
-    // 验证 SQLi 配置
-    EXPECT_STREQ(config.sqli.transition_table_path, "/path/to/sqli_transition.bin");
-    EXPECT_STREQ(config.sqli.ml_model_path, "/path/to/sqli_model.onnx");
-    EXPECT_EQ(config.sqli.feature_dim, 64);
-    EXPECT_EQ(config.sqli.window_size, 8);
-    EXPECT_EQ(config.sqli.max_input_length, 600);
-    EXPECT_EQ(config.sqli.max_output_dim, 500);
-
-    // 验证 Feature 配置
-    EXPECT_STREQ(config.feature.ml_model_path, "/path/to/feature_model.onnx");
-    EXPECT_EQ(config.feature.feature_dim, 128);
-    EXPECT_EQ(config.feature.window_size, 10);
-
+    ValidateFullConfig(config);
     DeleteTestFile(config_path);
 }
 
-TEST(ConfigLoaderTest, LoadWithDefaultPath) {
+TEST(ConfigLoaderTest, LoadWithDefaultPath)
+{
     // 测试使用默认路径 "config.json"
     kadd_config_t config;
     int ret = kadd_config_load(nullptr, &config);
@@ -132,7 +155,8 @@ TEST(ConfigLoaderTest, LoadWithDefaultPath) {
     }
 }
 
-TEST(ConfigLoaderTest, PartialConfig_OnlyDFA) {
+TEST(ConfigLoaderTest, PartialConfig_OnlyDFA)
+{
     // 测试只有 DFA 配置的情况
     const char *config_content = R"(
     {
@@ -155,15 +179,16 @@ TEST(ConfigLoaderTest, PartialConfig_OnlyDFA) {
     EXPECT_STREQ(config.dfa.transition_table_path, "/path/to/transition.bin");
 
     // 验证默认值被设置
-    EXPECT_EQ(config.dfa.max_input_length, 300);
-    EXPECT_EQ(config.dfa.max_output_dim, 300);
-    EXPECT_EQ(config.ml.feature_dim, 28);
-    EXPECT_EQ(config.ml.window_size, 5);
+    EXPECT_EQ(config.dfa.max_input_length, kDefaultMaxInputLength);
+    EXPECT_EQ(config.dfa.max_output_dim, kDefaultMaxOutputDim);
+    EXPECT_EQ(config.ml.feature_dim, kDefaultFeatureDim);
+    EXPECT_EQ(config.ml.window_size, kDefaultWindowSize);
 
     DeleteTestFile(config_path);
 }
 
-TEST(ConfigLoaderTest, PartialConfig_OnlyML) {
+TEST(ConfigLoaderTest, PartialConfig_OnlyML)
+{
     // 测试只有 ML 配置的情况
     const char *config_content = R"(
     {
@@ -184,13 +209,14 @@ TEST(ConfigLoaderTest, PartialConfig_OnlyML) {
     EXPECT_STREQ(config.ml.model_path, "/path/to/model.onnx");
 
     // 验证默认值被设置
-    EXPECT_EQ(config.ml.feature_dim, 28);
-    EXPECT_EQ(config.ml.window_size, 5);
+    EXPECT_EQ(config.ml.feature_dim, kDefaultFeatureDim);
+    EXPECT_EQ(config.ml.window_size, kDefaultWindowSize);
 
     DeleteTestFile(config_path);
 }
 
-TEST(ConfigLoaderTest, FeatureConfigFallbackToML) {
+TEST(ConfigLoaderTest, FeatureConfigFallbackToML)
+{
     // 测试 Feature 配置从 ML 配置复制的逻辑
     const char *config_content = R"(
     {
@@ -217,7 +243,8 @@ TEST(ConfigLoaderTest, FeatureConfigFallbackToML) {
     DeleteTestFile(config_path);
 }
 
-TEST(ConfigLoaderTest, FeatureConfigOverrideML) {
+TEST(ConfigLoaderTest, FeatureConfigOverrideML)
+{
     // 测试 Feature 配置覆盖 ML 配置
     const char *config_content = R"(
     {
@@ -248,14 +275,16 @@ TEST(ConfigLoaderTest, FeatureConfigOverrideML) {
 
 // ========== 2. 边界测试 ==========
 
-TEST(ConfigLoaderTest, NullConfigPtr) {
+TEST(ConfigLoaderTest, NullConfigPtr)
+{
     // 测试空配置指针
     int ret = kadd_config_load("config.json", nullptr);
 
     EXPECT_NE(ret, 0) << "空配置指针应该返回错误";
 }
 
-TEST(ConfigLoaderTest, EmptyConfigPath) {
+TEST(ConfigLoaderTest, EmptyConfigPath)
+{
     // 测试空路径字符串
     kadd_config_t config;
     int ret = kadd_config_load("", &config);
@@ -263,7 +292,8 @@ TEST(ConfigLoaderTest, EmptyConfigPath) {
     EXPECT_NE(ret, 0) << "空路径应该返回错误";
 }
 
-TEST(ConfigLoaderTest, NonexistentFile) {
+TEST(ConfigLoaderTest, NonexistentFile)
+{
     // 测试不存在的文件
     kadd_config_t config;
     int ret = kadd_config_load("nonexistent_config_12345.json", &config);
@@ -273,7 +303,8 @@ TEST(ConfigLoaderTest, NonexistentFile) {
 
 // ========== 3. 错误路径测试 ==========
 
-TEST(ConfigLoaderTest, InvalidJSON_Syntax) {
+TEST(ConfigLoaderTest, InvalidJSON_Syntax)
+{
     // 测试 JSON 语法错误
     const char *config_content = R"(
     {
@@ -293,7 +324,8 @@ TEST(ConfigLoaderTest, InvalidJSON_Syntax) {
     DeleteTestFile(config_path);
 }
 
-TEST(ConfigLoaderTest, InvalidJSON_NotAnObject) {
+TEST(ConfigLoaderTest, InvalidJSON_NotAnObject)
+{
     // 测试 JSON 不是对象
     const char *config_content = R"(
     [
@@ -312,7 +344,8 @@ TEST(ConfigLoaderTest, InvalidJSON_NotAnObject) {
     DeleteTestFile(config_path);
 }
 
-TEST(ConfigLoaderTest, WrongFieldType_StringInsteadOfNumber) {
+TEST(ConfigLoaderTest, WrongFieldType_StringInsteadOfNumber)
+{
     // 测试字段类型错误
     const char *config_content = R"(
     {
@@ -328,12 +361,13 @@ TEST(ConfigLoaderTest, WrongFieldType_StringInsteadOfNumber) {
     int ret = kadd_config_load(config_path.c_str(), &config);
 
     EXPECT_EQ(ret, 0) << "类型错误应该使用默认值";
-    EXPECT_EQ(config.ml.feature_dim, 28) << "应该使用默认值";
+    EXPECT_EQ(config.ml.feature_dim, kDefaultFeatureDim) << "应该使用默认值";
 
     DeleteTestFile(config_path);
 }
 
-TEST(ConfigLoaderTest, WrongFieldType_NumberInsteadOfString) {
+TEST(ConfigLoaderTest, WrongFieldType_NumberInsteadOfString)
+{
     // 测试字段类型错误
     const char *config_content = R"(
     {
@@ -354,7 +388,8 @@ TEST(ConfigLoaderTest, WrongFieldType_NumberInsteadOfString) {
     DeleteTestFile(config_path);
 }
 
-TEST(ConfigLoaderTest, LongString_Truncation) {
+TEST(ConfigLoaderTest, LongString_Truncation)
+{
     // 测试长字符串截断
     std::string long_path(600, 'a');  // 超过 512 字符限制
 
@@ -378,12 +413,13 @@ TEST(ConfigLoaderTest, LongString_Truncation) {
     int ret = kadd_config_load(config_path.c_str(), &config);
 
     EXPECT_EQ(ret, 0) << "长字符串应该被截断并成功加载";
-    EXPECT_LE(strlen(config.ml.model_path), 512u) << "路径长度不应超过512";
+    EXPECT_LE(strlen(config.ml.model_path), static_cast<size_t>(kMaxPathLength)) << "路径长度不应超过512";
 
     DeleteTestFile(config_path);
 }
 
-TEST(ConfigLoaderTest, ZeroValues_Accepted) {
+TEST(ConfigLoaderTest, ZeroValues_Accepted)
+{
     // 测试零值是否被接受
     const char *config_content = R"(
     {
@@ -410,7 +446,8 @@ TEST(ConfigLoaderTest, ZeroValues_Accepted) {
     DeleteTestFile(config_path);
 }
 
-TEST(ConfigLoaderTest, NegativeValues_Accepted) {
+TEST(ConfigLoaderTest, NegativeValues_Accepted)
+{
     // 测试负值是否被接受
     const char *config_content = R"(
     {
@@ -433,7 +470,8 @@ TEST(ConfigLoaderTest, NegativeValues_Accepted) {
     DeleteTestFile(config_path);
 }
 
-TEST(ConfigLoaderTest, SQLiConfigDefaults) {
+TEST(ConfigLoaderTest, SQLiConfigDefaults)
+{
     // 测试 SQLi 配置的默认值
     const char *config_content = "{}";
 
@@ -445,26 +483,27 @@ TEST(ConfigLoaderTest, SQLiConfigDefaults) {
     EXPECT_EQ(ret, 0) << "空配置应该使用默认值";
 
     // 验证 SQLi 默认值（覆盖第154-176行）
-    EXPECT_EQ(config.sqli.feature_dim, 28);
-    EXPECT_EQ(config.sqli.window_size, 5);
-    EXPECT_EQ(config.sqli.max_input_length, 300);
-    EXPECT_EQ(config.sqli.max_output_dim, 300);
+    EXPECT_EQ(config.sqli.feature_dim, kDefaultFeatureDim);
+    EXPECT_EQ(config.sqli.window_size, kDefaultWindowSize);
+    EXPECT_EQ(config.sqli.max_input_length, kDefaultMaxInputLength);
+    EXPECT_EQ(config.sqli.max_output_dim, kDefaultMaxOutputDim);
     EXPECT_EQ(config.sqli.transition_table_path[0], '\0');
     EXPECT_EQ(config.sqli.output_table_path[0], '\0');
     EXPECT_EQ(config.sqli.eod_table_path[0], '\0');
     EXPECT_EQ(config.sqli.ml_model_path[0], '\0');
     // 验证 Feature 默认值（覆盖第192-200行）
-    EXPECT_EQ(config.feature.feature_dim, 28);
-    EXPECT_EQ(config.feature.window_size, 5);
+    EXPECT_EQ(config.feature.feature_dim, kDefaultFeatureDim);
+    EXPECT_EQ(config.feature.window_size, kDefaultWindowSize);
     EXPECT_EQ(config.feature.ml_model_path[0], '\0');
     DeleteTestFile(config_path);
 }
 
 // ========== 4. 覆盖率测试 ==========
 
-TEST(ConfigLoaderTest, CopyStrField_Truncation) {
+TEST(ConfigLoaderTest, CopyStrField_Truncation)
+{
     // 测试字符串拷贝截断逻辑（覆盖第14-21行）
-    std::string long_string(600, 'x');
+    std::string long_string(kSqliInputLen, 'x');
 
     const char *config_content = R"(
     {
@@ -486,12 +525,13 @@ TEST(ConfigLoaderTest, CopyStrField_Truncation) {
     int ret = kadd_config_load(config_path.c_str(), &config);
 
     EXPECT_EQ(ret, 0) << "应该成功加载";
-    EXPECT_EQ(strlen(config.ml.model_path), 511u) << "应该被截断为511字符（512-1）";
+    EXPECT_EQ(strlen(config.ml.model_path), static_cast<size_t>(kTruncatedPathLength)) << "应该被截断为511字符（512-1）";
 
     DeleteTestFile(config_path);
 }
 
-TEST(ConfigLoaderTest, ConfigFree_NoOp) {
+TEST(ConfigLoaderTest, ConfigFree_NoOp)
+{
     // 测试 kadd_config_free（覆盖第229-232行）
     kadd_config_t config;
     memset(&config, 0, sizeof(config));
@@ -502,7 +542,8 @@ TEST(ConfigLoaderTest, ConfigFree_NoOp) {
     SUCCEED() << "kadd_config_free 不应该崩溃";
 }
 
-TEST(ConfigLoaderTest, LoadMultipleTimes) {
+TEST(ConfigLoaderTest, LoadMultipleTimes)
+{
     // 测试多次加载配置
     const char *config_content = R"(
     {
@@ -529,7 +570,8 @@ TEST(ConfigLoaderTest, LoadMultipleTimes) {
 
 // ========== 主函数 ==========
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }
