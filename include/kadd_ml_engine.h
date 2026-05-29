@@ -1,13 +1,8 @@
+/* Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved. */
 #ifndef KADD_ML_ENGINE_H
 #define KADD_ML_ENGINE_H
 
 #include <stddef.h>
-
-/*
- * 调试宏定义
- * 取消注释以启用 ML 引擎调试输出
- */
-// #define KADD_DEBUG_ML
 
 #ifdef __cplusplus
 extern "C" {
@@ -71,7 +66,8 @@ int kadd_model_predict(kadd_model_handle_t *handle, const float *features, float
  * @note 如果 batch_size <= 0 或 n <= 0，返回 KADD_ERROR_INVALID_PARAM
  * @note 任何批次处理失败会立即返回 KADD_ERROR_INFERENCE_FAILED，不会部分成功
  */
-int kadd_model_predict_batch(kadd_model_handle_t *handle, const float *features, int n, float *probabilities, int batch_size);
+int kadd_model_predict_batch(kadd_model_handle_t *handle, const float *features,
+                             int n, float *probabilities, int batch_size);
 
 /**
  * @brief 释放模型

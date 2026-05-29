@@ -1,4 +1,5 @@
 /**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  * @file kadd_errors.h
  * @brief KADD 统一错误码定义
  *

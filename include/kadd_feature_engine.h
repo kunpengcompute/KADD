@@ -1,3 +1,4 @@
+/* Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved. */
 #ifndef KADD_FEATURE_ENGINE_H
 #define KADD_FEATURE_ENGINE_H
 
@@ -6,6 +7,17 @@
 
 #define MAX_SEQ_LEN 300
 #define MAX_FEATURE_DIM 300
+
+/* 循环展开次数 */
+#define SIMD_UNROLL_FACTOR 4
+/* 循环展开偏移量 */
+#define SIMD_UNROLL_OFFSET_1 1
+#define SIMD_UNROLL_OFFSET_2 2
+#define SIMD_UNROLL_OFFSET_3 3
+/* 默认批次大小 */
+#define KADD_FEATURE_DEFAULT_BATCH_SIZE 64
+/* 最大批次大小 */
+#define KADD_FEATURE_MAX_BATCH_SIZE 1024
 
 #ifdef __cplusplus
 extern "C" {
