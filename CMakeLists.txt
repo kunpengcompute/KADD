@@ -7,6 +7,35 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# ============================================================================
+# 安全编译选项（ BIND_NOW; NX; PIC; PIE; RELRO; SP; NO Rpath/Runpath; FS; Ftrapv; Strip）
+# ============================================================================
+set(SECURE_COMPILE_FLAGS "")
+
+# PIC/PIE（位置无关代码/可执行文件）
+set(SECURE_COMPILE_FLAGS "${SECURE_COMPILE_FLAGS} -fPIC -fPIE")
+
+# 栈保护（Stack Protection - SP）
+set(SECURE_COMPILE_FLAGS "${SECURE_COMPILE_FLAGS} -fstack-protector-strong")
+
+# 格式化字符串检查（Format String - FS）
+set(SECURE_COMPILE_FLAGS "${SECURE_COMPILE_FLAGS} -Wformat -Wformat-security")
+
+# 整数溢出检查（Ftrapv）
+set(SECURE_COMPILE_FLAGS "${SECURE_COMPILE_FLAGS} -ftrapv")
+
+# RELRO（Relocation Read-Only）和 BIND_NOW
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,relro,-z,now")
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,relro,-z,now")
+
+# NX（No-Execute，默认现代编译器已启用）
+set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,noexecstack")
+set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,noexecstack")
+
+# 应用到全局编译选项
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SECURE_COMPILE_FLAGS}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SECURE_COMPILE_FLAGS}")
+
 # 版本信息
 string(TIMESTAMP BUILDDATE "%Y.%m.%d")
 set(KADD_VERSION_BUILDDATE "${BUILDDATE}")

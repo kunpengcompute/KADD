@@ -233,5 +233,5 @@ KADD/
 
 ## 📄 许可证
 
-Private Repository Source Code License 1.0
-Copyright (c) 2026 Huawei Technologies Co., Ltd. All rights reserved.
+源代码 **Private Repository Source Code License 1.0**  [LICENSE](LICENSE)。
+文档 **CC-BY 4.0 (Creative Commons Attribution 4.0 International)** [LICENSE](./docs/LICENSE)。

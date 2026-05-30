@@ -37,6 +37,19 @@ function(add_kadd_gtest TEST_NAME SOURCE_FILE)
     add_executable(${TEST_NAME} ${SOURCE_FILE})
     target_compile_features(${TEST_NAME} PRIVATE cxx_std_17)
 
+    # 安全编译选项（测试可执行文件）
+    target_compile_options(${TEST_NAME} PRIVATE
+        -fPIE                   # PIE（可执行文件）
+        -fstack-protector-strong # Stack Protection
+        -Wformat -Wformat-security # Format String
+        -ftrapv                 # 整数溢出检查
+    )
+
+    # RELRO 和 BIND_NOW
+    set_target_properties(${TEST_NAME} PROPERTIES
+        LINK_FLAGS "-Wl,-z,relro,-z,now"
+    )
+
     # 链接必要的引擎库
     target_link_libraries(${TEST_NAME} PRIVATE kadd_other_engines)
 
