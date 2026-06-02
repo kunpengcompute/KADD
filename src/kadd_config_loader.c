@@ -7,16 +7,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
 #include "cJSON.h"
-
 #include "kadd_config_loader.h"
-
-/* 配置项默认值 */
-#define KADD_CONFIG_DEFAULT_MAX_INPUT_LENGTH 300
-#define KADD_CONFIG_DEFAULT_MAX_OUTPUT_DIM 300
-#define KADD_CONFIG_DEFAULT_FEATURE_DIM 28
-#define KADD_CONFIG_DEFAULT_WINDOW_SIZE 5
 
 /* 安全字符串拷贝：逐字符拷贝，保证null结尾 */
 static void copy_str_field(char *dest, const char *src, size_t max_len)
@@ -222,21 +214,25 @@ static int read_file_to_string(const char *path, char **out_content)
 {
     FILE *file = fopen(path, "r");
     if (!file) {
+        fprintf(stderr, "[kadd_config] ERROR: Failed to open file: %s\n", path);
         return -1;
     }
 
     if (fseek(file, 0, SEEK_END) != 0) {
+        fprintf(stderr, "[kadd_config] ERROR: Failed to seek file: %s\n", path);
         fclose(file);
         return -1;
     }
     long file_size = ftell(file);
     if (file_size <= 0 || fseek(file, 0, SEEK_SET) != 0) {
+        fprintf(stderr, "[kadd_config] ERROR: Failed to get file size: %s\n", path);
         fclose(file);
         return -1;
     }
 
     char *content = (char *)malloc(file_size + 1);
     if (!content) {
+        fprintf(stderr, "[kadd_config] ERROR: Failed to allocate memory for file content (%ld bytes)\n", file_size);
         fclose(file);
         return -1;
     }
@@ -246,6 +242,9 @@ static int read_file_to_string(const char *path, char **out_content)
     (void)fclose(file);
 
     if (bytes_read != (size_t)file_size) {
+        fprintf(stderr,
+                "[kadd_config] ERROR: Incomplete file read: expected %ld, got %zu bytes\n",
+                file_size, bytes_read);
         free(content);
         return -1;
     }
@@ -259,17 +258,18 @@ static int read_file_to_string(const char *path, char **out_content)
 int kadd_config_load(const char *config_path, kadd_config_t *config)
 {
     if (!config) {
+        fprintf(stderr, "[kadd_config] ERROR: config pointer is NULL\n");
         return -1;
     }
 
-    const char *path = config_path ? config_path : "config.json";
+    const char *path = (config_path ? config_path : "config.json");
 
     char *content;
     if (read_file_to_string(path, &content) != 0) {
         fprintf(stderr, "无法打开配置文件：%s\n", path);
         return -1;
     }
-    
+
     cJSON *root = cJSON_Parse(content);
     free(content);
 

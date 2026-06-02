@@ -1,35 +1,16 @@
 # KADD SQL 注入检测引擎
 
-基于 ONNX Runtime 的轻量级 SQL 注入检测引擎，支持多平台部署。
 
-## ✨ 特性
-
-- 📦 **模块化设计** - DFA、特征、ML 引擎独立可用
-- 🎯 **高性能** - 支持 ARM NEON/SVE/SVE2 向量化加速
-- 🔧 **易于集成** - 简洁的 C API，仅依赖 ONNX Runtime
-- 🌍 **跨平台** - 支持 Linux、Windows (MinGW/MSVC)
 
 ## 🚀 快速开始
 
 ### 前置要求
 
-- **编译器**: GCC 10+ / Clang / MSVC
+- **编译器**: GCC 10+ / Clang
 - **CMake**: 3.16+
-- **依赖**: ONNX Runtime（必需）、cJSON（必需）、Google Test（可选）
+- **依赖**: ONNX Runtime、cJSON、Google Test（可选）
 
 ### 依赖安装
-
-```bash
-# openEuler
-sudo yum update
-sudo yum install cmake gcc-c++ make
-
-# 安装 ONNX Runtime
-sudo yum install onnxruntime-devel
-
-# 可选：安装 cJSON 和 Google Test
-sudo yum install cjson-devel gtest-devel
-```
 
 > 详见 [第三方库安装指南](docs/DEPENDENCIES.md)
 
@@ -46,6 +27,11 @@ cmake --build .
 
 # 运行测试
 ctest --verbose
+
+# 生成 UT 覆盖率报告（需安装 lcov）
+cmake -DUSE_SYSTEM_LIBS=OFF -DKADD_OPTIMIZE=ON -DENABLE_CODE_COVERAGE=ON -DCMAKE_BUILD_TYPE=Release ..
+cmake --build .
+make coverage
 ```
 
 ## 📦 模块说明
@@ -89,7 +75,6 @@ int main() {
 ## 📚 文档
 
 - [第三方库安装指南](docs/DEPENDENCIES.md) - 依赖安装说明
-- [演示程序说明](demo/README.md) - Demo 使用指南
 
 ## 📁 目录结构
 
@@ -98,7 +83,6 @@ KADD/
 ├── include/          # 头文件
 ├── src/              # 源代码
 ├── tests/            # 测试代码
-├── demo/             # 示例代码
 ├── docs/             # 文档
 ├── tools/            # 工具脚本（⚠️ 见下方说明）
 ├── assets/           # 模型和数据文件
@@ -190,34 +174,6 @@ python tools/train_tokens.py \
 | `-DENABLE_CODE_COVERAGE=ON` | OFF | 启用代码覆盖率 |
 | `-DBUILD_TESTS=ON` | ON | 构建测试程序 |
 | `-DUSE_SYSTEM_LIBS=ON` | ON | 优先使用系统库 |
-
-### ARM 加速
-
-```bash
-# 启用 SVE（自动检测 SVE2 支持）
-cmake -DENABLE_ARM_SVE=ON -DCMAKE_BUILD_TYPE=Release -DKADD_OPTIMIZE=ON ..
-cmake --build .
-
-# SVE2 支持的系统会自动启用 SVE2
-# 非 SVE2 系统会回退到 SVE
-```
-
-### Assets 目录自动检测
-
-构建系统会自动检测 assets 目录位置：
-1. **优先**：项目根目录的 `assets/`
-2. **其次**：构建目录的 `assets/`
-3. **默认**：相对路径 `assets`
-
-```bash
-# 标准目录结构（推荐）
-KADD/
-├── assets/          ← 模型文件在这里
-│   └── model/
-│       └── model_tokens_rf.onnx
-├── build/           ← 构建目录
-└── CMakeLists.txt
-```
 
 ## 📜 第三方开源库
 

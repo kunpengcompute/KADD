@@ -53,30 +53,30 @@ int kadd_dfa_engine_create(kadd_dfa_engine_t **engine,
 /**
  * @brief 释放 DFA 引擎
  *
- * @param e DFA 引擎指针
+ * @param engine DFA 引擎指针
  */
-void kadd_dfa_engine_free(kadd_dfa_engine_t *e);
+void kadd_dfa_engine_free(kadd_dfa_engine_t *engine);
 
 /**
  * @brief 分词输入字符串
  *
- * @param e DFA 引擎
+ * @param engine DFA 引擎
  * @param input 输入字符串
  * @param input_length 输入字符串长度
  * @param output 输出数组（存储token索引）
- * @param dim 输出参数，返回实际的token数量
+ * @param token_count 输出参数，返回实际的token数量
  * @return 0 成功，<0 失败（错误码）
  */
-int kadd_dfa_engine_tokenize(const kadd_dfa_engine_t *e,
+int kadd_dfa_engine_tokenize(const kadd_dfa_engine_t *engine,
                              const char *input,
                              size_t input_length,
                              int *output,
-                             int *dim);
+                             int *token_count);
 
 /**
  * @brief 批量分词多个字符串
  *
- * @param e DFA 引擎
+ * @param engine DFA 引擎
  * @param batch 批处理上下文
  * @return KADD_SUCCESS (0) 完全成功，<0 失败（错误码）
  *
@@ -84,7 +84,7 @@ int kadd_dfa_engine_tokenize(const kadd_dfa_engine_t *e,
  * @note 调用者负责释放所有成功的 outputs[i]
  * @note 失败的项目 dims[i] 会被设为 -1，outputs[i] 为 NULL
  */
-int kadd_dfa_engine_tokenize_batch(const kadd_dfa_engine_t *e,
+int kadd_dfa_engine_tokenize_batch(const kadd_dfa_engine_t *engine,
                                    kadd_dfa_batch_t *batch);
 
 #ifdef __cplusplus
