@@ -54,7 +54,7 @@ int kadd_model_predict(kadd_model_handle_t *handle, const float *features, float
  *
  * @param handle 模型句柄
  * @param features 特征矩阵 (n x feature_dim)
- * @param n 样本数
+ * @param n 样本数 建议根据实际内存判断，建议10,000,000以下
  * @param probabilities 输出概率数组
  * @param batch_size 批次大小（推荐值：32/64/128，范围：1-1024）
  *

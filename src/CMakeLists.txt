@@ -15,9 +15,19 @@ function(add_kadd_library NAME)
 
     # 动态库
     add_library(${NAME} SHARED ${ARG_SOURCES})
+
+    # 安全编译选项（动态库）
+    target_compile_options(${NAME} PRIVATE
+        -fPIC                    # PIC
+        -fstack-protector-strong # Stack Protection
+        -Wformat -Wformat-security # Format String
+        -ftrapv                 # 整数溢出检查
+    )
+
     set_target_properties(${NAME} PROPERTIES
         VERSION "${ARG_VERSION}"
         SOVERSION 1
+        LINK_FLAGS "-Wl,-z,relro,-z,now"
     )
 
     target_include_directories(${NAME} PUBLIC ${CMAKE_SOURCE_DIR}/include)
