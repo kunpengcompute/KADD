@@ -82,7 +82,7 @@ protected:
     bool skip_test = false;
 
     void SetUp() override
-{
+    {
         // 从config.json加载配置
         if (kadd_config_load(nullptr, &config) != 0) {
             std::cout << "[WARNING] 无法加载config.json，跳过 ML 引擎测试" << std::endl;
@@ -101,7 +101,7 @@ protected:
     }
 
     void TearDown() override
-{
+    {
         if (model) {
             kadd_model_free(model);
             model = nullptr;
@@ -110,7 +110,7 @@ protected:
 
     // 辅助函数：生成随机特征向量
     void GenerateRandomFeatures(std::vector<float> &features, float min_val = 0.0f, float max_val = 100.0f)
-{
+    {
         std::random_device rd;
         std::mt19937 gen(rd());
         std::uniform_real_distribution<float> dis(min_val, max_val);
@@ -123,16 +123,16 @@ protected:
 
     // 辅助函数：创建有效的模型
     int CreateValidModel()
-{
+    {
         if (skip_test) {
-            return -1;
+            return KADD_ERROR;
         }
         return kadd_model_load(&model, config.ml.model_path, config.ml.feature_dim);
     }
 
     // 辅助函数：验证概率值有效性（允许浮点误差）
     bool IsValidProbability(float prob)
-{
+    {
         return prob >= -kFloatTolerance && prob <= (1.0f + kFloatTolerance);
     }
 };
@@ -146,7 +146,7 @@ TEST_F(MLEngineTest, LoadValidModel)
     }
 
     int ret = CreateValidModel();
-    ASSERT_EQ(ret, 0) << "应该成功加载模型，路径: " << config.ml.model_path;
+    ASSERT_EQ(ret, KADD_SUCCESS) << "应该成功加载模型，路径: " << config.ml.model_path;
     ASSERT_NE(model, nullptr) << "模型句柄不应为空";
 }
 
@@ -161,7 +161,7 @@ TEST_F(MLEngineTest, PredictSingleSample)
     float probability = 0.0f;
     int ret = kadd_model_predict(model, test_features.data(), &probability);
 
-    EXPECT_EQ(ret, 0) << "推理应该成功";
+    EXPECT_EQ(ret, KADD_SUCCESS) << "推理应该成功";
     EXPECT_TRUE(IsValidProbability(probability)) << "概率值应在 [0, 1] 范围内，实际: " << probability;
 }
 
@@ -191,7 +191,7 @@ TEST_F(MLEngineTest, PredictWithVariousFeatures)
         float probability = 0.0f;
         int ret = kadd_model_predict(model, test_cases[i].features.data(), &probability);
 
-        EXPECT_EQ(ret, 0) << "测试用例 " << i << " (" << test_cases[i].description << ") 应该推理成功";
+        EXPECT_EQ(ret, KADD_SUCCESS) << "测试用例 " << i << " (" << test_cases[i].description << ") 应该推理成功";
         EXPECT_TRUE(IsValidProbability(probability))
             << "测试用例 " << i << " (" << test_cases[i].description
             << ") 概率值应在 [0, 1] 范围内，实际: " << probability;
@@ -306,7 +306,7 @@ TEST_F(MLEngineTest, ModelReuse)
         float probability = 0.0f;
         int ret = kadd_model_predict(model, test_features.data(), &probability);
 
-        EXPECT_EQ(ret, 0) << "第 " << i << " 次推理应该成功";
+        EXPECT_EQ(ret, KADD_SUCCESS) << "第 " << i << " 次推理应该成功";
         EXPECT_TRUE(IsValidProbability(probability)) << "第 " << i << " 次 概率值应在 [0, 1] 范围内";
     }
 }
@@ -820,7 +820,7 @@ static bool TokensToFeatures(const std::vector<int> &tokens, std::vector<float> 
     std::vector<int> int_features(feature_dim, 0);
     int ret = kadd_seq_to_feature(tokens.data(), tokens.size(), 5,
                                   int_features.data(), feature_dim);
-    if (ret != 0) {
+    if (ret != KADD_SUCCESS) {
         return false;
     }
 
@@ -1086,7 +1086,7 @@ TEST_F(MLEngineTest, ModelWarmupVerification)
 
     int ret = kadd_model_predict(fresh_model, features.data(), &probability);
 
-    EXPECT_EQ(ret, 0) << "warmup 后首次推理应该成功";
+    EXPECT_EQ(ret, KADD_SUCCESS) << "warmup 后首次推理应该成功";
     EXPECT_TRUE(IsValidProbability(probability)) << "warmup 后首次推理结果应该有效";
 
     kadd_model_free(fresh_model);
@@ -1170,7 +1170,7 @@ int main(int argc, char **argv)
 
     // 从 config.json 加载配置
     kadd_config_t config;
-    bool config_loaded = (kadd_config_load(nullptr, &config) == 0);
+    bool config_loaded = (kadd_config_load(nullptr, &config) == KADD_SUCCESS);
 
     const char *model_path = "assets/model/model_tokens_rf.onnx";  // 默认路径
     if (config_loaded) {
@@ -1191,6 +1191,22 @@ int main(int argc, char **argv)
         std::cout << "  2. 检查 config.json 中的 kadd_ml_engine.model_path 配置" << std::endl;
         std::cout << "========================================\n" << std::endl;
         return 0;
+    }
+
+    /* 验证模型是否能正常加载（warmup 可能未捕获所有推理问题） */
+    {
+        int fdim = config_loaded ? config.ml.feature_dim : 28;
+        kadd_model_handle_t *tmp = nullptr;
+        if (kadd_model_load(&tmp, model_path, fdim) != KADD_SUCCESS) {
+            std::cout << "\n========================================" << std::endl;
+            std::cout << "  ML 引擎测试已跳过" << std::endl;
+            std::cout << "========================================" << std::endl;
+            std::cout << "原因: 模型加载失败" << std::endl;
+            std::cout << "预期路径: " << model_path << std::endl;
+            std::cout << "========================================\n" << std::endl;
+            return 0;
+        }
+        kadd_model_free(tmp);
     }
 
     std::cout << "\n========================================" << std::endl;

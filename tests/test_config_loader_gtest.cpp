@@ -533,8 +533,7 @@ TEST(ConfigLoaderTest, CopyStrField_Truncation)
 TEST(ConfigLoaderTest, ConfigFree_NoOp)
 {
     // 测试 kadd_config_free（覆盖第229-232行）
-    kadd_config_t config;
-    memset(&config, 0, sizeof(config));
+    kadd_config_t config = {};
 
     // 不应该崩溃
     kadd_config_free(&config);

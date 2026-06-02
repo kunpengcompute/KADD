@@ -1,3 +1,4 @@
+/* Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved. */
 #ifndef KADD_SQLI_ENGINE_H
 #define KADD_SQLI_ENGINE_H
 
@@ -108,7 +109,8 @@ int kadd_sqli_detect(kadd_sqli_engine_t *engine, const char *input, float *proba
  * }
  * @endcode
  */
-int kadd_sqli_detect_batch(kadd_sqli_engine_t *engine, const char **inputs, int count, float *probabilities, int batch_size);
+int kadd_sqli_detect_batch(kadd_sqli_engine_t *engine, const char **inputs, int count,
+                           float *probabilities, int batch_size);
 
 /**
  * @brief 释放引擎

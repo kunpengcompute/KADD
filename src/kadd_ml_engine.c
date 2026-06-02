@@ -1,4 +1,5 @@
 /**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  * @file kadd_ml_engine.c
  * @brief ONNX 推理引擎实现
  *
@@ -7,10 +8,10 @@
  */
 
 #include "kadd_ml_engine.h"
-#include "kadd_errors.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "kadd_errors.h"
 #include "onnxruntime_c_api.h"
 
 /* ========== 内部结构体 ========== */
@@ -19,6 +20,7 @@ struct kadd_model_handle_t {
     OrtEnv *env;
     OrtMemoryInfo *memory_info;
     const OrtApi *api;
+    char *input_name;
     char *output_name;
     int feature_dim;
 };
@@ -26,17 +28,44 @@ struct kadd_model_handle_t {
 static OrtEnv *g_ort_env = NULL;
 static const OrtApi *g_ort_api = NULL;
 
+#define KADD_INFERENCE_MAX_BATCH_SIZE 1024
+#define KADD_ORT_API_MIN_VERSION 15
+#define KADD_MODEL_OUTPUT_CLASS_NUM 2
+#define KADD_ORT_LOG_SEVERITY_ERROR 2
+
+/* ========== 内部辅助函数 ========== */
+
+/**
+ * 安全释放分配器分配的内存
+ * @param api ONNX Runtime API
+ * @param allocator 分配器
+ * @param ptr 要释放的指针
+ */
+static void safe_free_ort_alloc(const OrtApi *api, OrtAllocator *allocator, char *ptr)
+{
+    if (!ptr || !api || !allocator) {
+        return;
+    }
+
+    OrtStatus *status = api->AllocatorFree(allocator, ptr);
+    if (status) {
+        api->ReleaseStatus(status);
+    }
+}
+
 /* ========== 内部函数 ========== */
-static int create_session(kadd_model_handle_t *handle, const char *model_path) {
-    // 获取 API - 支持版本回退以兼容不同版本的 ONNX Runtime
+static int init_ort_api(kadd_model_handle_t *handle)
+{
     if (!g_ort_api) {
         const OrtApiBase *api_base = OrtGetApiBase();
-        if (!api_base) return -1;
+        if (!api_base) {
+            fprintf(stderr, "[kadd_ml] ERROR: Failed to get ONNX Runtime API base\n");
+            return KADD_ERROR;
+        }
 
-        // 尝试从当前版本开始，逐步回退以兼容不同版本的 ONNX Runtime
-        // ONNX Runtime 1.16+ 支持 API 版本 15-17
-        // ONNX Runtime 1.20+ 支持 API 版本 18-20
-        for (int version = ORT_API_VERSION; version >= 15; version--) {
+        // ONNX Runtime 1.16+ 支持 API 版本 15-17, 1.20+ 支持 API 版本 18-20
+        // 从编译时最高版本向下回退，找到运行时支持的最高版
+        for (int version = ORT_API_VERSION; version >= KADD_ORT_API_MIN_VERSION; version--) {
             g_ort_api = api_base->GetApi(version);
             if (g_ort_api) {
                 break;
@@ -44,122 +73,364 @@ static int create_session(kadd_model_handle_t *handle, const char *model_path) {
         }
 
         if (!g_ort_api) {
-            return -1;
+            fprintf(stderr, "[kadd_ml] ERROR: No compatible ONNX Runtime API version found (required: %d-%d)\n",
+                    KADD_ORT_API_MIN_VERSION, ORT_API_VERSION);
+            return KADD_ERROR;
         }
     }
     handle->api = g_ort_api;
+    return KADD_SUCCESS;
+}
 
-    // 创建环境
-    // 注意：ONNX Runtime 1.20+ 需要 CreateEnvWithGlobalThreadPools
-    // 但由于我们不使用 DisablePerSessionThreads，所以可以直接使用 CreateEnv
+static int init_ort_env(kadd_model_handle_t *handle)
+{
+    // 验证 API 结构的关键函数指针不为 NULL
+    if (!handle->api || !handle->api->CreateEnv || !handle->api->ReleaseStatus) {
+        fprintf(stderr, "[kadd_ml] ERROR: Invalid ONNX Runtime API structure (missing required functions)\n");
+        return KADD_ERROR;
+    }
+
     if (!g_ort_env) {
-        OrtStatus *status = handle->api->CreateEnv(ORT_LOGGING_LEVEL_WARNING, "inference", &g_ort_env);
+        OrtStatus *status = handle->api->CreateEnv(ORT_LOGGING_LEVEL_ERROR, "inference", &g_ort_env);
         if (status) {
+            const char *err_msg = (const char *)handle->api->GetErrorMessage(status);
+            fprintf(stderr, "[kadd_ml] ERROR: Failed to create ONNX environment: %s\n", err_msg);
             handle->api->ReleaseStatus(status);
-            return -1;
+            return KADD_ERROR;
         }
     }
     handle->env = g_ort_env;
+    return KADD_SUCCESS;
+}
 
-    // 创建会话选项
+static int config_session_options(const OrtApi *api, OrtSessionOptions **options_out)
+{
     OrtSessionOptions *options = NULL;
-    OrtStatus *status = handle->api->CreateSessionOptions(&options);
+    OrtStatus *status = api->CreateSessionOptions(&options);
     if (status || !options) {
-        if (status) handle->api->ReleaseStatus(status);
-        return -1;
+        if (status) {
+            const char *err_msg = (const char *)api->GetErrorMessage(status);
+            fprintf(stderr, "[kadd_ml] ERROR: Failed to create session options: %s\n", err_msg);
+            api->ReleaseStatus(status);
+        }
+        return KADD_ERROR;
     }
 
-    // 设置执行模式为顺序执行（适用于小型模型）
-    status = handle->api->SetSessionExecutionMode(options, ORT_SEQUENTIAL);
+    status = api->SetSessionExecutionMode(options, ORT_SEQUENTIAL);
     if (status) {
-        handle->api->ReleaseSessionOptions(options);
-        handle->api->ReleaseStatus(status);
-        return -1;
+        const char *err_msg = (const char *)api->GetErrorMessage(status);
+        fprintf(stderr, "[kadd_ml] ERROR: Failed to set execution mode: %s\n", err_msg);
+        api->ReleaseSessionOptions(options);
+        api->ReleaseStatus(status);
+        return KADD_ERROR;
     }
 
-    // 设置图优化级别为全优化，让 ONNX Runtime 在 session 创建时完成所有优化
-    // 避免首次推理时仍需执行内核选择等延迟操作
-    status = handle->api->SetSessionGraphOptimizationLevel(options, ORT_ENABLE_ALL);
+    status = api->SetSessionGraphOptimizationLevel(options, ORT_ENABLE_ALL);
     if (status) {
-        handle->api->ReleaseSessionOptions(options);
-        handle->api->ReleaseStatus(status);
-        return -1;
+        const char *err_msg = (const char *)api->GetErrorMessage(status);
+        fprintf(stderr, "[kadd_ml] ERROR: Failed to set optimization level: %s\n", err_msg);
+        api->ReleaseSessionOptions(options);
+        api->ReleaseStatus(status);
+        return KADD_ERROR;
     }
 
-    // 对于 ONNX Runtime 1.20+，设置环境变量以启用受限 opset 支持
-    // 注意：这需要在加载会话之前设置环境变量
-    setenv("ORT_UNRELEASED_OPS", "1", 1);
-    setenv("ORT_ENABLE_OPTIONAL_OPS", "1", 1);
+    // 设置日志严重级别为 ERROR ，抑制 ORT 内部 warning（如 API version 不匹配提示）
+    status = api->SetSessionLogSeverityLevel(options, KADD_ORT_LOG_SEVERITY_ERROR);
+    if (status) {
+        const char *err_msg = (const char *)api->GetErrorMessage(status);
+        fprintf(stderr, "[kadd_ml] ERROR: Failed to set log severity level: %s\n", err_msg);
+        api->ReleaseSessionOptions(options);
+        api->ReleaseStatus(status);
+        return KADD_ERROR;
+    }
 
-    // 创建会话（使用 UTF-8 路径）
-    status = handle->api->CreateSession(handle->env, model_path, options, &handle->session);
+    *options_out = options;
+    return KADD_SUCCESS;
+}
+
+static int create_ort_session(kadd_model_handle_t *handle, const char *model_path)
+{
+    OrtSessionOptions *options = NULL;
+    if (config_session_options(handle->api, &options) != 0) {
+        fprintf(stderr, "[kadd_ml] ERROR: Failed to configure session options for model: %s\n", model_path);
+        return KADD_ERROR;
+    }
+
+    OrtStatus *status = handle->api->CreateSession(handle->env, model_path, options, &handle->session);
     handle->api->ReleaseSessionOptions(options);
 
     if (status) {
+        const char *err_msg = (const char *)handle->api->GetErrorMessage(status);
+        fprintf(stderr, "[kadd_ml] ERROR: Failed to create session for model '%s': %s\n", model_path, err_msg);
         handle->api->ReleaseStatus(status);
-        return -1;
+        return KADD_ERROR;
     }
 
-    // 创建内存信息
     status = handle->api->CreateMemoryInfo("Cpu", OrtArenaAllocator, 0, OrtMemTypeDefault, &handle->memory_info);
     if (status) {
+        const char *err_msg = (const char *)handle->api->GetErrorMessage(status);
+        fprintf(stderr, "[kadd_ml] ERROR: Failed to create memory info: %s\n", err_msg);
         handle->api->ReleaseStatus(status);
-        return -1;
+        return KADD_ERROR;
     }
 
-    // 检测输出节点名称
+    return KADD_SUCCESS;
+}
+
+/* IO 名称获取回调类型定义 */
+typedef OrtStatus *(*NameCountFunc)(const OrtSession *, size_t *);
+typedef OrtStatus *(*NameGetFunc)(const OrtSession *, size_t, OrtAllocator *, char **);
+
+/**
+ * 获取 ONNX Runtime allocator
+ * @param api ONNX Runtime API
+ * @param allocator_out 输出 allocator 指针
+ * @return 成功返回 0,失败返回 KADD_ERROR
+ */
+static int get_io_allocator(const OrtApi *api, OrtAllocator **allocator_out)
+{
     OrtAllocator *allocator = NULL;
-    OrtStatus *alloc_status = handle->api->GetAllocatorWithDefaultOptions(&allocator);
-    if (!alloc_status && allocator) {
-        size_t num_outputs = 0;
-        OrtStatus *count_status = handle->api->SessionGetOutputCount(handle->session, &num_outputs);
-        if (!count_status) {
-            for (size_t i = 0; i < num_outputs; i++) {
-                char *name = NULL;
-                OrtStatus *name_status = handle->api->SessionGetOutputName(handle->session, i, allocator, &name);
-                if (!name_status && name) {
-                    if (strstr(name, "probability")) {
-                        handle->output_name = strdup(name);
-                        { OrtStatus *free_status = handle->api->AllocatorFree(allocator, name); if (free_status) handle->api->ReleaseStatus(free_status); }
-                        if (!handle->output_name) {
-                            handle->api->ReleaseStatus(count_status);
-                            return -1;
-                        }
-                        break;
-                    }
-                    { OrtStatus *free_status = handle->api->AllocatorFree(allocator, name); if (free_status) handle->api->ReleaseStatus(free_status); }
-                } else if (name_status) {
-                    handle->api->ReleaseStatus(name_status);
-                }
-            }
-        } else if (count_status) {
-            handle->api->ReleaseStatus(count_status);
+    OrtStatus *status = api->GetAllocatorWithDefaultOptions(&allocator);
+
+    if (status) {
+        if (api->ReleaseStatus) {
+            api->ReleaseStatus(status);
         }
-    } else if (alloc_status) {
-        handle->api->ReleaseStatus(alloc_status);
+        return KADD_ERROR;
     }
 
-    if (!handle->output_name) {
-        handle->output_name = strdup("probabilities");
-        if (!handle->output_name) {
-            return -1;
-        }
+    if (!allocator) {
+        return KADD_ERROR;
     }
 
+    *allocator_out = allocator;
+    return KADD_SUCCESS;
+}
+
+/**
+ * 检查名称是否匹配任一模式
+ * @param name 待检查的名称
+ * @param patterns 模式数组(NULL 终止)
+ * @return 匹配返回 1,否则返回 0
+ */
+static int is_name_matched(const char *name, const char *patterns[])
+{
+    for (int p = 0; patterns[p] != NULL; p++) {
+        if (strstr(name, patterns[p])) {
+            return 1;
+        }
+    }
     return 0;
 }
 
-/* ========== 公共接口 ========== */
-int kadd_model_load(kadd_model_handle_t **handle, const char *model_path, int feature_dim) {
-    if (!handle || !model_path) return KADD_ERROR_NULL_PTR;
-    if (feature_dim <= 0) return KADD_ERROR_INVALID_PARAM;
+/**
+ * 设置默认名称
+ * @param first_name 第一个名称(可为 NULL)
+ * @param default_name 默认名称
+ * @param target_ptr 目标字段指针
+ * @return 成功返回 0,失败返回 KADD_ERROR
+ */
+static int set_default_name(char *first_name, const char *default_name, char **target_ptr)
+{
+    if (first_name) {
+        *target_ptr = first_name;
+    } else {
+        *target_ptr = strdup(default_name);
+    }
 
+    if (!(*target_ptr)) {
+        fprintf(stderr, "[kadd_ml] ERROR: Failed to allocate memory for name\n");
+        return KADD_ERROR;
+    }
+
+    return KADD_SUCCESS;
+}
+
+/**
+ * 在 IO 列表中查找匹配的名称
+ * @param handle 模型句柄
+ * @param count_func 获取数量的函数指针
+ * @param get_func 获取名称的函数指针
+ * @param patterns 名称匹配模式数组
+ * @param first_name_out 输出第一个名称
+ * @param matched_name_out 输出匹配的名称
+ * @return 找到匹配返回 KADD_SUCCESS,未找到返回 KADD_ERROR
+ */
+static int find_matched_name(kadd_model_handle_t *handle,
+                              NameCountFunc count_func,
+                              NameGetFunc get_func,
+                              const char *patterns[],
+                              char **first_name_out,
+                              char **matched_name_out)
+{
+    OrtAllocator *allocator = NULL;
+    char *first_name = NULL;
+    size_t num_items = 0;
+    int result = KADD_ERROR;
+
+    // 获取 allocator
+    if (get_io_allocator(handle->api, &allocator) != KADD_SUCCESS) {
+        return KADD_ERROR;
+    }
+
+    // 获取数量
+    OrtStatus *count_status = count_func(handle->session, &num_items);
+    if (count_status) {
+        handle->api->ReleaseStatus(count_status);
+        return KADD_ERROR;
+    }
+
+    // 遍历查找匹配的名称
+    for (size_t i = 0; i < num_items; i++) {
+        char *name = NULL;
+        OrtStatus *name_status = get_func(handle->session, i, allocator, &name);
+
+        if (name_status || !name) {
+            if (name_status) {
+                handle->api->ReleaseStatus(name_status);
+            }
+            continue;
+        }
+
+        // 保存第一个名称
+        if (first_name == NULL) {
+            first_name = strdup(name);
+            if (!first_name) {
+                safe_free_ort_alloc(handle->api, allocator, name);
+                result = KADD_ERROR;
+                goto cleanup;
+            }
+        }
+
+        // 检查模式匹配
+        if (is_name_matched(name, patterns)) {
+            *matched_name_out = strdup(name);
+            safe_free_ort_alloc(handle->api, allocator, name);
+
+            if (!(*matched_name_out)) {
+                result = KADD_ERROR;
+            } else {
+                result = KADD_SUCCESS;
+            }
+            goto cleanup;
+        }
+
+        safe_free_ort_alloc(handle->api, allocator, name);
+    }
+
+    // 未找到匹配项,返回第一个名称
+    *first_name_out = first_name;
+    return KADD_ERROR;
+
+cleanup:
+    if (first_name) {
+        free(first_name);
+    }
+    return result;
+}
+
+/**
+ * 通用 IO 名称检测函数
+ * @param handle 模型句柄
+ * @param count_func 获取数量的函数指针
+ * @param get_func 获取名称的函数指针
+ * @param patterns 名称匹配模式数组(NULL 终止)
+ * @param default_name 默认名称
+ * @param target_ptr 目标字段指针
+ */
+static int detect_io_name_generic(kadd_model_handle_t *handle,
+                                    NameCountFunc count_func,
+                                    NameGetFunc get_func,
+                                    const char *patterns[],
+                                    const char *default_name,
+                                    char **target_ptr)
+{
+    char *first_name = NULL;
+    char *matched_name = NULL;
+
+    // 查找匹配的名称
+    int find_result = find_matched_name(handle, count_func, get_func,
+                                         patterns, &first_name, &matched_name);
+    if (find_result == KADD_SUCCESS && matched_name) {
+        // 找到匹配项
+        *target_ptr = matched_name;
+        if (first_name) {
+            free(first_name);
+        }
+        return KADD_SUCCESS;
+    }
+
+    // 使用默认名称或第一个名称
+    // 注意: set_default_name 失败时会在内部使用 strdup 设置默认值
+    // 如果 strdup 也失败(极端情况),返回错误,此时 *target_ptr 为 NULL
+    // 这种极端情况下,调用者应该检查返回值并处理错误
+    return set_default_name(first_name, default_name, target_ptr);
+}
+
+static int detect_input_name(kadd_model_handle_t *handle)
+{
+    const char *patterns[] = {"input", "feature", "data", "float_input", NULL};
+    return detect_io_name_generic(handle, handle->api->SessionGetInputCount,
+                                  handle->api->SessionGetInputName, patterns,
+                                  "float_input", &handle->input_name);
+}
+
+static int detect_output_name(kadd_model_handle_t *handle)
+{
+    const char *patterns[] = {"probabilities", "probability", "output", "prob", "predict", NULL};
+    return detect_io_name_generic(handle, handle->api->SessionGetOutputCount,
+                                  handle->api->SessionGetOutputName, patterns,
+                                  "probabilities", &handle->output_name);
+}
+
+static int create_session(kadd_model_handle_t *handle, const char *model_path)
+{
+    if (init_ort_api(handle) != KADD_SUCCESS) {
+        fprintf(stderr, "[kadd_ml] ERROR: Failed to initialize ONNX Runtime API\n");
+        return KADD_ERROR;
+    }
+    if (init_ort_env(handle) != KADD_SUCCESS) {
+        fprintf(stderr, "[kadd_ml] ERROR: Failed to initialize ONNX Runtime environment\n");
+        return KADD_ERROR;
+    }
+    if (create_ort_session(handle, model_path) != KADD_SUCCESS) {
+        fprintf(stderr, "[kadd_ml] ERROR: Failed to create ONNX session for model: %s\n", model_path);
+        return KADD_ERROR;
+    }
+    if (detect_input_name(handle) != KADD_SUCCESS) {
+        fprintf(stderr, "[kadd_ml] ERROR: Failed to detect input name\n");
+        return KADD_ERROR;
+    }
+    if (detect_output_name(handle) != KADD_SUCCESS) {
+        fprintf(stderr, "[kadd_ml] ERROR: Failed to detect output name\n");
+        return KADD_ERROR;
+    }
+    return KADD_SUCCESS;
+}
+
+/* ========== 公共接口 ========== */
+int kadd_model_load(kadd_model_handle_t **handle, const char *model_path, int feature_dim)
+{
+    if (!handle || !model_path) {
+        fprintf(stderr, "[kadd_ml] ERROR: Invalid parameters (handle=%s, model_path=%s)\n",
+                (handle ? "valid" : "NULL"), (model_path ? model_path : "NULL"));
+        return KADD_ERROR_NULL_PTR;
+    }
+    if (feature_dim <= 0) {
+        fprintf(stderr, "[kadd_ml] ERROR: Invalid feature_dim: %d (must be > 0)\n", feature_dim);
+        return KADD_ERROR_INVALID_PARAM;
+    }
     kadd_model_handle_t *h = (kadd_model_handle_t *)calloc(1, sizeof(kadd_model_handle_t));
-    if (!h) return KADD_ERROR_OUT_OF_MEMORY;
+    if (!h) {
+        fprintf(stderr, "[kadd_ml] ERROR: Failed to allocate memory for model handle (feature_dim=%d)\n", feature_dim);
+        return KADD_ERROR_OUT_OF_MEMORY;
+    }
 
     h->feature_dim = feature_dim;
 
-    if (create_session(h, model_path) != 0) {
+    if (create_session(h, model_path) != KADD_SUCCESS) {
+        fprintf(stderr, "[kadd_ml] ERROR: Failed to create session for model: %s (feature_dim=%d)\n",
+                model_path, feature_dim);
         free(h);
         return KADD_ERROR_MODEL_LOAD_FAILED;
     }
@@ -167,20 +438,31 @@ int kadd_model_load(kadd_model_handle_t **handle, const char *model_path, int fe
     *handle = h;
 
     // warmup: 用全零特征做一次 dummy 推理，让 ONNX Runtime 完成内核选择和内存池初始化
-    // 将首次推理延迟移到模型加载阶段，后续真实推理不再有首次延迟
-    float *warmup_features = (float *)calloc(feature_dim, sizeof(float));
+    float *warmup_features;
+    warmup_features = (float *)calloc(feature_dim, sizeof(float));
     if (warmup_features) {
         float warmup_prob = 0.0f;
-        kadd_model_predict(h, warmup_features, &warmup_prob);
+        int warmup_ret;
+        warmup_ret = kadd_model_predict(h, warmup_features, &warmup_prob);
         free(warmup_features);
+        if (warmup_ret != KADD_SUCCESS) {
+            fprintf(stderr, "[kadd_ml] ERROR: Warmup inference failed for model=%s (feature_dim=%d)\n",
+                    model_path, feature_dim);
+            kadd_model_free(h);
+            return KADD_ERROR_MODEL_LOAD_FAILED;
+        }
     }
 
-    return 0;
+    return KADD_SUCCESS;
 }
 
-int kadd_model_predict(kadd_model_handle_t *handle, const float *features, float *probability) {
-    if (!handle || !features || !probability) return KADD_ERROR_NULL_PTR;
-
+int kadd_model_predict(kadd_model_handle_t *handle, const float *features, float *probability)
+{
+    if (!handle || !features || !probability) {
+        fprintf(stderr, "[kadd_ml] ERROR: Invalid parameters (handle=%s, features=%s, probability=%s)\n",
+                (handle ? "valid" : "NULL"), (features ? "valid" : "NULL"), (probability ? "valid" : "NULL"));
+        return KADD_ERROR_NULL_PTR;
+    }
     int64_t shape[] = {1, handle->feature_dim};
     OrtValue *input = NULL;
     OrtStatus *status = handle->api->CreateTensorWithDataAsOrtValue(
@@ -188,11 +470,14 @@ int kadd_model_predict(kadd_model_handle_t *handle, const float *features, float
         shape, 2, ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, &input);
 
     if (status) {
+        const char *err_msg = (const char *)handle->api->GetErrorMessage(status);
+        fprintf(stderr, "[kadd_ml] ERROR: Failed to create input tensor (feature_dim=%d): %s\n",
+                handle->feature_dim, err_msg);
         handle->api->ReleaseStatus(status);
-        return -1;
+        return KADD_ERROR_INFERENCE_FAILED;
     }
 
-    const char *input_names[] = {"float_input"};
+    const char *input_names[] = {handle->input_name};
     const char *output_names[] = {handle->output_name};
     OrtValue *output = NULL;
 
@@ -200,24 +485,28 @@ int kadd_model_predict(kadd_model_handle_t *handle, const float *features, float
     const OrtValue *inputs_const[] = {input};
     status = handle->api->Run(handle->session, NULL, input_names, inputs_const, 1, output_names, 1, &output);
     if (status) {
+        const char *err_msg = (const char *)handle->api->GetErrorMessage(status);
+        fprintf(stderr, "[kadd_ml] ERROR: Run failed (input='%s', output='%s'): %s\n",
+                handle->input_name, handle->output_name, err_msg);
         handle->api->ReleaseValue(input);
         handle->api->ReleaseStatus(status);
-        return -1;
+        return KADD_ERROR_INFERENCE_FAILED;
     }
     handle->api->ReleaseValue(input);
-
-    if (status) {
-        handle->api->ReleaseStatus(status);
-        return -1;
-    }
 
     /* 直接获取数据 */
     float *data = NULL;
     OrtStatus *data_status = handle->api->GetTensorMutableData(output, (void **)&data);
     if (data_status || !data) {
-        if (data_status) handle->api->ReleaseStatus(data_status);
+        if (data_status) {
+            const char *err_msg = (const char *)handle->api->GetErrorMessage(data_status);
+            fprintf(stderr, "[kadd_ml] ERROR: Failed to get tensor data: %s\n", err_msg);
+            handle->api->ReleaseStatus(data_status);
+        } else {
+            fprintf(stderr, "[kadd_ml] ERROR: Got NULL tensor data\n");
+        }
         handle->api->ReleaseValue(output);
-        return -1;
+        return KADD_ERROR_INFERENCE_FAILED;
     }
 
     /*
@@ -230,93 +519,125 @@ int kadd_model_predict(kadd_model_handle_t *handle, const float *features, float
     *probability = data[1];
 
     handle->api->ReleaseValue(output);
-    return 0;
+    return KADD_SUCCESS;
 }
 
-int kadd_model_predict_batch(kadd_model_handle_t *handle, const float *features, int n, float *probabilities, int batch_size) {
-    if (!handle || !features || !probabilities) return KADD_ERROR_NULL_PTR;
-    if (n <= 0 || batch_size <= 0) return KADD_ERROR_INVALID_PARAM;
+static int infer_single_batch(kadd_model_handle_t *handle, const float *batch_features,
+                              int current_batch, float *prob_out)
+{
+    int64_t shape[] = {current_batch, handle->feature_dim};
+    OrtValue *input = NULL;
 
-    // 限制 batch_size 范围，防止过大或过小
-    if (batch_size > 1024) {
-        batch_size = 1024;  // 最大批次限制
+    OrtStatus *status = handle->api->CreateTensorWithDataAsOrtValue(
+        handle->memory_info,
+        (void *)batch_features,
+        current_batch * handle->feature_dim * sizeof(float),
+        shape, 2,
+        ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT,
+        &input
+    );
+    if (status) {
+        const char *err_msg = (const char *)handle->api->GetErrorMessage(status);
+        fprintf(stderr,
+                "[kadd_ml] ERROR: Batch inference failed to create input tensor (batch=%d, feature_dim=%d): %s\n",
+                current_batch, handle->feature_dim, err_msg);
+        handle->api->ReleaseStatus(status);
+        return KADD_ERROR_INFERENCE_FAILED;
     }
 
-    int count = 0;
+    // 执行推理
+    const char *input_names[] = {handle->input_name};
+    const char *output_names[] = {handle->output_name};
+    OrtValue *output = NULL;
+
+    OrtValue *inputs[] = {input};
+    const OrtValue *inputs_const[] = {input};
+    status = handle->api->Run(handle->session, NULL, input_names, inputs_const, 1, output_names, 1, &output);
+    if (status) {
+        const char *err_msg = (const char *)handle->api->GetErrorMessage(status);
+        fprintf(stderr, "[kadd_ml] ERROR: Batch run failed (batch=%d, input='%s', output='%s'): %s\n",
+                current_batch, handle->input_name, handle->output_name, err_msg);
+        handle->api->ReleaseValue(input);
+        handle->api->ReleaseStatus(status);
+        return KADD_ERROR_INFERENCE_FAILED;
+    }
+    handle->api->ReleaseValue(input);
+
+    // 获取输出数据
+    float *data = NULL;
+    status = handle->api->GetTensorMutableData(output, (void **)&data);
+    if (status) {
+        const char *err_msg = (const char *)handle->api->GetErrorMessage(status);
+        fprintf(stderr, "[kadd_ml] ERROR: Batch inference failed to get tensor data: %s\n", err_msg);
+        handle->api->ReleaseStatus(status);
+        handle->api->ReleaseValue(output);
+        return KADD_ERROR_INFERENCE_FAILED;
+    }
+
+    // 假设输出形状为 [current_batch, 2]（每个样本输出2个值）
+    for (int j = 0; j < current_batch; j++) {
+        prob_out[j] = data[j * KADD_MODEL_OUTPUT_CLASS_NUM + 1];
+    }
+
+    handle->api->ReleaseValue(output);
+    return KADD_SUCCESS;
+}
+
+int kadd_model_predict_batch(kadd_model_handle_t *handle, const float *features, int n,
+                             float *probabilities, int batch_size)
+{
+    if (!handle || !features || !probabilities) {
+        fprintf(stderr, "[kadd_ml] ERROR: Invalid parameters (handle=%s, features=%s, probabilities=%s)\n",
+                (handle ? "valid" : "NULL"), (features ? "valid" : "NULL"), (probabilities ? "valid" : "NULL"));
+        return KADD_ERROR_NULL_PTR;
+    }
+    if (n <= 0 || batch_size <= 0) {
+        fprintf(stderr,
+                "[kadd_ml] ERROR: Invalid batch parameters (n=%d, batch_size=%d), both must be > 0\n",
+                n, batch_size);
+        return KADD_ERROR_INVALID_PARAM;
+    }
+    // 限制 batch_size 范围，防止过大或过小
+    int effective_batch = batch_size;
+    if (effective_batch > KADD_INFERENCE_MAX_BATCH_SIZE) {
+        effective_batch = KADD_INFERENCE_MAX_BATCH_SIZE;  // 最大批次限制
+    }
 
     // 分块批量处理
-    for (int i = 0; i < n; i += batch_size) {
-        // 计算当前批次大小
-        int current_batch = (i + batch_size < n) ? batch_size : (n - i);
-
-        // 创建形状为 [current_batch, feature_dim] 的 tensor
-        int64_t shape[] = {current_batch, handle->feature_dim};
-        OrtValue *input = NULL;
-
-        // 指向当前批次的数据
+    for (int i = 0; i < n; i += effective_batch) {
+        int current_batch = (i + effective_batch < n) ? effective_batch : (n - i);
         const float *batch_features = features + i * handle->feature_dim;
 
-        OrtStatus *status = handle->api->CreateTensorWithDataAsOrtValue(
-            handle->memory_info,
-            (void *)batch_features,
-            current_batch * handle->feature_dim * sizeof(float),
-            shape, 2,
-            ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT,
-            &input
-        );
-
-        if (status) {
-            handle->api->ReleaseStatus(status);
-            // 当前批次失败，立即返回错误
+        if (infer_single_batch(handle, batch_features, current_batch, probabilities + i) != KADD_SUCCESS) {
+            fprintf(stderr, "[kadd_ml] ERROR: Batch inference failed at chunk %d (batch=%d, total=%d)\n",
+                    i / effective_batch, current_batch, n);
             return KADD_ERROR_INFERENCE_FAILED;
         }
-
-        // 执行推理
-        const char *input_names[] = {"float_input"};
-        const char *output_names[] = {handle->output_name};
-        OrtValue *output = NULL;
-
-        OrtValue *inputs[] = {input};
-        const OrtValue *inputs_const[] = {input};
-        status = handle->api->Run(handle->session, NULL, input_names, inputs_const, 1, output_names, 1, &output);
-        if (status) {
-            handle->api->ReleaseValue(input);
-            handle->api->ReleaseStatus(status);
-            // 推理失败，立即返回错误
-            return KADD_ERROR_INFERENCE_FAILED;
-        }
-        handle->api->ReleaseValue(input);
-
-        // 获取输出数据
-        float *data = NULL;
-        status = handle->api->GetTensorMutableData(output, (void **)&data);
-        if (status) {
-            handle->api->ReleaseStatus(status);
-            handle->api->ReleaseValue(output);
-            // 获取输出数据失败，立即返回错误
-            return KADD_ERROR_INFERENCE_FAILED;
-        }
-
-        // 将当前批次的结果复制到输出数组
-        // 假设输出形状为 [current_batch, 2]（每个样本输出2个值）
-        // 我们只需要第二个值（probability）
-        int output_stride = 2;  // 根据模型输出调整
-        for (int j = 0; j < current_batch; j++) {
-            probabilities[i + j] = data[j * output_stride + 1];
-        }
-
-        handle->api->ReleaseValue(output);
-        count += current_batch;
     }
 
     return KADD_SUCCESS;
 }
 
-void kadd_model_free(kadd_model_handle_t *handle) {
-    if (!handle) return;
-
-    if (handle->output_name) free(handle->output_name);
-    if (handle->memory_info) handle->api->ReleaseMemoryInfo(handle->memory_info);
-    if (handle->session) handle->api->ReleaseSession(handle->session);
+void kadd_model_free(kadd_model_handle_t *handle)
+{
+    if (!handle) {
+        return;
+    }
+    if (handle->input_name) {
+        free(handle->input_name);
+        handle->input_name = NULL;
+    }
+    if (handle->output_name) {
+        free(handle->output_name);
+        handle->output_name = NULL;
+    }
+    if (handle->memory_info) {
+        handle->api->ReleaseMemoryInfo(handle->memory_info);
+        handle->memory_info = NULL;
+    }
+    if (handle->session) {
+        handle->api->ReleaseSession(handle->session);
+        handle->session = NULL;
+    }
     free(handle);
 }

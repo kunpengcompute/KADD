@@ -1,4 +1,5 @@
 /**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  * @file kadd_seq_to_feature.c
  * @brief 特征转换接口实现
  *
@@ -26,35 +27,36 @@ static int sliding_window_distance_shift_fast(const int *seq, int seq_len, int w
 
     for (int d = 1; d < window_size; d++) {
         const int weight = window_size - d;
+        const int unroll_mask = SIMD_UNROLL_FACTOR-1;
         int i = 0;
-        const int limit = seq_len & ~3;
-        for (; i < limit; i += 4) {
+        const int limit = seq_len & ~unroll_mask;
+        for (; i < limit; i += SIMD_UNROLL_FACTOR) {
             weighted[i] = seq[i] * weight;
-            weighted[i + 1] = seq[i + 1] * weight;
-            weighted[i + 2] = seq[i + 2] * weight;
-            weighted[i + 3] = seq[i + 3] * weight;
+            weighted[i + SIMD_UNROLL_OFFSET_1] = seq[i + SIMD_UNROLL_OFFSET_1] * weight;
+            weighted[i + SIMD_UNROLL_OFFSET_2] = seq[i + SIMD_UNROLL_OFFSET_2] * weight;
+            weighted[i + SIMD_UNROLL_OFFSET_3] = seq[i + SIMD_UNROLL_OFFSET_3] * weight;
         }
         for (; i < seq_len; i++) {
             weighted[i] = seq[i] * weight;
         }
-        const int right_limit = (seq_len - d) & ~3;
+        const int right_limit = (seq_len - d) & ~unroll_mask;
         i = 0;
-        for (; i < right_limit; i += 4) {
-            result[i]     += weighted[i + d];
-            result[i + 1] += weighted[i + d + 1];
-            result[i + 2] += weighted[i + d + 2];
-            result[i + 3] += weighted[i + d + 3];
+        for (; i < right_limit; i += SIMD_UNROLL_FACTOR) {
+            result[i] += weighted[i + d];
+            result[i + SIMD_UNROLL_OFFSET_1] += weighted[i + d + SIMD_UNROLL_OFFSET_1];
+            result[i + SIMD_UNROLL_OFFSET_2] += weighted[i + d + SIMD_UNROLL_OFFSET_2];
+            result[i + SIMD_UNROLL_OFFSET_3] += weighted[i + d + SIMD_UNROLL_OFFSET_3];
         }
         for (; i < seq_len - d; i++) {
             result[i] += weighted[i + d];
         }
-        const int left_limit = (seq_len - d) & ~3;
+        const int left_limit = (seq_len - d) & ~unroll_mask;
         i = d;
-        for (; i < d + left_limit; i += 4) {
-            result[i]     += weighted[i - d];
-            result[i + 1] += weighted[i + 1 - d];
-            result[i + 2] += weighted[i + 2 - d];
-            result[i + 3] += weighted[i + 3 - d];
+        for (; i < d + left_limit; i += SIMD_UNROLL_FACTOR) {
+            result[i] += weighted[i - d];
+            result[i + SIMD_UNROLL_OFFSET_1] += weighted[i + SIMD_UNROLL_OFFSET_1 - d];
+            result[i + SIMD_UNROLL_OFFSET_2] += weighted[i + SIMD_UNROLL_OFFSET_2 - d];
+            result[i + SIMD_UNROLL_OFFSET_3] += weighted[i + SIMD_UNROLL_OFFSET_3 - d];
         }
         for (; i < seq_len; i++) {
             result[i] += weighted[i - d];
@@ -165,7 +167,9 @@ int kadd_seq_to_feature(const int *seq, int seq_len, int window_size,
     }
 
     // 映射到固定维度特征向量
-    for (int i = 0; i < feature_dim; i++) feature[i] = 0;
+    for (int i = 0; i < feature_dim; i++) {
+        feature[i] = 0;
+    }
     for (int i = 0; i < seq_len; i++) {
         if (seq[i] >= 0 && seq[i] < feature_dim) {
             feature[seq[i]] += result[i];
@@ -176,7 +180,8 @@ int kadd_seq_to_feature(const int *seq, int seq_len, int window_size,
     return 0;
 }
 
-int kadd_seq_to_feature_batch(kadd_feature_batch_t *batch) {
+int kadd_seq_to_feature_batch(kadd_feature_batch_t *batch)
+{
     if (batch == NULL) {
         return KADD_ERROR_NULL_PTR;
     }
@@ -192,15 +197,17 @@ int kadd_seq_to_feature_batch(kadd_feature_batch_t *batch) {
     // 设置默认批次大小
     int actual_batch_size = batch->batch_size;
     if (actual_batch_size <= 0) {
-        actual_batch_size = 64;
+        actual_batch_size = KADD_FEATURE_DEFAULT_BATCH_SIZE;
     }
-    if (actual_batch_size > 1024) {
-        actual_batch_size = 1024;
+    if (actual_batch_size > KADD_FEATURE_MAX_BATCH_SIZE) {
+        actual_batch_size = KADD_FEATURE_MAX_BATCH_SIZE;
     }
 
     // 初始化输出特征为0
     int total = batch->count * batch->feature_dim;
-    for (int i = 0; i < total; i++) batch->features[i] = 0;
+    for (int i = 0; i < total; i++) {
+        batch->features[i] = 0;
+    }
 
     // 分批处理
     for (int batch_start = 0; batch_start < batch->count; batch_start += actual_batch_size) {
@@ -224,7 +231,6 @@ int kadd_seq_to_feature_batch(kadd_feature_batch_t *batch) {
             // 调用单条特征提取
             int result = kadd_seq_to_feature(seq, seq_len, batch->window_size,
                                             feature, batch->feature_dim);
-
             if (result != 0) {
                 // 特征提取失败，立即返回错误
                 return result;
