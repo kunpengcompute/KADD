@@ -15,15 +15,9 @@
 #include "kadd_dfa_engine.h"
 #include "kadd_feature_engine.h"
 #include "kadd_ml_engine.h"
-#include "cJSON.h"
+#include "kadd_config_loader.h"
 
-/* ========== 默认配置常量 ========== */
-#define KADD_DEFAULT_FEATURE_DIM     28
-#define KADD_DEFAULT_WINDOW_SIZE     5
-#define KADD_DEFAULT_MAX_OUTPUT_DIM  8192
-#define KADD_DEFAULT_MAX_INPUT_LEN   8192
-#define KADD_MIN_BATCH_SIZE          64
-#define KADD_MAX_BATCH_SIZE          1024
+/* ========== 常量 ========== */
 #define KADD_ALIGN_BYTES             16
 
 /* ========== 内部结构体 ========== */
@@ -35,16 +29,6 @@ typedef struct {
     int max_output_dim;
     int max_input_length;
 } kadd_engine_init_params_t;
-
-/* 配置提取结果 */
-typedef struct {
-    char *model_path;
-    kadd_dfa_table_paths_t table_paths;
-    int feature_dim;
-    int window_size;
-    int max_output_dim;
-    int max_input_length;
-} kadd_config_result_t;
 
 /* 批处理缓冲区 */
 typedef struct {
@@ -112,6 +96,7 @@ static int allocate_engine_memory_pool(kadd_sqli_engine_t *e)
             free(e->float_feature_buffer);
             e->float_feature_buffer = NULL;
         }
+        fprintf(stderr, "[kadd_sqli] ERROR: Failed to allocate engine memory pool\n");
         return KADD_ERROR_OUT_OF_MEMORY;
     }
     return KADD_SUCCESS;
@@ -143,17 +128,36 @@ static void cleanup_sqli_batch_buffers(int **dfa_outputs, int *dfa_dims,
 
 /* ========== 公共接口 ========== */
 
+static void release_engine_buffers(kadd_sqli_engine_t *e)
+{
+    if (e->token_buffer) {
+        free(e->token_buffer);
+        e->token_buffer = NULL;
+    }
+    if (e->feature_buffer) {
+        free(e->feature_buffer);
+        e->feature_buffer = NULL;
+    }
+    if (e->float_feature_buffer) {
+        free(e->float_feature_buffer);
+        e->float_feature_buffer = NULL;
+    }
+}
+
 static int create_engine_internal(kadd_sqli_engine_t **engine,
                                    const kadd_dfa_table_paths_t *table_paths,
                                    const char *model_path, int feature_dim,
                                    int window_size, int max_output_dim, int max_input_length)
 {
     if (!engine || !table_paths || !model_path) {
+        fprintf(stderr, "[kadd_sqli] ERROR: Invalid parameters (engine=%s, table_paths=%s, model_path=%s)\n",
+                (engine ? "valid" : "NULL"), (table_paths ? "valid" : "NULL"), (model_path ? model_path : "NULL"));
         return KADD_ERROR_INVALID_INPUT;
     }
 
     kadd_sqli_engine_t *e = (kadd_sqli_engine_t *)calloc(1, sizeof(kadd_sqli_engine_t));
     if (!e) {
+        fprintf(stderr, "[kadd_sqli] ERROR: Failed to allocate sqli engine\n");
         return KADD_ERROR_OUT_OF_MEMORY;
     }
 
@@ -162,38 +166,24 @@ static int create_engine_internal(kadd_sqli_engine_t **engine,
     e->max_output_dim = max_output_dim;
     e->max_input_length = max_input_length;
 
-    /* 分配内存池 */
     int ret = allocate_engine_memory_pool(e);
     if (ret != KADD_SUCCESS) {
+        fprintf(stderr, "[kadd_sqli] ERROR: Failed to allocate engine memory pool\n");
         free(e);
         return ret;
     }
 
     if (kadd_dfa_engine_create(&e->dfa_engine, table_paths, e->max_input_length, e->max_output_dim) != 0) {
-        if (e->token_buffer) {
-            free(e->token_buffer);
-        }
-        if (e->feature_buffer) {
-            free(e->feature_buffer);
-        }
-        if (e->float_feature_buffer) {
-            free(e->float_feature_buffer);
-        }
+        fprintf(stderr, "[kadd_sqli] ERROR: Failed to create DFA engine\n");
+        release_engine_buffers(e);
         free(e);
         return KADD_SQLI_ERROR_DFA;
     }
 
     if (kadd_model_load(&e->ml_model, model_path, e->feature_dim) != 0) {
+        fprintf(stderr, "[kadd_sqli] ERROR: Failed to load ML model: %s\n", model_path);
         kadd_dfa_engine_free(e->dfa_engine);
-        if (e->token_buffer) {
-            free(e->token_buffer);
-        }
-        if (e->feature_buffer) {
-            free(e->feature_buffer);
-        }
-        if (e->float_feature_buffer) {
-            free(e->float_feature_buffer);
-        }
+        release_engine_buffers(e);
         free(e);
         return KADD_SQLI_ERROR_ML;
     }
@@ -202,146 +192,43 @@ static int create_engine_internal(kadd_sqli_engine_t **engine,
     return KADD_SUCCESS;
 }
 
-// 从配置文件读取 JSON 内容
-static int read_config_file_content(const char *config_file, char **out_content, long *out_size)
-{
-    if (!config_file || !out_content || !out_size) {
-        return KADD_ERROR_INVALID_INPUT;
-    }
-
-    FILE *fp = fopen(config_file, "r");
-    if (!fp) {
-        return KADD_ERROR_CONFIG;
-    }
-
-    if (fseek(fp, 0, SEEK_END) != 0) {
-        fclose(fp);
-        return KADD_ERROR_CONFIG;
-    }
-    long file_size = ftell(fp);
-    if (fseek(fp, 0, SEEK_SET) != 0) {
-        fclose(fp);
-        return KADD_ERROR_CONFIG;
-    }
-
-    if (file_size <= 0) {
-        fclose(fp);
-        return KADD_ERROR_CONFIG;
-    }
-
-    char *json_content = (char *)malloc(file_size + 1);
-    if (!json_content) {
-        fclose(fp);
-        return KADD_ERROR_OUT_OF_MEMORY;
-    }
-
-    size_t read_size = fread(json_content, 1, file_size, fp);
-    if (read_size != (size_t)file_size) {
-        free(json_content);
-        fclose(fp);
-        return KADD_ERROR_CONFIG;
-    }
-    if (ferror(fp)) {
-        free(json_content);
-        fclose(fp);
-        return KADD_ERROR_CONFIG;
-    }
-    json_content[read_size] = '\0';
-    if (fclose(fp) != 0) {
-        free(json_content);
-        return KADD_ERROR_CONFIG;
-    }
-
-    *out_content = json_content;
-    *out_size = file_size;
-    return KADD_SUCCESS;
-}
-
-// 从配置 JSON 提取配置参数
-static int extract_config_params(cJSON *root, kadd_config_result_t *result)
-{
-    if (!root || !result) {
-        return KADD_ERROR_INVALID_INPUT;
-    }
-
-    /* DFA 配置 */
-    cJSON *dfa_obj = cJSON_GetObjectItemCaseSensitive(root, "kadd_dfa_engine");
-    if (!dfa_obj) {
-        return KADD_ERROR_CONFIG;
-    }
-
-    cJSON *dfa_transition = cJSON_GetObjectItemCaseSensitive(dfa_obj, "transition_table_path");
-    cJSON *dfa_output = cJSON_GetObjectItemCaseSensitive(dfa_obj, "output_table_path");
-    cJSON *dfa_eod = cJSON_GetObjectItemCaseSensitive(dfa_obj, "eod_table_path");
-    if (!cJSON_IsString(dfa_transition) || !cJSON_IsString(dfa_output) || !cJSON_IsString(dfa_eod)) {
-        return KADD_ERROR_CONFIG;
-    }
-
-    /* ML 配置 */
-    cJSON *ml_obj = cJSON_GetObjectItemCaseSensitive(root, "kadd_ml_engine");
-    if (!ml_obj) {
-        return KADD_ERROR_CONFIG;
-    }
-
-    cJSON *ml_model = cJSON_GetObjectItemCaseSensitive(ml_obj, "model_path");
-    if (!cJSON_IsString(ml_model)) {
-        return KADD_ERROR_CONFIG;
-    }
-
-    cJSON *ml_dim = cJSON_GetObjectItemCaseSensitive(ml_obj, "feature_dim");
-    result->feature_dim = cJSON_IsNumber(ml_dim) ? (int)ml_dim->valuedouble : KADD_DEFAULT_FEATURE_DIM;
-
-    cJSON *ml_window = cJSON_GetObjectItemCaseSensitive(ml_obj, "window_size");
-    result->window_size = cJSON_IsNumber(ml_window) ? (int)ml_window->valuedouble : KADD_DEFAULT_WINDOW_SIZE;
-
-    cJSON *dfa_max_out = cJSON_GetObjectItemCaseSensitive(dfa_obj, "max_output_dim");
-    result->max_output_dim = cJSON_IsNumber(dfa_max_out) ? (int)dfa_max_out->valuedouble : KADD_DEFAULT_MAX_OUTPUT_DIM;
-
-    cJSON *dfa_max_in = cJSON_GetObjectItemCaseSensitive(dfa_obj, "max_input_length");
-    result->max_input_length = cJSON_IsNumber(dfa_max_in) ? (int)dfa_max_in->valuedouble : KADD_DEFAULT_MAX_INPUT_LEN;
-
-    result->model_path = ml_model->valuestring;
-    result->table_paths.transition_table_path = dfa_transition->valuestring;
-    result->table_paths.output_table_path = dfa_output->valuestring;
-    result->table_paths.eod_table_path = dfa_eod->valuestring;
-
-    return KADD_SUCCESS;
-}
-
 // 从配置文件创建 SQL 注入检测引擎
 int kadd_sqli_engine_create_from_file(kadd_sqli_engine_t **engine, const char *config_file)
 {
     if (!engine || !config_file) {
+        fprintf(stderr, "[kadd_sqli] ERROR: Invalid parameters (engine=%s, config_file=%s)\n",
+                (engine ? "valid" : "NULL"), (config_file ? config_file : "NULL"));
         return KADD_ERROR_INVALID_INPUT;
     }
 
-    char *json_content = NULL;
-    long file_size = 0;
-    int ret = read_config_file_content(config_file, &json_content, &file_size);
-    if (ret != KADD_SUCCESS) {
-        return ret;
-    }
-
-    cJSON *root = cJSON_Parse(json_content);
-    free(json_content);
-
-    if (!root) {
+    kadd_config_t config;
+    if (kadd_config_load(config_file, &config) != 0) {
+        fprintf(stderr, "[kadd_sqli] ERROR: Failed to load config file: %s\n", config_file);
         return KADD_ERROR_CONFIG;
     }
 
-    kadd_config_result_t config_result = {0};
+    kadd_dfa_table_paths_t table_paths = {
+        .transition_table_path = config.dfa.transition_table_path,
+        .output_table_path = config.dfa.output_table_path,
+        .eod_table_path = config.dfa.eod_table_path
+    };
 
-    ret = extract_config_params(root, &config_result);
-    if (ret != KADD_SUCCESS) {
-        cJSON_Delete(root);
-        return ret;
-    }
+    // sqli 配置段参数，如果 sqli 段没配则使用默认值
+    int feature_dim = config.sqli.feature_dim;
+    int window_size = config.sqli.window_size;
+    int max_output_dim = config.sqli.max_output_dim;
+    int max_input_length = config.sqli.max_input_length;
 
-    int result = create_engine_internal(engine, &config_result.table_paths,
-                                        config_result.model_path, config_result.feature_dim,
-                                        config_result.window_size, config_result.max_output_dim,
-                                        config_result.max_input_length);
-    cJSON_Delete(root);
+    // 如果 sqli 段没有 model_path，回退到 ml 配置段
+    const char *model_path = config.sqli.ml_model_path[0] != '\0'
+                             ? config.sqli.ml_model_path
+                             : config.ml.model_path;
+
+    int result = create_engine_internal(engine, &table_paths,
+                                        model_path, feature_dim,
+                                        window_size, max_output_dim,
+                                        max_input_length);
+    kadd_config_free(&config);
 
     return result;
 }
@@ -350,6 +237,8 @@ int kadd_sqli_engine_create_from_file(kadd_sqli_engine_t **engine, const char *c
 int kadd_sqli_detect(kadd_sqli_engine_t *engine, const char *input, float *probability)
 {
     if (!engine || !input || !probability) {
+        fprintf(stderr, "[kadd_sqli] ERROR: Invalid parameters (engine=%s, input=%s, probability=%s)\n",
+                (engine ? "valid" : "NULL"), (input ? "valid" : "NULL"), (probability ? "valid" : "NULL"));
         return KADD_ERROR_INVALID_INPUT;
     }
 
@@ -359,12 +248,14 @@ int kadd_sqli_detect(kadd_sqli_engine_t *engine, const char *input, float *proba
     int token_count = 0;
     if (kadd_dfa_engine_tokenize(engine->dfa_engine, input, strlen(input),
                                  engine->token_buffer, &token_count) != 0) {
+        fprintf(stderr, "[kadd_sqli] ERROR: DFA tokenize failed\n");
         return KADD_SQLI_ERROR_DFA;
     }
 
     /* 步骤 2: 特征提取 - 使用内存池 */
     if (kadd_seq_to_feature(engine->token_buffer, token_count, engine->window_size,
                              engine->feature_buffer, engine->feature_dim) != 0) {
+        fprintf(stderr, "[kadd_sqli] ERROR: Feature extraction failed\n");
         return KADD_SQLI_ERROR_FEATURE;
     }
 
@@ -376,6 +267,7 @@ int kadd_sqli_detect(kadd_sqli_engine_t *engine, const char *input, float *proba
     float prob = 0.0f;
     int ret = kadd_model_predict(engine->ml_model, engine->float_feature_buffer, &prob);
     if (ret != 0) {
+        fprintf(stderr, "[kadd_sqli] ERROR: ML prediction failed\n");
         return KADD_SQLI_ERROR_ML;
     }
 
@@ -388,6 +280,8 @@ static int allocate_batch_buffers(kadd_sqli_engine_t *engine, int batch_size,
                                    kadd_batch_buffers_t *buffers)
 {
     if (!engine || !buffers) {
+        fprintf(stderr, "[kadd_sqli] ERROR: Invalid parameters for allocate_batch_buffers (engine=%s, buffers=%s)\n",
+                (engine ? "valid" : "NULL"), (buffers ? "valid" : "NULL"));
         return KADD_ERROR_INVALID_INPUT;
     }
 
@@ -397,6 +291,8 @@ static int allocate_batch_buffers(kadd_sqli_engine_t *engine, int batch_size,
     float *float_features = (float *)malloc(batch_size * engine->feature_dim * sizeof(float));
 
     if (!dfa_outputs || !dfa_dims || !features || !float_features) {
+        fprintf(stderr, "[kadd_sqli] ERROR: Failed to allocate batch buffers (batch_size=%d, feature_dim=%d)\n",
+                batch_size, engine->feature_dim);
         cleanup_sqli_batch_buffers(dfa_outputs, dfa_dims, features, float_features, 0);
         return KADD_ERROR_OUT_OF_MEMORY;
     }
@@ -423,6 +319,7 @@ static int process_single_batch(kadd_batch_dfa_params_t *params)
 
     int dfa_result = kadd_dfa_engine_tokenize_batch(params->engine->dfa_engine, &dfa_batch);
     if (dfa_result != KADD_SUCCESS) {
+        fprintf(stderr, "[kadd_sqli] ERROR: Batch DFA tokenize failed (result=%d)\n", dfa_result);
         return KADD_SQLI_ERROR_DFA;
     }
 
@@ -439,6 +336,7 @@ static int process_single_batch(kadd_batch_dfa_params_t *params)
 
     int feat_result = kadd_seq_to_feature_batch(&feat_batch);
     if (feat_result != KADD_SUCCESS) {
+        fprintf(stderr, "[kadd_sqli] ERROR: Batch feature extraction failed (result=%d)\n", feat_result);
         return KADD_SQLI_ERROR_FEATURE;
     }
 
@@ -459,6 +357,7 @@ static int process_ml_batch_and_update(kadd_batch_ml_params_t *params,
     int ml_result = kadd_model_predict_batch(params->engine->ml_model, buffers->float_features,
                                                 params->current_batch, batch_probs, params->current_batch);
     if (ml_result != KADD_SUCCESS) {
+        fprintf(stderr, "[kadd_sqli] ERROR: Batch ML prediction failed (result=%d)\n", ml_result);
         return KADD_SQLI_ERROR_ML;
     }
 
@@ -477,12 +376,14 @@ static int init_batch_detect_params(int batch_size, int *out_actual_batch_size,
                                      float *probabilities, int count)
 {
     if (!out_actual_batch_size || !probabilities) {
+        fprintf(stderr, "[kadd_sqli] ERROR: Invalid batch detect params (out_batch_size=%s, probs=%s)\n",
+                (out_actual_batch_size ? "valid" : "NULL"), (probabilities ? "valid" : "NULL"));
         return KADD_ERROR_INVALID_INPUT;
     }
 
     *out_actual_batch_size = batch_size;
     if (*out_actual_batch_size <= 0) {
-        *out_actual_batch_size = KADD_MIN_BATCH_SIZE;
+        *out_actual_batch_size = KADD_DEFAULT_BATCH_SIZE;
     }
     if (*out_actual_batch_size > KADD_MAX_BATCH_SIZE) {
         *out_actual_batch_size = KADD_MAX_BATCH_SIZE;
@@ -550,7 +451,13 @@ int kadd_sqli_detect_batch(kadd_sqli_engine_t *engine, const char **inputs, int 
                             float *probabilities, int batch_size)
 {
     if (!engine || !inputs || !probabilities || count <= 0) {
+        fprintf(stderr, "[kadd_sqli] ERROR: Invalid batch parameters (engine=%s, inputs=%s, probs=%s, count=%d)\n",
+                (engine ? "valid" : "NULL"), (inputs ? "valid" : "NULL"), (probabilities ? "valid" : "NULL"), count);
         return KADD_ERROR_INVALID_INPUT;
+    }
+    if (count > KADD_CONFIG_MAX_SAMPLE_COUNT) {
+        fprintf(stderr, "[kadd_sqli] ERROR: Batch count %d exceeds limit %d\n", count, KADD_CONFIG_MAX_SAMPLE_COUNT);
+        return KADD_ERROR_INVALID_PARAM;
     }
 
     int actual_batch_size = 0;

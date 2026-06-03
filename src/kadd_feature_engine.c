@@ -8,8 +8,10 @@
  */
 
 #include "kadd_feature_engine.h"
-#include <string.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include "kadd_errors.h"
+#include "kadd_config_loader.h"
 
 #if defined(__aarch64__) && defined(__ARM_FEATURE_SVE)
 #include <arm_sve.h>
@@ -23,40 +25,43 @@
 static int sliding_window_distance_shift_fast(const int *seq, int seq_len, int window_size, int *result)
 {
     int *weighted = (int *)malloc(seq_len * sizeof(int));
-    if (!weighted) return KADD_ERROR_OUT_OF_MEMORY;
+    if (!weighted) {
+        fprintf(stderr, "[kadd_feature] ERROR: Failed to allocate weighted array (seq_len=%d)\n", seq_len);
+        return KADD_ERROR_OUT_OF_MEMORY;
+    }
 
     for (int d = 1; d < window_size; d++) {
         const int weight = window_size - d;
-        const int unroll_mask = SIMD_UNROLL_FACTOR-1;
+        const int unroll_mask = KADD_SIMD_UNROLL_FACTOR-1;
         int i = 0;
         const int limit = seq_len & ~unroll_mask;
-        for (; i < limit; i += SIMD_UNROLL_FACTOR) {
+        for (; i < limit; i += KADD_SIMD_UNROLL_FACTOR) {
             weighted[i] = seq[i] * weight;
-            weighted[i + SIMD_UNROLL_OFFSET_1] = seq[i + SIMD_UNROLL_OFFSET_1] * weight;
-            weighted[i + SIMD_UNROLL_OFFSET_2] = seq[i + SIMD_UNROLL_OFFSET_2] * weight;
-            weighted[i + SIMD_UNROLL_OFFSET_3] = seq[i + SIMD_UNROLL_OFFSET_3] * weight;
+            weighted[i + KADD_SIMD_UNROLL_OFFSET_1] = seq[i + KADD_SIMD_UNROLL_OFFSET_1] * weight;
+            weighted[i + KADD_SIMD_UNROLL_OFFSET_2] = seq[i + KADD_SIMD_UNROLL_OFFSET_2] * weight;
+            weighted[i + KADD_SIMD_UNROLL_OFFSET_3] = seq[i + KADD_SIMD_UNROLL_OFFSET_3] * weight;
         }
         for (; i < seq_len; i++) {
             weighted[i] = seq[i] * weight;
         }
         const int right_limit = (seq_len - d) & ~unroll_mask;
         i = 0;
-        for (; i < right_limit; i += SIMD_UNROLL_FACTOR) {
+        for (; i < right_limit; i += KADD_SIMD_UNROLL_FACTOR) {
             result[i] += weighted[i + d];
-            result[i + SIMD_UNROLL_OFFSET_1] += weighted[i + d + SIMD_UNROLL_OFFSET_1];
-            result[i + SIMD_UNROLL_OFFSET_2] += weighted[i + d + SIMD_UNROLL_OFFSET_2];
-            result[i + SIMD_UNROLL_OFFSET_3] += weighted[i + d + SIMD_UNROLL_OFFSET_3];
+            result[i + KADD_SIMD_UNROLL_OFFSET_1] += weighted[i + d + KADD_SIMD_UNROLL_OFFSET_1];
+            result[i + KADD_SIMD_UNROLL_OFFSET_2] += weighted[i + d + KADD_SIMD_UNROLL_OFFSET_2];
+            result[i + KADD_SIMD_UNROLL_OFFSET_3] += weighted[i + d + KADD_SIMD_UNROLL_OFFSET_3];
         }
         for (; i < seq_len - d; i++) {
             result[i] += weighted[i + d];
         }
         const int left_limit = (seq_len - d) & ~unroll_mask;
         i = d;
-        for (; i < d + left_limit; i += SIMD_UNROLL_FACTOR) {
+        for (; i < d + left_limit; i += KADD_SIMD_UNROLL_FACTOR) {
             result[i] += weighted[i - d];
-            result[i + SIMD_UNROLL_OFFSET_1] += weighted[i + SIMD_UNROLL_OFFSET_1 - d];
-            result[i + SIMD_UNROLL_OFFSET_2] += weighted[i + SIMD_UNROLL_OFFSET_2 - d];
-            result[i + SIMD_UNROLL_OFFSET_3] += weighted[i + SIMD_UNROLL_OFFSET_3 - d];
+            result[i + KADD_SIMD_UNROLL_OFFSET_1] += weighted[i + KADD_SIMD_UNROLL_OFFSET_1 - d];
+            result[i + KADD_SIMD_UNROLL_OFFSET_2] += weighted[i + KADD_SIMD_UNROLL_OFFSET_2 - d];
+            result[i + KADD_SIMD_UNROLL_OFFSET_3] += weighted[i + KADD_SIMD_UNROLL_OFFSET_3 - d];
         }
         for (; i < seq_len; i++) {
             result[i] += weighted[i - d];
@@ -73,7 +78,10 @@ static int sliding_window_distance_shift_fast(const int *seq, int seq_len, int w
 static int sliding_window_distance_sve(const int *seq, int seq_len, int window_size, int *result)
 {
     int *weighted = (int *)malloc(seq_len * sizeof(int));
-    if (!weighted) return KADD_ERROR_OUT_OF_MEMORY;
+    if (!weighted) {
+        fprintf(stderr, "[kadd_feature] ERROR: Failed to allocate weighted array (seq_len=%d)\n", seq_len);
+        return KADD_ERROR_OUT_OF_MEMORY;
+    }
 
     for (int d = 1; d < window_size; d++) {
         const int weight = window_size - d;
@@ -138,21 +146,33 @@ static int sliding_window_distance_sve(const int *seq, int seq_len, int window_s
 int kadd_seq_to_feature(const int *seq, int seq_len, int window_size,
                    int *feature, int feature_dim)
 {
-    if (!seq || !feature)
+    if (!seq || !feature) {
+        fprintf(stderr, "[kadd_feature] ERROR: NULL pointer (seq=%s, feature=%s)\n",
+                (seq ? "valid" : "NULL"), (feature ? "valid" : "NULL"));
         return KADD_ERROR_NULL_PTR;
+    }
     if (seq_len < 0 || window_size < 0 || feature_dim <= 0 ||
-        seq_len > MAX_SEQ_LEN || feature_dim > MAX_FEATURE_DIM)
+        seq_len > KADD_CONFIG_DEFAULT_MAX_INPUT_LENGTH || feature_dim > KADD_CONFIG_DEFAULT_MAX_OUTPUT_DIM) {
+        fprintf(stderr, "[kadd_feature] ERROR: Invalid parameters (seq_len=%d, window_size=%d, feature_dim=%d)\n",
+                seq_len, window_size, feature_dim);
         return KADD_ERROR_INVALID_PARAM;
+    }
 
     // 校验 seq[i] 范围：token ID 必须 < feature_dim
     for (int i = 0; i < seq_len; i++) {
-        if (seq[i] < 0 || seq[i] >= feature_dim)
+        if (seq[i] < 0 || seq[i] >= feature_dim) {
+            fprintf(stderr, "[kadd_feature] ERROR: Token value %d out of range at index %d (feature_dim=%d)\n",
+                    seq[i], i, feature_dim);
             return KADD_FEATURE_ERROR_VALUE_OUT_OF_RANGE;
+        }
     }
 
     // 分配临时结果数组
     int *result = (int *)calloc(seq_len, sizeof(int));
-    if (!result) return KADD_ERROR_OUT_OF_MEMORY;
+    if (!result) {
+        fprintf(stderr, "[kadd_feature] ERROR: Failed to allocate result array (seq_len=%d)\n", seq_len);
+        return KADD_ERROR_OUT_OF_MEMORY;
+    }
 
     // 计算滑窗距离
     int window_ret;
@@ -180,32 +200,59 @@ int kadd_seq_to_feature(const int *seq, int seq_len, int window_size,
     return 0;
 }
 
-int kadd_seq_to_feature_batch(kadd_feature_batch_t *batch)
+static int validate_feature_batch_params(const kadd_feature_batch_t *batch)
 {
     if (batch == NULL) {
+        fprintf(stderr, "[kadd_feature] ERROR: batch pointer is NULL\n");
         return KADD_ERROR_NULL_PTR;
     }
 
     if (batch->seqs == NULL || batch->seq_lens == NULL || batch->features == NULL) {
+        fprintf(stderr,
+                "[kadd_feature] ERROR: NULL batch array (seqs=%s, seq_lens=%s, features=%s)\n",
+                (batch->seqs ? "valid" : "NULL"),
+                (batch->seq_lens ? "valid" : "NULL"),
+                (batch->features ? "valid" : "NULL"));
         return KADD_ERROR_NULL_PTR;
     }
 
     if (batch->count <= 0 || batch->feature_dim <= 0 || batch->window_size <= 0) {
+        fprintf(stderr,
+                "[kadd_feature] ERROR: Invalid batch params (count=%d, feature_dim=%d, window_size=%d)\n",
+                batch->count, batch->feature_dim, batch->window_size);
+        return KADD_ERROR_INVALID_PARAM;
+    }
+    if (batch->count > KADD_CONFIG_MAX_SAMPLE_COUNT) {
+        fprintf(stderr,
+                "[kadd_feature] ERROR: Batch count %d exceeds limit %d\n",
+                batch->count, KADD_CONFIG_MAX_SAMPLE_COUNT);
+        return KADD_ERROR_INVALID_PARAM;
+    }
+    if (batch->feature_dim > KADD_CONFIG_DEFAULT_MAX_OUTPUT_DIM) {
+        fprintf(stderr,
+                "[kadd_feature] ERROR: Feature dim %d exceeds limit %d\n",
+                batch->feature_dim, KADD_CONFIG_DEFAULT_MAX_OUTPUT_DIM);
         return KADD_ERROR_INVALID_PARAM;
     }
 
-    // 设置默认批次大小
-    int actual_batch_size = batch->batch_size;
-    if (actual_batch_size <= 0) {
-        actual_batch_size = KADD_FEATURE_DEFAULT_BATCH_SIZE;
+    return KADD_SUCCESS;
+}
+
+int kadd_seq_to_feature_batch(kadd_feature_batch_t *batch)
+{
+    int ret = validate_feature_batch_params(batch);
+    if (ret != KADD_SUCCESS) {
+        return ret;
     }
-    if (actual_batch_size > KADD_FEATURE_MAX_BATCH_SIZE) {
-        actual_batch_size = KADD_FEATURE_MAX_BATCH_SIZE;
+
+    int actual_batch_size = batch->batch_size;
+    if (actual_batch_size <= 0 || actual_batch_size > KADD_MAX_BATCH_SIZE) {
+        actual_batch_size = KADD_DEFAULT_BATCH_SIZE;
     }
 
     // 初始化输出特征为0
-    int total = batch->count * batch->feature_dim;
-    for (int i = 0; i < total; i++) {
+    size_t total = (size_t)batch->count * (size_t)batch->feature_dim;
+    for (size_t i = 0; i < total; i++) {
         batch->features[i] = 0;
     }
 
@@ -221,7 +268,8 @@ int kadd_seq_to_feature_batch(kadd_feature_batch_t *batch)
             int seq_len = batch->seq_lens[idx];
 
             if (seq == NULL || seq_len <= 0) {
-                // NULL 序列或无效长度，返回错误
+                fprintf(stderr, "[kadd_feature] ERROR: Invalid sequence at index %d (seq=%s, seq_len=%d)\n",
+                        idx, (seq ? "valid" : "NULL"), seq_len);
                 return KADD_ERROR_INVALID_INPUT;
             }
 

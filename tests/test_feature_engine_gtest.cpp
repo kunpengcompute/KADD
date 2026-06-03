@@ -49,6 +49,8 @@ constexpr double kPerfLargeMinOps = 1000.0;
 constexpr double kPerfSVEMinOps = 5000.0;
 constexpr double kNanosPerMicro = 1000.0;
 constexpr double kMicrosecondsPerSecond = 1000000.0;
+constexpr int MAX_FEATURE_DIM = KADD_CONFIG_DEFAULT_MAX_OUTPUT_DIM;
+constexpr int MAX_SEQ_LEN = KADD_CONFIG_DEFAULT_MAX_INPUT_LENGTH;
 
 // ========== 测试夹具 ==========
 class FeatureEngineTest : public ::testing::Test {
@@ -624,7 +626,7 @@ TEST_F(FeatureEngineTest, Performance_MediumSequence)
 {
     std::vector<int> seq(kSeqLen100);
     for (size_t i = 0; i < seq.size(); i++) {
-        seq[i] = i % kMaxRand255;
+        seq[i] = i % config.ml.feature_dim;
     }
 
     std::vector<int> feature(config.ml.feature_dim, 0);
@@ -718,16 +720,16 @@ TEST_F(FeatureEngineTest, Performance_VariousWindowSizes)
 
 TEST_F(FeatureEngineTest, Performance_VariousFeatureDims)
 {
-    std::vector<int> seq(kSeqLen200);
-    for (size_t i = 0; i < seq.size(); i++) {
-        seq[i] = i % kTokenRange20;
-    }
-
     std::cout << "\n[性能测试] 不同特征维度性能测试:" << std::endl;
 
     std::vector<int> feature_dims = {10, 28, 50, 100, 200, 300};
 
     for (int feature_dim : feature_dims) {
+        std::vector<int> seq(kSeqLen200);
+        for (size_t i = 0; i < seq.size(); i++) {
+            seq[i] = i % feature_dim;
+        }
+
         std::vector<int> feature(feature_dim, 0);
 
         const int iterations = kPerfLargeIterations;

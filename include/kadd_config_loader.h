@@ -7,17 +7,25 @@
 #ifndef KADD_CONFIG_LOADER_H
 #define KADD_CONFIG_LOADER_H
 
-#include "kadd_dfa_engine.h"
-#include "kadd_ml_engine.h"
-#include "kadd_sqli_engine.h"
-#include "kadd_feature_engine.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /* 配置结构中路径字段的缓冲区大小 */
 #define KADD_CONFIG_PATH_MAX_LEN 512
+
+/* ========== 批处理配置常量 ========== */
+#define KADD_CONFIG_MAX_SAMPLE_COUNT 10000000      /* 批处理最大样本数（防止 int 溢出） */
+
+/* ========== 批处理大小约束 ========== */
+#define KADD_DEFAULT_BATCH_SIZE   64               /* 默认批次大小 */
+#define KADD_MAX_BATCH_SIZE       1024             /* 最大批次大小 */
+
+/* ========== 配置项默认值 ========== */
+#define KADD_CONFIG_DEFAULT_MAX_INPUT_LENGTH 300
+#define KADD_CONFIG_DEFAULT_MAX_OUTPUT_DIM   300
+#define KADD_CONFIG_DEFAULT_FEATURE_DIM      28
+#define KADD_CONFIG_DEFAULT_WINDOW_SIZE      5
 
 /* ========== DFA引擎配置 ========== */
 

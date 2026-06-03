@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "kadd_errors.h"
+#include "kadd_config_loader.h"
 #include "onnxruntime_c_api.h"
 
 /* ========== 内部结构体 ========== */
@@ -28,7 +29,6 @@ struct kadd_model_handle_t {
 static OrtEnv *g_ort_env = NULL;
 static const OrtApi *g_ort_api = NULL;
 
-#define KADD_INFERENCE_MAX_BATCH_SIZE 1024
 #define KADD_ORT_API_MIN_VERSION 15
 #define KADD_MODEL_OUTPUT_CLASS_NUM 2
 #define KADD_ORT_LOG_SEVERITY_ERROR 2
@@ -112,6 +112,8 @@ static int config_session_options(const OrtApi *api, OrtSessionOptions **options
             const char *err_msg = (const char *)api->GetErrorMessage(status);
             fprintf(stderr, "[kadd_ml] ERROR: Failed to create session options: %s\n", err_msg);
             api->ReleaseStatus(status);
+        } else {
+            fprintf(stderr, "[kadd_ml] ERROR: Session options is NULL without error status\n");
         }
         return KADD_ERROR;
     }
@@ -193,6 +195,8 @@ static int get_io_allocator(const OrtApi *api, OrtAllocator **allocator_out)
     OrtStatus *status = api->GetAllocatorWithDefaultOptions(&allocator);
 
     if (status) {
+        const char *err_msg = api->GetErrorMessage ? (const char *)api->GetErrorMessage(status) : "unknown";
+        fprintf(stderr, "[kadd_ml] ERROR: Failed to get IO allocator: %s\n", err_msg);
         if (api->ReleaseStatus) {
             api->ReleaseStatus(status);
         }
@@ -200,6 +204,7 @@ static int get_io_allocator(const OrtApi *api, OrtAllocator **allocator_out)
     }
 
     if (!allocator) {
+        fprintf(stderr, "[kadd_ml] ERROR: Allocator is NULL after GetAllocatorWithDefaultOptions\n");
         return KADD_ERROR;
     }
 
@@ -256,6 +261,47 @@ static int set_default_name(char *first_name, const char *default_name, char **t
  * @param matched_name_out 输出匹配的名称
  * @return 找到匹配返回 KADD_SUCCESS,未找到返回 KADD_ERROR
  */
+static int try_match_single_io_name(kadd_model_handle_t *handle,
+                                     OrtAllocator *allocator,
+                                     NameGetFunc get_func,
+                                     const char *patterns[],
+                                     size_t idx,
+                                     char **first_name,
+                                     char **matched_name_out)
+{
+    char *name = NULL;
+    OrtStatus *name_status = get_func(handle->session, idx, allocator, &name);
+
+    if (name_status || !name) {
+        if (name_status) {
+            handle->api->ReleaseStatus(name_status);
+        }
+        return 0;
+    }
+
+    if (*first_name == NULL) {
+        *first_name = strdup(name);
+        if (!*first_name) {
+            fprintf(stderr, "[kadd_ml] ERROR: Failed to duplicate IO name\n");
+            safe_free_ort_alloc(handle->api, allocator, name);
+            return -1;
+        }
+    }
+
+    if (is_name_matched(name, patterns)) {
+        *matched_name_out = strdup(name);
+        safe_free_ort_alloc(handle->api, allocator, name);
+        if (!(*matched_name_out)) {
+            fprintf(stderr, "[kadd_ml] ERROR: Failed to duplicate matched IO name\n");
+            return -1;
+        }
+        return 1;
+    }
+
+    safe_free_ort_alloc(handle->api, allocator, name);
+    return 0;
+}
+
 static int find_matched_name(kadd_model_handle_t *handle,
                               NameCountFunc count_func,
                               NameGetFunc get_func,
@@ -266,59 +312,34 @@ static int find_matched_name(kadd_model_handle_t *handle,
     OrtAllocator *allocator = NULL;
     char *first_name = NULL;
     size_t num_items = 0;
-    int result = KADD_ERROR;
 
-    // 获取 allocator
     if (get_io_allocator(handle->api, &allocator) != KADD_SUCCESS) {
+        fprintf(stderr, "[kadd_ml] ERROR: Failed to get allocator for IO name detection\n");
         return KADD_ERROR;
     }
 
-    // 获取数量
     OrtStatus *count_status = count_func(handle->session, &num_items);
     if (count_status) {
+        const char *err_msg = (const char *)handle->api->GetErrorMessage(count_status);
+        fprintf(stderr, "[kadd_ml] ERROR: Failed to get IO count: %s\n", err_msg);
         handle->api->ReleaseStatus(count_status);
         return KADD_ERROR;
     }
 
-    // 遍历查找匹配的名称
+    int result = KADD_ERROR;
     for (size_t i = 0; i < num_items; i++) {
-        char *name = NULL;
-        OrtStatus *name_status = get_func(handle->session, i, allocator, &name);
-
-        if (name_status || !name) {
-            if (name_status) {
-                handle->api->ReleaseStatus(name_status);
-            }
-            continue;
-        }
-
-        // 保存第一个名称
-        if (first_name == NULL) {
-            first_name = strdup(name);
-            if (!first_name) {
-                safe_free_ort_alloc(handle->api, allocator, name);
-                result = KADD_ERROR;
-                goto cleanup;
-            }
-        }
-
-        // 检查模式匹配
-        if (is_name_matched(name, patterns)) {
-            *matched_name_out = strdup(name);
-            safe_free_ort_alloc(handle->api, allocator, name);
-
-            if (!(*matched_name_out)) {
-                result = KADD_ERROR;
-            } else {
-                result = KADD_SUCCESS;
-            }
+        int match = try_match_single_io_name(handle, allocator, get_func,
+                                              patterns, i, &first_name, matched_name_out);
+        if (match == 1) {
+            result = KADD_SUCCESS;
             goto cleanup;
         }
-
-        safe_free_ort_alloc(handle->api, allocator, name);
+        if (match < 0) {
+            result = KADD_ERROR;
+            goto cleanup;
+        }
     }
 
-    // 未找到匹配项,返回第一个名称
     *first_name_out = first_name;
     return KADD_ERROR;
 
@@ -531,7 +552,7 @@ static int infer_single_batch(kadd_model_handle_t *handle, const float *batch_fe
     OrtStatus *status = handle->api->CreateTensorWithDataAsOrtValue(
         handle->memory_info,
         (void *)batch_features,
-        current_batch * handle->feature_dim * sizeof(float),
+        (size_t)current_batch * handle->feature_dim * sizeof(float),
         shape, 2,
         ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT,
         &input
@@ -597,16 +618,27 @@ int kadd_model_predict_batch(kadd_model_handle_t *handle, const float *features,
                 n, batch_size);
         return KADD_ERROR_INVALID_PARAM;
     }
-    // 限制 batch_size 范围，防止过大或过小
+    if (n > KADD_CONFIG_MAX_SAMPLE_COUNT) {
+        fprintf(stderr, "[kadd_ml] ERROR: Sample count %d exceeds limit %d\n",
+                n, KADD_CONFIG_MAX_SAMPLE_COUNT);
+        return KADD_ERROR_INVALID_PARAM;
+    }
+    if (handle->feature_dim > KADD_CONFIG_DEFAULT_MAX_OUTPUT_DIM) {
+        fprintf(stderr,
+                "[kadd_ml] ERROR: Feature dim %d exceeds limit %d\n",
+                handle->feature_dim, KADD_CONFIG_DEFAULT_MAX_OUTPUT_DIM);
+        return KADD_ERROR_INVALID_PARAM;
+    }
+
     int effective_batch = batch_size;
-    if (effective_batch > KADD_INFERENCE_MAX_BATCH_SIZE) {
-        effective_batch = KADD_INFERENCE_MAX_BATCH_SIZE;  // 最大批次限制
+    if (effective_batch <= 0 || effective_batch > KADD_MAX_BATCH_SIZE) {
+        effective_batch = KADD_DEFAULT_BATCH_SIZE;
     }
 
     // 分块批量处理
     for (int i = 0; i < n; i += effective_batch) {
         int current_batch = (i + effective_batch < n) ? effective_batch : (n - i);
-        const float *batch_features = features + i * handle->feature_dim;
+        const float *batch_features = features + (size_t)i * handle->feature_dim;
 
         if (infer_single_batch(handle, batch_features, current_batch, probabilities + i) != KADD_SUCCESS) {
             fprintf(stderr, "[kadd_ml] ERROR: Batch inference failed at chunk %d (batch=%d, total=%d)\n",
