@@ -34,5 +34,6 @@ mkdir -p build && cd build
 cmake -DUSE_SYSTEM_LIBS=OFF -DKADD_OPTIMIZE=ON -DCMAKE_BUILD_TYPE=Release ..
 cmake --build .
 
-# 运行测试
+# 运行测试（设置 LD_LIBRARY_PATH 以找到动态库）
+export LD_LIBRARY_PATH=$(pwd)/src:$(pwd)/../third_party/onnxruntime/lib:$LD_LIBRARY_PATH
 ctest --verbose

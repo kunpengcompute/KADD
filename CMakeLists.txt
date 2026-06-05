@@ -32,6 +32,11 @@ set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,relro,-z,now"
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,noexecstack")
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,noexecstack")
 
+# 禁用 Rpath 和 Runpath（防止暴露构建路径信息）
+set(CMAKE_SKIP_RPATH TRUE)
+set(CMAKE_SKIP_BUILD_RPATH TRUE)
+set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
+
 # 应用到全局编译选项
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SECURE_COMPILE_FLAGS}")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SECURE_COMPILE_FLAGS}")
@@ -83,6 +88,13 @@ if(KADD_OPTIMIZE)
     add_definitions(-DKADD_OPTIMIZE)
     set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O3 -DNDEBUG")
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG")
+endif()
+
+# Strip - Release 构建时剥离符号信息
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -s")
+    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -s")
+    message(STATUS "Strip symbols enabled for Release build")
 endif()
 
 # ARM SVE 加速选项
@@ -172,10 +184,6 @@ endif()
 get_filename_component(ONNXRUNTIME_LIB_DIR ${ONNXRUNTIME_LIBRARIES} DIRECTORY)
 message(STATUS "Found ONNX Runtime: ${ONNXRUNTIME_LIBRARIES}")
 
-# 将 ONNX Runtime 库目录加入可执行文件 RPATH，确保运行时能找到 libonnxruntime.so
-list(APPEND CMAKE_BUILD_RPATH "${ONNXRUNTIME_LIB_DIR}")
-list(APPEND CMAKE_INSTALL_RPATH "${ONNXRUNTIME_LIB_DIR}")
-
 # ============================================================================
 # cJSON 依赖
 # ============================================================================
@@ -249,11 +257,13 @@ if(BUILD_TESTS)
             add_library(gtest STATIC "${gtest_source}")
             target_include_directories(gtest PUBLIC "${GTEST_INCLUDE_DIR}")
             target_include_directories(gtest PRIVATE "${gtest_path}")  # 为 #include "src/xxx.cc" 提供路径
+            # gtest 自动继承全局 CMAKE_CXX_FLAGS 中的安全编译选项
 
             add_library(gtest_main STATIC "${gtest_path}/src/gtest_main.cc")
             target_include_directories(gtest_main PUBLIC "${GTEST_INCLUDE_DIR}")
             target_include_directories(gtest_main PRIVATE "${gtest_path}")  # 为 gtest_main.cc 的 include 提供
             target_link_libraries(gtest_main PUBLIC gtest)
+            # gtest_main 自动继承全局 CMAKE_CXX_FLAGS 中的安全编译选项
         else()
             message(WARNING "Google Test not found! Tests will be disabled.")
             set(BUILD_TESTS OFF)
@@ -267,6 +277,29 @@ endif()
 include_directories("${CMAKE_SOURCE_DIR}/include")
 if(CJSON_IS_THIRD_PARTY)
     include_directories("${CJSON_INCLUDE_DIRS}")
+endif()
+
+# ============================================================================
+# FUZZ 测试支持检查（全局变量，供 tests/CMakeLists.txt 使用）
+# ============================================================================
+# ARM环境FUZZ测试支持（优先使用Clang）
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    # Clang环境 - 原生支持LibFuzzer
+    set(FUZZ_TESTS_AVAILABLE TRUE CACHE BOOL "LibFuzzer tests available" FORCE)
+    message(STATUS "Clang detected - FUZZ tests will be built")
+elseif(ENABLE_ARM_FUZZ)
+    # ARM环境强制启用FUZZ测试
+    set(FUZZ_TESTS_AVAILABLE TRUE CACHE BOOL "LibFuzzer tests available (ARM)" FORCE)
+    message(STATUS "ARM FUZZ enabled - tests will build on target platform")
+else()
+    set(FUZZ_TESTS_AVAILABLE FALSE CACHE BOOL "LibFuzzer tests available" FORCE)
+    if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
+        message(STATUS "GCC detected - FUZZ tests skipped")
+        message(STATUS "  ARM platform: use Clang for best results")
+        message(STATUS "  Or enable: cmake -DENABLE_ARM_FUZZ=ON ..")
+    else()
+        message(STATUS "FUZZ tests skipped - ARM platform requires Clang")
+    endif()
 endif()
 
 # ============================================================================
@@ -296,4 +329,20 @@ message(STATUS "  Dependencies:")
 message(STATUS "    ONNX Runtime:  ${ONNXRUNTIME_LIBRARIES}")
 message(STATUS "    cJSON:         ${CJSON_FOUND}")
 message(STATUS "    Google Test:   ${GTest_FOUND}")
+message(STATUS "")
+message(STATUS "  Testing:")
+message(STATUS "    Unit Tests:    ${BUILD_TESTS}")
+message(STATUS "    FUZZ Tests:    ${FUZZ_TESTS_AVAILABLE}")
+if(FUZZ_TESTS_AVAILABLE)
+    message(STATUS "      Available: make fuzz-short|fuzz-medium|fuzz-long|fuzz-asan-real")
+endif()
+if(BUILD_TESTS)
+    message(STATUS "")
+    message(STATUS "  To run tests, set LD_LIBRARY_PATH:")
+    message(STATUS "    export LD_LIBRARY_PATH=${ONNXRUNTIME_LIB_DIR}:$LD_LIBRARY_PATH")
+    if(CJSON_FOUND AND NOT CJSON_IS_THIRD_PARTY)
+        get_filename_component(CJSON_LIB_DIR ${CJSON_LIBRARIES} DIRECTORY)
+        message(STATUS "    export LD_LIBRARY_PATH=${CJSON_LIB_DIR}:$LD_LIBRARY_PATH")
+    endif()
+endif()
 message(STATUS "============================================================")

@@ -37,21 +37,22 @@ function(add_kadd_gtest TEST_NAME SOURCE_FILE)
     add_executable(${TEST_NAME} ${SOURCE_FILE})
     target_compile_features(${TEST_NAME} PRIVATE cxx_std_17)
 
-    # 安全编译选项（测试可执行文件）
-    target_compile_options(${TEST_NAME} PRIVATE
-        -fPIE                   # PIE（可执行文件）
-        -fstack-protector-strong # Stack Protection
-        -Wformat -Wformat-security # Format String
-        -ftrapv                 # 整数溢出检查
-    )
+    # 安全编译选项继承自父 CMakeLists.txt 的 CMAKE_C_FLAGS/CMAKE_CXX_FLAGS
+    # 包含: -fPIC -fPIE -fstack-protector-strong -Wformat -Wformat-security -ftrapv
+    # 链接选项继承自 CMAKE_EXE_LINKER_FLAGS: -Wl,-z,relro,-z,now
 
-    # RELRO 和 BIND_NOW
-    set_target_properties(${TEST_NAME} PROPERTIES
-        LINK_FLAGS "-Wl,-z,relro,-z,now"
+    # 链接必要的引擎库（直接链接动态库，避免重复编译）
+    target_link_libraries(${TEST_NAME} PRIVATE
+        kadd_dfa_engine
+        kadd_feature_engine
+        kadd_ml_engine
     )
-
-    # 链接必要的引擎库
-    target_link_libraries(${TEST_NAME} PRIVATE kadd_other_engines)
+    if(CJSON_FOUND)
+        target_link_libraries(${TEST_NAME} PRIVATE
+            kadd_sqli_engine
+            kadd_config_loader
+        )
+    endif()
 
     target_include_directories(${TEST_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/include)
 
@@ -87,15 +88,7 @@ function(add_kadd_gtest TEST_NAME SOURCE_FILE)
 
     add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
 
-    # 设置 RPATH 以便运行时找到 libonnxruntime.so 和 libcjson.so
-    if(UNIX)
-        # 获取 cJSON 库目录
-        get_filename_component(CJSON_LIB_DIR ${CJSON_LIBRARIES} DIRECTORY)
-        set_target_properties(${TEST_NAME} PROPERTIES
-            INSTALL_RPATH "$ORIGIN:${ONNXRUNTIME_LIB_DIR}:${CJSON_LIB_DIR}:/usr/lib:/usr/lib64"
-            BUILD_WITH_INSTALL_RPATH TRUE
-        )
-    endif()
+    # RPATH 已移除，运行测试前需要设置 LD_LIBRARY_PATH
 endfunction()
 
 # ============================================================================
@@ -107,7 +100,13 @@ if(ENABLE_CODE_COVERAGE)
         COMMAND ${CMAKE_COMMAND} -E chdir ${CMAKE_BINARY_DIR}
             lcov --capture --base-directory ${CMAKE_SOURCE_DIR} --directory ${CMAKE_BINARY_DIR} --output-file coverage.info
         COMMAND ${CMAKE_COMMAND} -E chdir ${CMAKE_BINARY_DIR}
-            lcov --remove coverage.info '/usr/*' '${CMAKE_BINARY_DIR}/*' --output-file coverage.info
+            lcov --remove coverage.info
+                '/usr/*'
+                '*third_party/*'
+                '*tests/*'
+                '*include/*'
+                '*tools/*'
+                --output-file coverage.info
         COMMAND ${CMAKE_COMMAND} -E chdir ${CMAKE_BINARY_DIR}
             genhtml coverage.info --output-directory coverage_html
         COMMENT "Run tests and generate code coverage report"
@@ -126,22 +125,89 @@ endif()
 # 测试程序
 # ============================================================================
 
-# DFA 引擎测试
-add_kadd_gtest(dfa_engine_test test_dfa_engine_gtest.cpp)
+if(FUZZ_TESTS_AVAILABLE)
+    # ----------------------------------------------------------------------------
+    # FUZZ 测试 (Clang 编译器时自动启用)
+    # ----------------------------------------------------------------------------
+    # 创建 kadd_fuzzer 可执行文件
+    add_executable(kadd_fuzzer
+        fuzz/kadd_fuzzer.cpp
+        fuzz/fuzz_utils.cpp
+    )
 
-# ML 引擎测试
-add_kadd_gtest(ml_engine_test test_ml_engine_gtest.cpp)
+    target_compile_features(kadd_fuzzer PRIVATE cxx_std_17)
 
-# Feature 引擎测试
-add_kadd_gtest(feature_engine_test test_feature_engine_gtest.cpp)
+    # LibFuzzer 编译和链接选项
+    # 安全选项继承自 CMAKE_C_FLAGS/CMAKE_CXX_FLAGS，只需添加 fuzzer 特定选项
+    target_compile_options(kadd_fuzzer PRIVATE
+        -fsanitize=fuzzer
+    )
+    target_link_options(kadd_fuzzer PRIVATE
+        -fsanitize=fuzzer
+    )
 
-# SQLi 引擎测试
-add_kadd_gtest(sqli_engine_test test_sqli_engine_gtest.cpp)
+    # RELRO 和 BIND_NOW 继承自 CMAKE_EXE_LINKER_FLAGS: -Wl,-z,relro,-z,now
 
-# Config Loader 测试
-add_kadd_gtest(config_loader_test test_config_loader_gtest.cpp)
+    # 链接必要的引擎库（直接链接动态库，避免重复编译）
+    target_link_libraries(kadd_fuzzer PRIVATE
+        kadd_dfa_engine
+        kadd_feature_engine
+        kadd_ml_engine
+    )
+    if(CJSON_FOUND)
+        target_link_libraries(kadd_fuzzer PRIVATE
+            kadd_sqli_engine
+            kadd_config_loader
+        )
+    endif()
 
-message(STATUS "Tests configured: dfa_engine_test, ml_engine_test, feature_engine_test, sqli_engine_test, config_loader_test")
-if(ENABLE_CODE_COVERAGE)
-    message(STATUS "  Run 'make coverage' after tests to generate report")
+    target_include_directories(kadd_fuzzer PRIVATE ${CMAKE_SOURCE_DIR}/include)
+
+    # ONNX Runtime
+    target_link_libraries(kadd_fuzzer PRIVATE ${ONNXRUNTIME_LIBRARIES})
+    target_include_directories(kadd_fuzzer PRIVATE ${ONNXRUNTIME_INCLUDE_DIRS})
+
+    # cJSON
+    if(CJSON_FOUND)
+        if(CJSON_IS_THIRD_PARTY)
+            target_sources(kadd_fuzzer PRIVATE ${CJSON_LIBRARIES})
+        else()
+            target_link_libraries(kadd_fuzzer PRIVATE ${CJSON_LIBRARIES})
+            target_include_directories(kadd_fuzzer PRIVATE ${CJSON_INCLUDE_DIRS})
+        endif()
+    endif()
+
+    # RPATH 已移除，运行测试前需要设置 LD_LIBRARY_PATH
+
+    # 添加资源复制依赖
+    add_dependencies(kadd_fuzzer copy_test_resources)
+
+    message(STATUS "FUZZ tests configured: kadd_fuzzer")
+    message(STATUS "  Run: cd tests && ./kadd_fuzzer assets/fuzz_corpus -runs=10000")
+else()
+    # ----------------------------------------------------------------------------
+    # GTest 单元测试 (GCC 编译器时自动启用)
+    # ----------------------------------------------------------------------------
+
+    # DFA 引擎测试
+    add_kadd_gtest(dfa_engine_test test_dfa_engine_gtest.cpp)
+
+    # ML 引擎测试
+    add_kadd_gtest(ml_engine_test test_ml_engine_gtest.cpp)
+
+    # Feature 引擎测试
+    add_kadd_gtest(feature_engine_test test_feature_engine_gtest.cpp)
+
+    # SQLi 引擎测试
+    add_kadd_gtest(sqli_engine_test test_sqli_engine_gtest.cpp)
+
+    # Config Loader 测试
+    add_kadd_gtest(config_loader_test test_config_loader_gtest.cpp)
+
+    message(STATUS "Tests configured: dfa_engine_test, ml_engine_test, feature_engine_test, sqli_engine_test, config_loader_test")
+    message(STATUS "  To run tests: cd tests && ctest --output-on-failure")
+    message(STATUS "  Or run individual tests: ./tests/dfa_engine_test")
+    if(ENABLE_CODE_COVERAGE)
+        message(STATUS "  Run 'make coverage' after tests to generate report")
+    endif()
 endif()

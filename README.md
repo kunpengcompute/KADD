@@ -1,12 +1,10 @@
 # KADD SQL 注入检测引擎
 
-
-
 ## 🚀 快速开始
 
 ### 前置要求
 
-- **编译器**: GCC 10+ / Clang
+- **编译器**: Clang 12+ / GCC 11+
 - **CMake**: 3.16+
 - **依赖**: ONNX Runtime、cJSON、Google Test（可选）
 
@@ -18,7 +16,7 @@
 
 ```bash
 # 一键构建（下载依赖 + 编译）
-./build.sh
+chmod +x build.sh && ./build.sh
 
 # 或手动构建
 mkdir -p build && cd build
@@ -26,11 +24,13 @@ cmake -DUSE_SYSTEM_LIBS=OFF -DKADD_OPTIMIZE=ON -DCMAKE_BUILD_TYPE=Release ..
 cmake --build .
 
 # 运行测试
+export LD_LIBRARY_PATH=$(pwd)/src:$LD_LIBRARY_PATH
 ctest --verbose
 
 # 生成 UT 覆盖率报告（需安装 lcov）
 cmake -DUSE_SYSTEM_LIBS=OFF -DKADD_OPTIMIZE=ON -DENABLE_CODE_COVERAGE=ON -DCMAKE_BUILD_TYPE=Release ..
 cmake --build .
+ctest --output-on-failure
 make coverage
 ```
 
@@ -75,6 +75,53 @@ int main() {
 ## 📚 文档
 
 - [第三方库安装指南](docs/DEPENDENCIES.md) - 依赖安装说明
+
+## 🔬 FUZZ 测试
+
+KADD 项目集成了 LibFuzzer 进行自动化模糊测试（ARM平台优化）。
+
+> **注意：** FUZZ 测试需要 Clang 编译器（LibFuzzer 不支持 GCC）
+
+### 测试覆盖
+
+- **SQLi 引擎**：各种注入模式、编码绕过、边界情况
+- **DFA 引擎**：特殊字符、超长输入、空指针处理
+- **Feature 引擎**：随机序列、负值序列、批量处理边界
+- **ML 引擎**：异常特征向量、批处理大小边界、内存泄漏
+
+### 覆盖率报告
+
+LibFuzzer 测试支持生成代码覆盖率报告。
+
+#### 生成覆盖率报告
+
+```bash
+# 1. 使用 Clang 编译（必需）
+mkdir build_fuzz && cd build_fuzz
+# 如果使用third party; 规避 -fPIC 报错
+CC=clang CXX=clang++ cmake -DUSE_SYSTEM_LIBS=OFF -DKADD_OPTIMIZE=ON -DCMAKE_BUILD_TYPE=Release ..
+cmake --build .
+
+# 2. 进入测试目录运行 FUZZ（语料已由 cmake 复制到 assets/fuzz_corpus/）
+cd tests && ./kadd_fuzzer assets/fuzz_corpus -runs=10000
+
+# 3. 合并覆盖率数据
+llvm-profdata merge -sparse default.profraw -o kadd.profdata
+
+# 4. 查看覆盖率报告（仅 src/ 源码）
+llvm-cov report ./kadd_fuzzer -instr-profile=kadd.profdata -ignore-filename-regex="tests/.*|third_party/.*|include/*"
+
+# 5. 生成 HTML 覆盖率报告
+llvm-cov show ./kadd_fuzzer -instr-profile=kadd.profdata  -format=html -o coverage_html -ignore-filename-regex="tests/.*|third_party/.*|include/*"
+```
+
+#### 覆盖率报告选项
+
+| 选项 | 描述 | 默认值 |
+|------|------|--------|
+| `-runs` | 运行的测试用例数量 | 无限 |
+| `-max_total_time` | 最大运行时间（秒） | 10 |
+| `-max_len` | 最大输入长度 | 4096 |
 
 ## 📁 目录结构
 

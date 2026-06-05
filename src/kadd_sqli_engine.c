@@ -72,35 +72,36 @@ struct kadd_sqli_engine_t {
 
 /* ========== 内部辅助函数 ========== */
 
-// 分配引擎内存池
-static int allocate_engine_memory_pool(kadd_sqli_engine_t *e)
-{
-    /* 分配内存池 */
-    e->token_buffer = (int *)malloc(e->max_output_dim * sizeof(int));
-    e->feature_buffer = (int *)calloc(e->feature_dim, sizeof(int));
-    if (posix_memalign((void **)&e->float_feature_buffer, KADD_ALIGN_BYTES, e->feature_dim * sizeof(float)) != 0) {
-        e->float_feature_buffer = NULL;
-    }
+// ========== 辅助函数：特征转换 ==========
 
-    if (!e->token_buffer || !e->feature_buffer || !e->float_feature_buffer) {
-        /* 内存分配失败，清理已分配的资源 */
-        if (e->token_buffer) {
-            free(e->token_buffer);
-            e->token_buffer = NULL;
-        }
-        if (e->feature_buffer) {
-            free(e->feature_buffer);
-            e->feature_buffer = NULL;
-        }
-        if (e->float_feature_buffer) {
-            free(e->float_feature_buffer);
-            e->float_feature_buffer = NULL;
-        }
-        fprintf(stderr, "[kadd_sqli] ERROR: Failed to allocate engine memory pool\n");
-        return KADD_ERROR_OUT_OF_MEMORY;
+// 统一的特征转换函数：将整型特征转换为浮点特征
+static void convert_int_to_float_features(const int *int_features, float *float_features, int feature_dim)
+{
+    for (int i = 0; i < feature_dim; i++) {
+        float_features[i] = (float)int_features[i];
     }
-    return KADD_SUCCESS;
 }
+
+// ========== 辅助函数：缓冲区管理 ==========
+
+// 释放单个缓冲区（如果已设置）
+static void free_buffer_if_set(void **buffer_ptr)
+{
+    if (*buffer_ptr) {
+        free(*buffer_ptr);
+        *buffer_ptr = NULL;
+    }
+}
+
+// 释放引擎内存池
+static void release_engine_buffers(kadd_sqli_engine_t *e)
+{
+    free_buffer_if_set((void **)&e->token_buffer);
+    free_buffer_if_set((void **)&e->feature_buffer);
+    free_buffer_if_set((void **)&e->float_feature_buffer);
+}
+
+// ========== 辅助函数：批处理缓冲区管理 ==========
 
 // 清理 SQLi 批处理临时缓冲区
 static void cleanup_sqli_batch_buffers(int **dfa_outputs, int *dfa_dims,
@@ -126,23 +127,26 @@ static void cleanup_sqli_batch_buffers(int **dfa_outputs, int *dfa_dims,
     }
 }
 
-/* ========== 公共接口 ========== */
-
-static void release_engine_buffers(kadd_sqli_engine_t *e)
+// 分配引擎内存池
+static int allocate_engine_memory_pool(kadd_sqli_engine_t *e)
 {
-    if (e->token_buffer) {
-        free(e->token_buffer);
-        e->token_buffer = NULL;
-    }
-    if (e->feature_buffer) {
-        free(e->feature_buffer);
-        e->feature_buffer = NULL;
-    }
-    if (e->float_feature_buffer) {
-        free(e->float_feature_buffer);
+    /* 分配内存池 */
+    e->token_buffer = (int *)malloc(e->max_output_dim * sizeof(int));
+    e->feature_buffer = (int *)calloc(e->feature_dim, sizeof(int));
+    if (posix_memalign((void **)&e->float_feature_buffer, KADD_ALIGN_BYTES, e->feature_dim * sizeof(float)) != 0) {
         e->float_feature_buffer = NULL;
     }
+
+    if (!e->token_buffer || !e->feature_buffer || !e->float_feature_buffer) {
+        /* 内存分配失败，清理已分配的资源 */
+        release_engine_buffers(e);
+        fprintf(stderr, "[kadd_sqli] ERROR: Failed to allocate engine memory pool\n");
+        return KADD_ERROR_OUT_OF_MEMORY;
+    }
+    return KADD_SUCCESS;
 }
+
+/* ========== 公共接口 ========== */
 
 static int create_engine_internal(kadd_sqli_engine_t **engine,
                                    const kadd_dfa_table_paths_t *table_paths,
@@ -260,9 +264,7 @@ int kadd_sqli_detect(kadd_sqli_engine_t *engine, const char *input, float *proba
     }
 
     /* 步骤 3: ML 推理 - 使用内存池 */
-    for (int i = 0; i < engine->feature_dim; i++) {
-        engine->float_feature_buffer[i] = (float)engine->feature_buffer[i];
-    }
+    convert_int_to_float_features(engine->feature_buffer, engine->float_feature_buffer, engine->feature_dim);
 
     float prob = 0.0f;
     int ret = kadd_model_predict(engine->ml_model, engine->float_feature_buffer, &prob);
@@ -349,9 +351,7 @@ static int process_ml_batch_and_update(kadd_batch_ml_params_t *params,
 {
     // 转换为浮点特征
     int total_features = params->current_batch * params->engine->feature_dim;
-    for (int i = 0; i < total_features; i++) {
-        buffers->float_features[i] = (float)buffers->features[i];
-    }
+    convert_int_to_float_features(buffers->features, buffers->float_features, total_features);
 
     float batch_probs[KADD_MAX_BATCH_SIZE];
     int ml_result = kadd_model_predict_batch(params->engine->ml_model, buffers->float_features,
@@ -479,15 +479,9 @@ int kadd_sqli_detect_batch(kadd_sqli_engine_t *engine, const char **inputs, int 
         return ret;
     }
 
-    // 释放缓冲区
-    free(buffers.dfa_outputs);
-    buffers.dfa_outputs = NULL;
-    free(buffers.dfa_dims);
-    buffers.dfa_dims = NULL;
-    free(buffers.features);
-    buffers.features = NULL;
-    free(buffers.float_features);
-    buffers.float_features = NULL;
+    // 释放缓冲区（只释放数组指针，不释放内容）
+    cleanup_sqli_batch_buffers(buffers.dfa_outputs, buffers.dfa_dims,
+                               buffers.features, buffers.float_features, 0);
 
     return KADD_SUCCESS;
 }
@@ -509,18 +503,7 @@ void kadd_sqli_engine_free(kadd_sqli_engine_t *engine)
     }
 
     /* 释放内存池 */
-    if (engine->token_buffer) {
-        free(engine->token_buffer);
-        engine->token_buffer = NULL;
-    }
-    if (engine->feature_buffer) {
-        free(engine->feature_buffer);
-        engine->feature_buffer = NULL;
-    }
-    if (engine->float_feature_buffer) {
-        free(engine->float_feature_buffer);
-        engine->float_feature_buffer = NULL;
-    }
+    release_engine_buffers(engine);
 
     free(engine);
 }

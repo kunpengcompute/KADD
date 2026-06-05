@@ -62,7 +62,7 @@ protected:
     void SetUp() override
     {
         // 从config.json加载配置
-        ASSERT_EQ(kadd_config_load(nullptr, &config), 0)
+        ASSERT_EQ(kadd_config_load("config.json", &config), 0)
             << "无法加载config.json配置文件";
 
         test_feature.resize(config.ml.feature_dim, 0);
@@ -1117,9 +1117,152 @@ TEST_F(FeatureEngineTest, FeatureVector_TestCase15_AdjacentDuplicates)
                          {0, 0, 0, 0, 0, 0, 0, 72, 76, 0, 0, 104});
 }
 
-// ========== 主函数 ==========
-int main(int argc, char **argv)
+// ========== 覆盖率优化：边界和分支测试 ==========
+
+TEST_F(FeatureEngineTest, TokenValueBoundary_MaxToMin)
 {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
+    // 测试 token 值边界：从最大值到最小值
+    std::vector<int> seq_max_to_min = {27, 26, 25, 24, 23, 22, 21, 20, 19, 18,
+                                         17, 16, 15, 14, 13, 12, 11, 10, 9, 8,
+                                         7, 6, 5, 4, 3, 2, 1, 0};
+    std::vector<int> feature(config.ml.feature_dim, 0);
+
+    EXPECT_EQ(kadd_seq_to_feature(seq_max_to_min.data(), seq_max_to_min.size(),
+                                  kWinSize5, feature.data(), config.ml.feature_dim), 0);
+}
+
+TEST_F(FeatureEngineTest, BatchSizeEdgeCases)
+{
+    // 测试批处理大小边界
+    const int *seqs[1] = {new int[10]{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}};
+    const int lens[1] = {10};
+    std::vector<int> features(config.ml.feature_dim, 0);
+
+    kadd_feature_batch_t batch = {
+        seqs, lens, 1, features.data(), config.ml.feature_dim, kWinSize5, 0
+    };
+
+    // batch_size = 0 (应使用默认值)
+    EXPECT_EQ(kadd_seq_to_feature_batch(&batch), KADD_SUCCESS);
+
+    // batch_size = 1
+    batch.batch_size = 1;
+    EXPECT_EQ(kadd_seq_to_feature_batch(&batch), KADD_SUCCESS);
+
+    // batch_size > KADD_MAX_BATCH_SIZE (应自动限制)
+    batch.batch_size = 1025;
+    EXPECT_EQ(kadd_seq_to_feature_batch(&batch), KADD_SUCCESS);
+
+    delete[] seqs[0];
+}
+
+// ========== 覆盖率优化：NULL指针和参数边界测试 ==========
+
+TEST_F(FeatureEngineTest, BatchWithNullBatchPtr)
+{
+    // 测试 batch 本身为 NULL 的情况
+    EXPECT_EQ(kadd_seq_to_feature_batch(nullptr), KADD_ERROR_NULL_PTR)
+        << "NULL batch 指针应该返回 KADD_ERROR_NULL_PTR 错误";
+}
+
+TEST_F(FeatureEngineTest, BatchWithNullSeqs)
+{
+    // 测试 batch->seqs = NULL 的情况
+    const int *null_seqs[1] = {nullptr};
+    const int lens[1] = {10};
+    std::vector<int> features(config.ml.feature_dim, 0);
+
+    kadd_feature_batch_t batch = {
+        null_seqs, lens, 1, features.data(), config.ml.feature_dim, kWinSize5, 64
+    };
+
+    EXPECT_EQ(kadd_seq_to_feature_batch(&batch), KADD_ERROR_INVALID_INPUT)
+        << "NULL seqs 应该返回 KADD_ERROR_INVALID_INPUT 错误";
+}
+
+TEST_F(FeatureEngineTest, BatchWithNullSeqLens)
+{
+    // 测试 batch->seq_lens = NULL 的情况
+    int seq[10] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+    const int *seqs[1] = {seq};
+
+    std::vector<int> features(config.ml.feature_dim, 0);
+
+    kadd_feature_batch_t batch = {
+        seqs, nullptr, 1, features.data(), config.ml.feature_dim, kWinSize5, 64
+    };
+
+    EXPECT_EQ(kadd_seq_to_feature_batch(&batch), KADD_ERROR_NULL_PTR)
+        << "NULL seq_lens 应该返回 NULL_PTR 错误";
+}
+
+TEST_F(FeatureEngineTest, BatchWithNullFeatures)
+{
+    // 测试 batch->features = NULL 的情况
+    int seq[10] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+    const int *seqs[1] = {seq};
+    const int lens[1] = {10};
+
+    kadd_feature_batch_t batch = {
+        seqs, lens, 1, nullptr, config.ml.feature_dim, kWinSize5, 64
+    };
+
+    EXPECT_EQ(kadd_seq_to_feature_batch(&batch), KADD_ERROR_NULL_PTR)
+        << "NULL features 应该返回 NULL_PTR 错误";
+}
+
+TEST_F(FeatureEngineTest, BatchWithZeroCount)
+{
+    // 测试 batch->count <= 0 的情况
+    int seq[10] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+    const int *seqs[1] = {seq};
+    const int lens[1] = {10};
+    std::vector<int> features(config.ml.feature_dim, 0);
+
+    // count = 0
+    kadd_feature_batch_t batch1 = {
+        seqs, lens, 0, features.data(), config.ml.feature_dim, kWinSize5, 64
+    };
+    EXPECT_EQ(kadd_seq_to_feature_batch(&batch1), KADD_ERROR_INVALID_PARAM)
+        << "count=0 应该返回 INVALID_PARAM 错误";
+
+    // count = -1
+    kadd_feature_batch_t batch2 = {
+        seqs, lens, -1, features.data(), config.ml.feature_dim, kWinSize5, 64
+    };
+    EXPECT_EQ(kadd_seq_to_feature_batch(&batch2), KADD_ERROR_INVALID_PARAM)
+        << "count=-1 应该返回 INVALID_PARAM 错误";
+}
+
+TEST_F(FeatureEngineTest, BatchWithExceedsMaxSampleCount)
+{
+    // 测试 batch->count > KADD_CONFIG_MAX_SAMPLE_COUNT 的情况
+    int seq[10] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+    const int *seqs[1] = {seq};
+    const int lens[1] = {10};
+    std::vector<int> features(config.ml.feature_dim, 0);
+
+    kadd_feature_batch_t batch = {
+        seqs, lens, KADD_CONFIG_MAX_SAMPLE_COUNT + 1, features.data(),
+        config.ml.feature_dim, kWinSize5, 64
+    };
+
+    EXPECT_EQ(kadd_seq_to_feature_batch(&batch), KADD_ERROR_INVALID_PARAM)
+        << "count超过最大限制应该返回 INVALID_PARAM 错误";
+}
+
+TEST_F(FeatureEngineTest, BatchWithExceedsMaxFeatureDim)
+{
+    // 测试 batch->feature_dim > KADD_CONFIG_DEFAULT_MAX_OUTPUT_DIM 的情况
+    int seq[10] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+    const int *seqs[1] = {seq};
+    const int lens[1] = {10};
+    std::vector<int> features(500, 0);  // 超过默认300
+
+    kadd_feature_batch_t batch = {
+        seqs, lens, 1, features.data(), 500, kWinSize5, 64
+    };
+
+    EXPECT_EQ(kadd_seq_to_feature_batch(&batch), KADD_ERROR_INVALID_PARAM)
+        << "feature_dim超过最大限制应该返回 INVALID_PARAM 错误";
 }

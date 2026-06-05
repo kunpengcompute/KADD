@@ -10,5 +10,20 @@
     "model_path": "assets/model/model_tokens_rf.onnx",
     "feature_dim": 28,
     "window_size": 5
+  },
+  "kadd_sqli_engine": {
+    "transition_table_path": "assets/data/transition_table.bin",
+    "output_table_path": "assets/data/output_table.bin",
+    "eod_table_path": "assets/data/eod_table.bin",
+    "ml_model_path": "assets/model/model_tokens_rf.onnx",
+    "feature_dim": 28,
+    "window_size": 5,
+    "max_input_length": 300,
+    "max_output_dim": 300
+  },
+  "kadd_feature_engine": {
+    "ml_model_path": "assets/model/model_tokens_rf.onnx",
+    "feature_dim": 28,
+    "window_size": 5
   }
 }

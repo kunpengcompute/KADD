@@ -27,6 +27,9 @@ extern "C" {
 #define KADD_CONFIG_DEFAULT_FEATURE_DIM      28
 #define KADD_CONFIG_DEFAULT_WINDOW_SIZE      5
 
+/* ========== 文件大小限制 ========== */
+#define KADD_CONFIG_MAX_FILE_SIZE    (10 * 1024 * 1024)  /* 配置文件最大大小（10MB） */
+
 /* ========== DFA引擎配置 ========== */
 
 typedef struct {

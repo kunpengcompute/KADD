@@ -84,7 +84,7 @@ protected:
     void SetUp() override
     {
         // 从config.json加载配置
-        if (kadd_config_load(nullptr, &config) != 0) {
+        if (kadd_config_load("config.json", &config) != 0) {
             std::cout << "[WARNING] 无法加载config.json，跳过 ML 引擎测试" << std::endl;
             skip_test = true;
             return;
@@ -1170,7 +1170,7 @@ int main(int argc, char **argv)
 
     // 从 config.json 加载配置
     kadd_config_t config;
-    bool config_loaded = (kadd_config_load(nullptr, &config) == KADD_SUCCESS);
+    bool config_loaded = (kadd_config_load("config.json", &config) == KADD_SUCCESS);
 
     const char *model_path = "assets/model/model_tokens_rf.onnx";  // 默认路径
     if (config_loaded) {
@@ -1219,4 +1219,47 @@ int main(int argc, char **argv)
     std::cout << "========================================\n" << std::endl;
 
     return RUN_ALL_TESTS();
+}
+
+// ========== 覆盖率优化：边界和错误路径测试 ==========
+
+TEST_F(MLEngineTest, BatchSizeBoundary_1024)
+{
+    if (skip_test) GTEST_SKIP() << "模型文件不可用";
+    ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
+
+    // 测试最大批次大小边界 (KADD_MAX_BATCH_SIZE = 1024)
+    std::vector<float> features(config.ml.feature_dim * 1024, 0.0f);
+    std::vector<float> probabilities(1024, 0.0f);
+
+    EXPECT_EQ(kadd_model_predict_batch(model, features.data(), 1024,
+                                       probabilities.data(), 1024), KADD_SUCCESS);
+}
+
+TEST_F(MLEngineTest, BatchSize_ExceedsMax_1025)
+{
+    if (skip_test) GTEST_SKIP() << "模型文件不可用";
+    ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
+
+    // 测试超过最大批次 (会自动限制为 1024)
+    std::vector<float> features(config.ml.feature_dim * 1025, 0.0f);
+    std::vector<float> probabilities(1025, 0.0f);
+
+    // 应该成功，内部会自动限制批次大小
+    EXPECT_EQ(kadd_model_predict_batch(model, features.data(), 1025,
+                                       probabilities.data(), 1025), KADD_SUCCESS);
+}
+
+TEST_F(MLEngineTest, SampleCount_ExceedsMax_10Million)
+{
+    if (skip_test) GTEST_SKIP() << "模型文件不可用";
+    ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
+
+    // 测试超过最大样本数 (KADD_CONFIG_MAX_SAMPLE_COUNT = 10000000)
+    std::vector<float> features(config.ml.feature_dim * 10, 0.0f);
+    std::vector<float> probabilities(10, 0.0f);
+
+    // n = 10M+1 应返回错误
+    EXPECT_EQ(kadd_model_predict_batch(model, features.data(), 10000001,
+                                       probabilities.data(), 64), KADD_ERROR_INVALID_PARAM);
 }
