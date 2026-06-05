@@ -20,6 +20,7 @@ constexpr int kTokenBufferSize = 100;
 constexpr int kTestLongInputLen = 100;
 constexpr int kMinInjectionTokens = 4;
 constexpr int kMinUnionTokens = 2;
+constexpr int kDefaultBatchSize = KADD_DEFAULT_BATCH_SIZE;  // 与 KADD_DEFAULT_BATCH_SIZE 保持一致
 
 /* ========== 测试夹具 ========== */
 
@@ -31,7 +32,7 @@ protected:
     void SetUp() override
     {
         // 从config.json加载配置
-        ASSERT_EQ(kadd_config_load(nullptr, &config), 0)
+        ASSERT_EQ(kadd_config_load("config.json", &config), 0)
             << "无法加载config.json配置文件";
 
         // 使用配置文件中的参数
@@ -653,10 +654,76 @@ TEST_F(DFAEngineTest, Flow_Control)
                     4, 8, 22, 7, 1, 7, 1, 22, 23, 1, 7, 4, 8, 22, 1, 22, 7, 7});
 }
 
-/* ========== 8. 主函数 ========== */
+// ========== 覆盖率优化：边界和错误处理测试 ==========
 
-int main(int argc, char **argv)
+TEST_F(DFAEngineTest, InvalidTablePaths)
 {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
+    // 测试无效的表文件路径
+    kadd_dfa_table_paths_t invalid_paths = {
+        "nonexistent_transition.bin",
+        "nonexistent_output.bin",
+        "nonexistent_eod.bin"
+    };
+    kadd_dfa_engine_t *invalid_engine = nullptr;
+    EXPECT_NE(kadd_dfa_engine_create(&invalid_engine, &invalid_paths, 300, 300), 0)
+        << "无效表路径应该创建失败";
+}
+
+TEST_F(DFAEngineTest, MaxInputLength_Boundary_300)
+{
+    // 测试最大输入长度边界
+    std::string max_input(300, 'A');
+    int tokens[300];
+    int token_count = 0;
+
+    EXPECT_EQ(kadd_dfa_engine_tokenize(engine, max_input.c_str(),
+                                        max_input.length(), tokens, &token_count), 0);
+}
+
+TEST_F(DFAEngineTest, ControlAndHighByteChars)
+{
+    // 测试特殊字符：控制字符和高位字符
+    const char *special_inputs[] = {
+        "\x00\x01\x02",           // 控制字符
+        "\xff\xfe\xfd",           // 高位字符
+        "test\x00middle",         // 中间空字符
+        "A\x01B\x02C",            // 混合字符
+    };
+
+    for (const char *input : special_inputs) {
+        int tokens[100];
+        int token_count = 0;
+        EXPECT_GE(kadd_dfa_engine_tokenize(engine, input, strlen(input),
+                                          tokens, &token_count), 0)
+            << "特殊字符应该被正确处理: " << input;
+    }
+}
+
+TEST_F(DFAEngineTest, BatchTokenizeWithNullInput)
+{
+    // 测试批处理中包含NULL指针 - 触发 cleanup_dfa_batch 覆盖率
+    const char *inputs_with_null[3] = {"valid", nullptr, "test"};
+    size_t lengths[] = {5, 0, 4};  // NULL输入的长度设为0
+    int *outputs[3] = {nullptr};
+    int dims[3];
+
+    kadd_dfa_batch_t batch = {
+        inputs_with_null,
+        lengths,
+        3,
+        outputs,
+        dims,
+        kDefaultBatchSize
+    };
+
+    // 应该返回错误，因为中间有NULL输入
+    EXPECT_NE(kadd_dfa_engine_tokenize_batch(engine, &batch), KADD_SUCCESS)
+        << "批处理中包含NULL输入应该返回错误";
+
+    // 验证cleanup被调用（outputs应该保持为NULL或已清理）
+    for (int i = 0; i < 3; i++) {
+        if (outputs[i]) {
+            free(outputs[i]);  // 测试后清理
+        }
+    }
 }

@@ -7,8 +7,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
-#include "../include/kadd_dfa_engine.h"
-#include "../include/kadd_config_loader.h"
+#include "../../include/kadd_dfa_engine.h"
+#include "../../include/kadd_config_loader.h"
 #include "cJSON.h"
 
 /* ========== 测试数据 ========== */

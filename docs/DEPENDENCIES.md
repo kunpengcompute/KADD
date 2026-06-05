@@ -80,9 +80,9 @@ ldconfig -p | grep onnxruntime       # 检查库是否被找到
 wget https://buildtools.obs.cn-north-4.myhuaweicloud.com/onnxruntime-linux-aarch64-1.16.0.tgz
 tar xzf onnxruntime-linux-*.tgz
 
-mkdir -p third_party/onnxruntime/lib third_party/onnxruntime/include/onnxruntime
+mkdir -p third_party/onnxruntime/lib third_party/onnxruntime/include/
 cp onnxruntime-linux-*/lib/* third_party/onnxruntime/lib/
-cp -r onnxruntime-linux-*/include/* third_party/onnxruntime/include/onnxruntime/
+cp -r onnxruntime-linux-*/include/* third_party/onnxruntime/include/
 
 rm -rf onnxruntime-linux-*
 ```

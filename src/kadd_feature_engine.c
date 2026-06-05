@@ -252,6 +252,12 @@ int kadd_seq_to_feature_batch(kadd_feature_batch_t *batch)
 
     // 初始化输出特征为0
     size_t total = (size_t)batch->count * (size_t)batch->feature_dim;
+    // 溢出检查：防止32位系统上 size_t 溢出
+    if (total / (size_t)batch->count != (size_t)batch->feature_dim) {
+        fprintf(stderr, "[kadd_feature] ERROR: Integer overflow in total features (count=%d, feature_dim=%d)\n",
+                batch->count, batch->feature_dim);
+        return KADD_ERROR_INVALID_PARAM;
+    }
     for (size_t i = 0; i < total; i++) {
         batch->features[i] = 0;
     }

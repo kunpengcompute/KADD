@@ -16,18 +16,18 @@ function(add_kadd_library NAME)
     # 动态库
     add_library(${NAME} SHARED ${ARG_SOURCES})
 
-    # 安全编译选项（动态库）
+    # 显式应用安全编译选项（确保 SP 栈保护和 Ftrapv 整数溢出检查生效）
     target_compile_options(${NAME} PRIVATE
-        -fPIC                    # PIC
-        -fstack-protector-strong # Stack Protection
-        -Wformat -Wformat-security # Format String
-        -ftrapv                 # 整数溢出检查
+        -fPIC                    # 位置无关代码（PIC）
+        -fstack-protector-strong # 栈保护（Stack Protection）
+        -Wformat -Wformat-security # 格式化字符串检查（Format String）
+        -ftrapv                  # 整数溢出检查
     )
+    # 链接选项继承自 CMAKE_SHARED_LINKER_FLAGS: -Wl,-z,relro,-z,now
 
     set_target_properties(${NAME} PROPERTIES
         VERSION "${ARG_VERSION}"
         SOVERSION 1
-        LINK_FLAGS "-Wl,-z,relro,-z,now"
     )
 
     target_include_directories(${NAME} PUBLIC ${CMAKE_SOURCE_DIR}/include)
@@ -103,34 +103,4 @@ if(CJSON_FOUND)
         SOURCES kadd_config_loader.c
         NEED_CJSON
     )
-endif()
-
-# ============================================================================
-# 测试用综合静态库
-# ============================================================================
-set(OTHER_ENGINE_SOURCES
-    kadd_dfa_engine.c
-    kadd_feature_engine.c
-    kadd_ml_engine.c
-)
-
-if(CJSON_FOUND)
-    list(APPEND OTHER_ENGINE_SOURCES kadd_sqli_engine.c kadd_config_loader.c)
-endif()
-
-add_library(kadd_other_engines STATIC ${OTHER_ENGINE_SOURCES})
-
-target_include_directories(kadd_other_engines PUBLIC
-    ${CMAKE_SOURCE_DIR}/include
-    ${ONNXRUNTIME_INCLUDE_DIRS}
-)
-
-if(CJSON_FOUND)
-    target_include_directories(kadd_other_engines PUBLIC ${CJSON_INCLUDE_DIRS})
-endif()
-
-target_link_libraries(kadd_other_engines PUBLIC ${ONNXRUNTIME_LIBRARIES})
-
-if(CJSON_FOUND AND NOT CJSON_IS_THIRD_PARTY)
-    target_link_libraries(kadd_other_engines PUBLIC ${CJSON_LIBRARIES})
 endif()

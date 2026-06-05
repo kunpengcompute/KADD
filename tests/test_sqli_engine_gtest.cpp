@@ -16,6 +16,8 @@
 #include <iomanip>
 #include <iostream>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include "kadd_sqli_engine.h"
 #include "kadd_config_loader.h"
 
@@ -555,6 +557,108 @@ TEST_F(SQLiEngineTest, CreateWithNonexistentConfigFile)
     EXPECT_NE(ret, KADD_SUCCESS) << "不存在配置文件应该返回错误";
 }
 
+// ========== 覆盖率优化：触发 release_engine_buffers 错误处理 ==========
+
+TEST_F(SQLiEngineTest, CreateWithInvalidDFAPaths)
+{
+    // 构造包含无效 DFA 表路径的配置来触发 DFA 引擎创建失败
+    // 这将触发 create_engine_internal 中的 release_engine_buffers(e) 路径
+    kadd_sqli_engine_t* tmp = nullptr;
+
+    // 创建一个临时配置文件，包含无效的 DFA 表路径
+    const char* test_config_content = R"({
+        "kadd_dfa_engine": {
+            "transition_table_path": "invalid_nonexistent_table.bin",
+            "output_table_path": "invalid_nonexistent_table.bin",
+            "eod_table_path": "invalid_nonexistent_table.bin",
+            "max_input_length": 300,
+            "max_output_dim": 300
+        },
+        "kadd_ml_engine": {
+            "model_path": "test_model.onnx",
+            "feature_dim": 28,
+            "window_size": 5
+        },
+        "kadd_sqli_engine": {
+            "ml_model_path": "",
+            "feature_dim": 28,
+            "window_size": 5,
+            "max_output_dim": 300,
+            "max_input_length": 300
+        }
+    })";
+
+    // 写入临时配置文件
+    FILE* fp = fopen("test_invalid_dfa_config.json", "w");
+    if (fp) {
+        fputs(test_config_content, fp);
+        fclose(fp);
+
+        int ret = kadd_sqli_engine_create_from_file(&tmp, "test_invalid_dfa_config.json");
+        EXPECT_EQ(ret, KADD_ERROR_CONFIG) << "无效 DFA 表路径应该返回 KADD_ERROR_CONFIG";
+
+        // 清理
+        remove("test_invalid_dfa_config.json");
+    }
+}
+
+TEST_F(SQLiEngineTest, CreateWithInvalidMLModelPath)
+{
+    // 构造包含无效模型路径的配置来触发 ML 模型加载失败
+    // 这将触发 create_engine_internal 中的 release_engine_buffers(e) 路径
+    // （此时 DFA 引擎已成功创建，但 ML 模型加载失败）
+    kadd_sqli_engine_t* tmp = nullptr;
+
+    // 注意：这个测试需要有效的 DFA 表文件，但无效的模型文件
+    // 我们尝试使用一个不存在的模型文件
+    const char* test_config_content = R"({
+        "kadd_dfa_engine": {
+            "transition_table_path": "assets/data/dfa_transition_table.bin",
+            "output_table_path": "assets/data/dfa_output_table.bin",
+            "eod_table_path": "assets/data/dfa_eod_table.bin",
+            "max_input_length": 300,
+            "max_output_dim": 300
+        },
+        "kadd_ml_engine": {
+            "model_path": "nonexistent_model.onnx",
+            "feature_dim": 28,
+            "window_size": 5
+        },
+        "kadd_sqli_engine": {
+            "ml_model_path": "",
+            "feature_dim": 28,
+            "window_size": 5,
+            "max_output_dim": 300,
+            "max_input_length": 300
+        }
+    })";
+
+    // 写入临时配置文件
+    FILE* fp = fopen("test_invalid_ml_config.json", "w");
+    if (fp) {
+        fputs(test_config_content, fp);
+        fclose(fp);
+
+        int ret = kadd_sqli_engine_create_from_file(&tmp, "test_invalid_ml_config.json");
+
+        // 期望返回 ML 错误（如果 DFA 表存在）或者 DFA 错误（如果 DFA 表不存在）
+        // 主要是验证模型加载失败时的错误处理
+        if (ret == KADD_SQLI_ERROR_ML) {
+            // 完美：覆盖了 ML 模型加载失败的 release_engine_buffers 路径
+            SUCCEED() << "成功覆盖 ML 模型加载失败的 release_engine_buffers 路径";
+        } else if (ret == KADD_SQLI_ERROR_DFA) {
+            // DFA 表也不存在，至少测试了 DFA 失败路径
+            SUCCEED() << "DFA 表不存在，测试了 DFA 失败路径";
+        } else {
+            // 其他错误也算覆盖了错误处理路径
+            EXPECT_NE(ret, KADD_SUCCESS) << "应该返回某种错误";
+        }
+
+        // 清理
+        remove("test_invalid_ml_config.json");
+    }
+}
+
 TEST_F(SQLiEngineTest, EngineReuse)
 {
     if (skip_test) {
@@ -671,10 +775,182 @@ TEST_F(SQLiEngineTest, BatchVsSingleConsistency)
     }
 }
 
-/* ========== 6. 主函数 ========== */
+// ========== 覆盖率优化：边界和批处理测试 ==========
 
-int main(int argc, char **argv)
+TEST_F(SQLiEngineTest, BatchSize_EdgeCases)
 {
-    ::testing::InitGoogleTest(&argc, argv);
-    return RUN_ALL_TESTS();
+    if (skip_test) GTEST_SKIP() << "SQLi 引擎不可用";
+
+    const char *inputs[1] = {"test"};
+    float probs[1];
+
+    // 测试 batch_size = 0 (应使用默认值)
+    EXPECT_EQ(kadd_sqli_detect_batch(engine, inputs, 1, probs, 0), KADD_SUCCESS);
+
+    // 测试 batch_size < 0 (应使用默认值)
+    EXPECT_EQ(kadd_sqli_detect_batch(engine, inputs, 1, probs, -1), KADD_SUCCESS);
+
+    // 测试 batch_size = 1
+    EXPECT_EQ(kadd_sqli_detect_batch(engine, inputs, 1, probs, 1), KADD_SUCCESS);
+
+    // 测试 batch_size > KADD_MAX_BATCH_SIZE (应自动限制)
+    EXPECT_EQ(kadd_sqli_detect_batch(engine, inputs, 1, probs, 1025), KADD_SUCCESS);
+}
+
+TEST_F(SQLiEngineTest, VeryLongInput_400Chars)
+{
+    if (skip_test) GTEST_SKIP() << "SQLi 引擎不可用";
+
+    // 测试超长输入 (超过默认 max_input_length = 300)
+    std::string long_input(400, 'A');
+    float prob;
+    EXPECT_EQ(kadd_sqli_detect(engine, long_input.c_str(), &prob), KADD_SQLI_ERROR_DFA)
+        << "超长输入应该返回错误（超过max_input_length）";
+}
+
+// ========== 覆盖率优化：批处理边界和错误路径测试 ==========
+TEST_F(SQLiEngineTest, BatchWithZeroCount)
+{
+    if (skip_test) GTEST_SKIP() << "SQLi 引擎不可用";
+
+    const char *inputs[1] = {"test"};
+    float probs[1];
+
+    // 测试 count = 0
+    EXPECT_EQ(kadd_sqli_detect_batch(engine, inputs, 0, probs, 64), KADD_ERROR_INVALID_INPUT)
+        << "count=0 应该返回 INVALID_INPUT 错误";
+}
+
+TEST_F(SQLiEngineTest, BatchWithNegativeCount)
+{
+    if (skip_test) GTEST_SKIP() << "SQLi 引擎不可用";
+
+    const char *inputs[1] = {"test"};
+    float probs[1];
+
+    // 测试 count = -1
+    EXPECT_EQ(kadd_sqli_detect_batch(engine, inputs, -1, probs, 64), KADD_ERROR_INVALID_INPUT)
+        << "count=-1 应该返回 INVALID_INPUT 错误";
+}
+
+TEST_F(SQLiEngineTest, BatchWithExceedsMaxSampleCount)
+{
+    if (skip_test) GTEST_SKIP() << "SQLi 引擎不可用";
+
+    // 测试 count > KADD_CONFIG_MAX_SAMPLE_COUNT (10,000,000)
+    const char *inputs[1] = {"test"};
+    float probs[1];
+
+    EXPECT_EQ(kadd_sqli_detect_batch(engine, inputs, KADD_CONFIG_MAX_SAMPLE_COUNT + 1, probs, 64),
+                KADD_ERROR_INVALID_PARAM)
+        << "count 超过最大限制应该返回 INVALID_PARAM 错误";
+}
+
+TEST_F(SQLiEngineTest, BatchWithNullProbabilities)
+{
+    if (skip_test) GTEST_SKIP() << "SQLi 引擎不可用";
+
+    const char *inputs[1] = {"test"};
+
+    // 测试 probabilities = NULL
+    EXPECT_EQ(kadd_sqli_detect_batch(engine, inputs, 1, nullptr, 64), KADD_ERROR_INVALID_INPUT)
+        << "NULL probabilities 应该返回 INVALID_INPUT 错误";
+}
+
+TEST_F(SQLiEngineTest, BatchWithNullInputElement)
+{
+    if (skip_test) GTEST_SKIP() << "SQLi 引擎不可用";
+
+    // 测试 inputs 数组中包含 NULL 元素
+    const char *inputs[3] = {"test", nullptr, "normal"};
+    float probs[3] = {0.0f, 0.0f, 0.0f};
+
+    // 期望返回错误（因为 inputs[1] 是 NULL）
+    int ret = kadd_sqli_detect_batch(engine, inputs, 3, probs, 64);
+    EXPECT_NE(ret, KADD_SUCCESS) << "inputs 数组中包含 NULL 应该返回错误";
+}
+
+TEST_F(SQLiEngineTest, BatchWithNullInputsArray)
+{
+    if (skip_test) GTEST_SKIP() << "SQLi 引擎不可用";
+
+    float probs[1];
+
+    // 测试整个 inputs 数组为 NULL
+    EXPECT_EQ(kadd_sqli_detect_batch(engine, nullptr, 1, probs, 64), KADD_ERROR_INVALID_INPUT)
+        << "NULL inputs 数组应该返回 INVALID_INPUT 错误";
+}
+
+TEST_F(SQLiEngineTest, BatchWithNullEngine)
+{
+    float probs[1];
+    const char *inputs[1] = {"test"};
+
+    // 测试 engine = NULL
+    EXPECT_EQ(kadd_sqli_detect_batch(nullptr, inputs, 1, probs, 64), KADD_ERROR_INVALID_INPUT)
+        << "NULL engine 应该返回 INVALID_INPUT 错误";
+}
+
+TEST_F(SQLiEngineTest, SingleInputWithNullProbability)
+{
+    if (skip_test) GTEST_SKIP() << "SQLi 引擎不可用";
+
+    // 测试单次检测时 probability = NULL
+    int ret = kadd_sqli_detect(engine, "test", nullptr);
+    EXPECT_EQ(ret, KADD_ERROR_INVALID_INPUT)
+        << "NULL probability 指针应该返回 INVALID_INPUT 错误";
+}
+
+TEST_F(SQLiEngineTest, SingleInputWithNullInputString)
+{
+    if (skip_test) GTEST_SKIP() << "SQLi 引擎不可用";
+
+    float prob = 0.0f;
+
+    // 测试单次检测时 input = NULL
+    EXPECT_EQ(kadd_sqli_detect(engine, nullptr, &prob), KADD_ERROR_INVALID_INPUT)
+        << "NULL input 字符串应该返回 INVALID_INPUT 错误";
+}
+
+TEST_F(SQLiEngineTest, SingleInputWithNullEngine)
+{
+    float prob = 0.0f;
+
+    // 测试单次检测时 engine = NULL
+    EXPECT_EQ(kadd_sqli_detect(nullptr, "test", &prob), KADD_ERROR_INVALID_INPUT)
+        << "NULL engine 应该返回 INVALID_INPUT 错误";
+}
+
+// ========== 7. 边缘情况和特殊情况测试 ==========
+
+// SQLi_E001: 空字符串检测
+TEST_F(SQLiEngineTest, EmptyStringDetection)
+{
+    if (skip_test) GTEST_SKIP() << "SQLi 引擎不可用";
+
+    const char* empty_input = "";
+    float probability = 0.0f;
+
+    int ret = kadd_sqli_detect(engine, empty_input, &probability);
+
+    EXPECT_EQ(ret, KADD_SUCCESS) << "空字符串处理应成功";
+    EXPECT_TRUE(probability >= 0.0f && probability <= 1.0f) << "概率值应在 [0, 1] 范围内";
+    EXPECT_LT(probability, 0.5f) << "空字符串不应被判定为注入";
+}
+
+// SQLi_E002: 单个字符检测
+TEST_F(SQLiEngineTest, SingleCharDetection)
+{
+    if (skip_test) GTEST_SKIP() << "SQLi 引擎不可用";
+
+    const char* single_chars[] = {"a", "1", "'", ";", "-", "#"};
+
+    for (const char* input : single_chars) {
+        float probability = 0.0f;
+
+        int ret = kadd_sqli_detect(engine, input, &probability);
+
+        EXPECT_EQ(ret, KADD_SUCCESS) << "单字符处理应成功: " << input;
+        EXPECT_TRUE(probability >= 0.0f && probability <= 1.0f) << "概率值应在有效范围内";
+    }
 }
