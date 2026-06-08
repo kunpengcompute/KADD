@@ -19,6 +19,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include "kadd_sqli_engine.h"
+#include "kadd_ml_engine.h"
 #include "kadd_config_loader.h"
 
 constexpr int kDefaultBatchSize = 10;
@@ -793,7 +794,7 @@ TEST_F(SQLiEngineTest, BatchSize_EdgeCases)
     // 测试 batch_size = 1
     EXPECT_EQ(kadd_sqli_detect_batch(engine, inputs, 1, probs, 1), KADD_SUCCESS);
 
-    // 测试 batch_size > KADD_MAX_BATCH_SIZE (应自动限制)
+    // 测试 batch_size > KADD_ML_MAX_BATCH_SIZE (应自动限制)
     EXPECT_EQ(kadd_sqli_detect_batch(engine, inputs, 1, probs, 1025), KADD_SUCCESS);
 }
 
@@ -837,11 +838,11 @@ TEST_F(SQLiEngineTest, BatchWithExceedsMaxSampleCount)
 {
     if (skip_test) GTEST_SKIP() << "SQLi 引擎不可用";
 
-    // 测试 count > KADD_CONFIG_MAX_SAMPLE_COUNT (10,000,000)
+    // 测试 count > KADD_ML_MAX_SAMPLE_COUNT (10,000,000)
     const char *inputs[1] = {"test"};
     float probs[1];
 
-    EXPECT_EQ(kadd_sqli_detect_batch(engine, inputs, KADD_CONFIG_MAX_SAMPLE_COUNT + 1, probs, 64),
+    EXPECT_EQ(kadd_sqli_detect_batch(engine, inputs, KADD_ML_MAX_SAMPLE_COUNT + 1, probs, 64),
                 KADD_ERROR_INVALID_PARAM)
         << "count 超过最大限制应该返回 INVALID_PARAM 错误";
 }

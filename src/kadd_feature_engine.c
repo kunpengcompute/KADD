@@ -20,54 +20,36 @@
 /* ========== 内部函数：滑窗距离计算 ========== */
 
 /**
- * @brief 循环展开优化版滑窗距离
+ * @brief 滑窗距离计算（简化版，无硬编码限制）
+ *
+ * 核心逻辑：
+ * 对每个偏移距离 d (1 到 window_size-1)：
+ *   权重 = window_size - d
+ *   右侧累加：result[i] += seq[i+d] * weight
+ *   左侧累加：result[i] += seq[i-d] * weight
  */
 static int sliding_window_distance_shift_fast(const int *seq, int seq_len, int window_size, int *result)
 {
-    int *weighted = (int *)malloc(seq_len * sizeof(int));
-    if (!weighted) {
-        fprintf(stderr, "[kadd_feature] ERROR: Failed to allocate weighted array (seq_len=%d)\n", seq_len);
-        return KADD_ERROR_OUT_OF_MEMORY;
+    /* 初始化结果数组 */
+    for (int i = 0; i < seq_len; i++) {
+        result[i] = 0;
     }
 
+    /* 对每个偏移距离计算加权和 */
     for (int d = 1; d < window_size; d++) {
         const int weight = window_size - d;
-        const int unroll_mask = KADD_SIMD_UNROLL_FACTOR-1;
-        int i = 0;
-        const int limit = seq_len & ~unroll_mask;
-        for (; i < limit; i += KADD_SIMD_UNROLL_FACTOR) {
-            weighted[i] = seq[i] * weight;
-            weighted[i + KADD_SIMD_UNROLL_OFFSET_1] = seq[i + KADD_SIMD_UNROLL_OFFSET_1] * weight;
-            weighted[i + KADD_SIMD_UNROLL_OFFSET_2] = seq[i + KADD_SIMD_UNROLL_OFFSET_2] * weight;
-            weighted[i + KADD_SIMD_UNROLL_OFFSET_3] = seq[i + KADD_SIMD_UNROLL_OFFSET_3] * weight;
+
+        /* 右侧：result[i] += seq[i+d] * weight */
+        for (int i = 0; i < seq_len - d; i++) {
+            result[i] += seq[i + d] * weight;
         }
-        for (; i < seq_len; i++) {
-            weighted[i] = seq[i] * weight;
-        }
-        const int right_limit = (seq_len - d) & ~unroll_mask;
-        i = 0;
-        for (; i < right_limit; i += KADD_SIMD_UNROLL_FACTOR) {
-            result[i] += weighted[i + d];
-            result[i + KADD_SIMD_UNROLL_OFFSET_1] += weighted[i + d + KADD_SIMD_UNROLL_OFFSET_1];
-            result[i + KADD_SIMD_UNROLL_OFFSET_2] += weighted[i + d + KADD_SIMD_UNROLL_OFFSET_2];
-            result[i + KADD_SIMD_UNROLL_OFFSET_3] += weighted[i + d + KADD_SIMD_UNROLL_OFFSET_3];
-        }
-        for (; i < seq_len - d; i++) {
-            result[i] += weighted[i + d];
-        }
-        const int left_limit = (seq_len - d) & ~unroll_mask;
-        i = d;
-        for (; i < d + left_limit; i += KADD_SIMD_UNROLL_FACTOR) {
-            result[i] += weighted[i - d];
-            result[i + KADD_SIMD_UNROLL_OFFSET_1] += weighted[i + KADD_SIMD_UNROLL_OFFSET_1 - d];
-            result[i + KADD_SIMD_UNROLL_OFFSET_2] += weighted[i + KADD_SIMD_UNROLL_OFFSET_2 - d];
-            result[i + KADD_SIMD_UNROLL_OFFSET_3] += weighted[i + KADD_SIMD_UNROLL_OFFSET_3 - d];
-        }
-        for (; i < seq_len; i++) {
-            result[i] += weighted[i - d];
+
+        /* 左侧：result[i] += seq[i-d] * weight */
+        for (int i = d; i < seq_len; i++) {
+            result[i] += seq[i - d] * weight;
         }
     }
-    free(weighted);
+
     return KADD_SUCCESS;
 }
 
@@ -141,7 +123,7 @@ static int sliding_window_distance_sve(const int *seq, int seq_len, int window_s
  * @param feature 输出特征向量（需预先分配）
  * @param feature_dim 输出特征维度
  *
- * @return 0 成功, -1 失败
+ * @return 0 成功，<0 失败（错误码）
  */
 int kadd_seq_to_feature(const int *seq, int seq_len, int window_size,
                    int *feature, int feature_dim)
@@ -152,7 +134,7 @@ int kadd_seq_to_feature(const int *seq, int seq_len, int window_size,
         return KADD_ERROR_NULL_PTR;
     }
     if (seq_len < 0 || window_size < 0 || feature_dim <= 0 ||
-        seq_len > KADD_CONFIG_DEFAULT_MAX_INPUT_LENGTH || feature_dim > KADD_CONFIG_DEFAULT_MAX_OUTPUT_DIM) {
+        seq_len > KADD_FEATURE_DEFAULT_MAX_INPUT_LENGTH || feature_dim > KADD_FEATURE_DEFAULT_MAX_OUTPUT_DIM) {
         fprintf(stderr, "[kadd_feature] ERROR: Invalid parameters (seq_len=%d, window_size=%d, feature_dim=%d)\n",
                 seq_len, window_size, feature_dim);
         return KADD_ERROR_INVALID_PARAM;
@@ -222,16 +204,16 @@ static int validate_feature_batch_params(const kadd_feature_batch_t *batch)
                 batch->count, batch->feature_dim, batch->window_size);
         return KADD_ERROR_INVALID_PARAM;
     }
-    if (batch->count > KADD_CONFIG_MAX_SAMPLE_COUNT) {
+    if (batch->count > KADD_FEATURE_MAX_SAMPLE_COUNT) {
         fprintf(stderr,
                 "[kadd_feature] ERROR: Batch count %d exceeds limit %d\n",
-                batch->count, KADD_CONFIG_MAX_SAMPLE_COUNT);
+                batch->count, KADD_FEATURE_MAX_SAMPLE_COUNT);
         return KADD_ERROR_INVALID_PARAM;
     }
-    if (batch->feature_dim > KADD_CONFIG_DEFAULT_MAX_OUTPUT_DIM) {
+    if (batch->feature_dim > KADD_FEATURE_DEFAULT_MAX_OUTPUT_DIM) {
         fprintf(stderr,
                 "[kadd_feature] ERROR: Feature dim %d exceeds limit %d\n",
-                batch->feature_dim, KADD_CONFIG_DEFAULT_MAX_OUTPUT_DIM);
+                batch->feature_dim, KADD_FEATURE_DEFAULT_MAX_OUTPUT_DIM);
         return KADD_ERROR_INVALID_PARAM;
     }
 
@@ -246,8 +228,8 @@ int kadd_seq_to_feature_batch(kadd_feature_batch_t *batch)
     }
 
     int actual_batch_size = batch->batch_size;
-    if (actual_batch_size <= 0 || actual_batch_size > KADD_MAX_BATCH_SIZE) {
-        actual_batch_size = KADD_DEFAULT_BATCH_SIZE;
+    if (actual_batch_size <= 0 || actual_batch_size > KADD_FEATURE_MAX_BATCH_SIZE) {
+        actual_batch_size = KADD_FEATURE_DEFAULT_BATCH_SIZE;
     }
 
     // 初始化输出特征为0

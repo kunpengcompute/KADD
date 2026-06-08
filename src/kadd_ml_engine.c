@@ -645,21 +645,21 @@ int kadd_model_predict_batch(kadd_model_handle_t *handle, const float *features,
                 n, batch_size);
         return KADD_ERROR_INVALID_PARAM;
     }
-    if (n > KADD_CONFIG_MAX_SAMPLE_COUNT) {
+    if (n > KADD_ML_MAX_SAMPLE_COUNT) {
         fprintf(stderr, "[kadd_ml] ERROR: Sample count %d exceeds limit %d\n",
-                n, KADD_CONFIG_MAX_SAMPLE_COUNT);
+                n, KADD_ML_MAX_SAMPLE_COUNT);
         return KADD_ERROR_INVALID_PARAM;
     }
-    if (handle->feature_dim > KADD_CONFIG_DEFAULT_MAX_OUTPUT_DIM) {
+    if (handle->feature_dim > KADD_ML_DEFAULT_MAX_OUTPUT_DIM) {
         fprintf(stderr,
                 "[kadd_ml] ERROR: Feature dim %d exceeds limit %d\n",
-                handle->feature_dim, KADD_CONFIG_DEFAULT_MAX_OUTPUT_DIM);
+                handle->feature_dim, KADD_ML_DEFAULT_MAX_OUTPUT_DIM);
         return KADD_ERROR_INVALID_PARAM;
     }
 
     int effective_batch = batch_size;
-    if (effective_batch <= 0 || effective_batch > KADD_MAX_BATCH_SIZE) {
-        effective_batch = KADD_DEFAULT_BATCH_SIZE;
+    if (effective_batch <= 0 || effective_batch > KADD_ML_MAX_BATCH_SIZE) {
+        effective_batch = KADD_ML_DEFAULT_BATCH_SIZE;
     }
 
     // 分块批量处理

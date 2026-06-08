@@ -246,8 +246,6 @@ int kadd_sqli_detect(kadd_sqli_engine_t *engine, const char *input, float *proba
         return KADD_ERROR_INVALID_INPUT;
     }
 
-    *probability = 0.0f;
-
     /* 步骤 1: DFA 分词 - 使用内存池 */
     int token_count = 0;
     if (kadd_dfa_engine_tokenize(engine->dfa_engine, input, strlen(input),
@@ -353,7 +351,7 @@ static int process_ml_batch_and_update(kadd_batch_ml_params_t *params,
     int total_features = params->current_batch * params->engine->feature_dim;
     convert_int_to_float_features(buffers->features, buffers->float_features, total_features);
 
-    float batch_probs[KADD_MAX_BATCH_SIZE];
+    float batch_probs[KADD_ML_MAX_BATCH_SIZE];
     int ml_result = kadd_model_predict_batch(params->engine->ml_model, buffers->float_features,
                                                 params->current_batch, batch_probs, params->current_batch);
     if (ml_result != KADD_SUCCESS) {
@@ -383,10 +381,10 @@ static int init_batch_detect_params(int batch_size, int *out_actual_batch_size,
 
     *out_actual_batch_size = batch_size;
     if (*out_actual_batch_size <= 0) {
-        *out_actual_batch_size = KADD_DEFAULT_BATCH_SIZE;
+        *out_actual_batch_size = KADD_ML_DEFAULT_BATCH_SIZE;
     }
-    if (*out_actual_batch_size > KADD_MAX_BATCH_SIZE) {
-        *out_actual_batch_size = KADD_MAX_BATCH_SIZE;
+    if (*out_actual_batch_size > KADD_ML_MAX_BATCH_SIZE) {
+        *out_actual_batch_size = KADD_ML_MAX_BATCH_SIZE;
     }
 
     // 初始化所有概率为0（表示失败）
@@ -455,8 +453,8 @@ int kadd_sqli_detect_batch(kadd_sqli_engine_t *engine, const char **inputs, int 
                 (engine ? "valid" : "NULL"), (inputs ? "valid" : "NULL"), (probabilities ? "valid" : "NULL"), count);
         return KADD_ERROR_INVALID_INPUT;
     }
-    if (count > KADD_CONFIG_MAX_SAMPLE_COUNT) {
-        fprintf(stderr, "[kadd_sqli] ERROR: Batch count %d exceeds limit %d\n", count, KADD_CONFIG_MAX_SAMPLE_COUNT);
+    if (count > KADD_ML_MAX_SAMPLE_COUNT) {
+        fprintf(stderr, "[kadd_sqli] ERROR: Batch count %d exceeds limit %d\n", count, KADD_ML_MAX_SAMPLE_COUNT);
         return KADD_ERROR_INVALID_PARAM;
     }
 

@@ -20,7 +20,7 @@ constexpr int kTokenBufferSize = 100;
 constexpr int kTestLongInputLen = 100;
 constexpr int kMinInjectionTokens = 4;
 constexpr int kMinUnionTokens = 2;
-constexpr int kDefaultBatchSize = KADD_DEFAULT_BATCH_SIZE;  // 与 KADD_DEFAULT_BATCH_SIZE 保持一致
+constexpr int kDefaultBatchSize = KADD_DFA_DEFAULT_BATCH_SIZE;  // 与 KADD_DFA_DEFAULT_BATCH_SIZE 保持一致
 
 /* ========== 测试夹具 ========== */
 
