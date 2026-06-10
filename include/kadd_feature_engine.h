@@ -6,12 +6,13 @@
 #include "kadd_config_loader.h"
 #include "kadd_errors.h"
 
-/* 循环展开次数 */
-#define KADD_SIMD_UNROLL_FACTOR 4
-/* 循环展开偏移量 */
-#define KADD_SIMD_UNROLL_OFFSET_1 1
-#define KADD_SIMD_UNROLL_OFFSET_2 2
-#define KADD_SIMD_UNROLL_OFFSET_3 3
+/* ========== Feature 配置上限 ========== */
+#define KADD_FEATURE_MAX_WINDOW_SIZE     100   /* window_size 最大值 */
+#define KADD_FEATURE_MAX_SAMPLE_COUNT  10000000  /* 批处理最大样本数 */
+#define KADD_FEATURE_MAX_BATCH_SIZE      1024   /* 批次大小上限 */
+#define KADD_FEATURE_DEFAULT_BATCH_SIZE  64     /* 默认批次大小 */
+#define KADD_FEATURE_DEFAULT_MAX_INPUT_LENGTH 300  /* 默认输入长度上限 */
+#define KADD_FEATURE_DEFAULT_MAX_OUTPUT_DIM   300  /* 默认输出维度上限 */
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,17 +28,17 @@ typedef struct {
     int *features;            /**< 输出特征（调用者分配，二维展平） */
     int feature_dim;          /**< 特征维度 */
     int window_size;          /**< 滑动窗口大小 */
-    int batch_size;           /**< 批次大小（0或负数表示默认64） */
+    int batch_size;           /**< 批次大小 */
 } kadd_feature_batch_t;
 
 /**
  * @brief 将不定长序列转换为固定维度特征向量
  *
  * @param seq 输入序列（整数数组）
- * @param seq_len 序列长度
- * @param window_size 滑动窗口大小
+ * @param seq_len 序列长度（必须 >= 0，且不超过 KADD_FEATURE_DEFAULT_MAX_INPUT_LENGTH）
+ * @param window_size 滑动窗口大小（必须 >= 0）
  * @param feature 输出特征向量（需预先分配）
- * @param feature_dim 输出特征维度
+ * @param feature_dim 输出特征维度（必须 > 0，且不超过 KADD_FEATURE_DEFAULT_MAX_OUTPUT_DIM）
  *
  * @return 0 成功，<0 失败（错误码）
  *
@@ -60,8 +61,8 @@ int kadd_seq_to_feature(const int *seq, int seq_len, int window_size,
  * @param batch 批处理上下文
  * @return KADD_SUCCESS (0) 完全成功，<0 失败（错误码）
  *
- * @note 任何序列失败都会立即返回错误，不会部分成功
- * @note 失败的序列对应位置特征保持为 0
+ * @note 批处理是"全有或全无"设计：任何序列失败都会立即返回错误码
+ * @note 失败时已处理的特征保持为 0（初始化值），不会部分成功
  */
 int kadd_seq_to_feature_batch(kadd_feature_batch_t *batch);
 

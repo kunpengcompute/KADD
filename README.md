@@ -24,7 +24,7 @@ cmake -DUSE_SYSTEM_LIBS=OFF -DKADD_OPTIMIZE=ON -DCMAKE_BUILD_TYPE=Release ..
 cmake --build .
 
 # 运行测试
-export LD_LIBRARY_PATH=$(pwd)/src:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=$(pwd)/src:../third_party/onnxruntime/lib:/usr/local/lib64:/usr/local/lib:$LD_LIBRARY_PATH
 ctest --verbose
 
 # 生成 UT 覆盖率报告（需安装 lcov）

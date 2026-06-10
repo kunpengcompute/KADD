@@ -486,19 +486,19 @@ int kadd_dfa_engine_tokenize_batch(const kadd_dfa_engine_t *engine, kadd_dfa_bat
         fprintf(stderr, "[kadd_dfa] ERROR: Invalid batch count: %d\n", batch->count);
         return KADD_ERROR_INVALID_INPUT;
     }
-    if (batch->count > KADD_CONFIG_MAX_SAMPLE_COUNT) {
+    if (batch->count > KADD_DFA_MAX_SAMPLE_COUNT) {
         fprintf(stderr,
                 "[kadd_dfa] ERROR: Batch count %d exceeds limit %d\n",
-                batch->count, KADD_CONFIG_MAX_SAMPLE_COUNT);
+                batch->count, KADD_DFA_MAX_SAMPLE_COUNT);
         return KADD_ERROR_INVALID_PARAM;
     }
 
     int actual_batch_size = batch->batch_size;
     if (actual_batch_size <= 0) {
-        actual_batch_size = KADD_DEFAULT_BATCH_SIZE;
+        actual_batch_size = KADD_DFA_DEFAULT_BATCH_SIZE;
     }
-    if (actual_batch_size > KADD_MAX_BATCH_SIZE) {
-        actual_batch_size = KADD_MAX_BATCH_SIZE;
+    if (actual_batch_size > KADD_DFA_MAX_BATCH_SIZE) {
+        actual_batch_size = KADD_DFA_MAX_BATCH_SIZE;
     }
 
     for (int i = 0; i < batch->count; i++) {

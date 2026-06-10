@@ -4,9 +4,8 @@
  * @brief KADD 统一错误码定义
  *
  * 返回值语义统一：
- * - 0  : 完全成功 (KADD_SUCCESS)
- * - >0 : 部分成功（返回成功处理的项目数量）
- * - <0 : 完全失败（错误码）
+ * - 0  : 成功 (KADD_SUCCESS)
+ * - <0 : 失败（错误码）
  *
  * 编号规则：
  * - 通用错误码 : -100 范围
@@ -82,7 +81,7 @@ extern "C" {
 /** @brief Feature 滑窗计算失败 */
 #define KADD_FEATURE_ERROR_WINDOW_FAILED       (-201)
 
-/* ========== SQLi 引擎专用错误码 (-300 茜围) ========== */
+/* ========== SQLi 引擎专用错误码 (-300 范围) ========== */
 
 /** @brief SQLi DFA 子引擎错误 */
 #define KADD_SQLI_ERROR_DFA              (-300)

@@ -49,8 +49,8 @@ constexpr double kPerfLargeMinOps = 1000.0;
 constexpr double kPerfSVEMinOps = 5000.0;
 constexpr double kNanosPerMicro = 1000.0;
 constexpr double kMicrosecondsPerSecond = 1000000.0;
-constexpr int MAX_FEATURE_DIM = KADD_CONFIG_DEFAULT_MAX_OUTPUT_DIM;
-constexpr int MAX_SEQ_LEN = KADD_CONFIG_DEFAULT_MAX_INPUT_LENGTH;
+constexpr int MAX_FEATURE_DIM = KADD_FEATURE_DEFAULT_MAX_OUTPUT_DIM;
+constexpr int MAX_SEQ_LEN = KADD_FEATURE_DEFAULT_MAX_INPUT_LENGTH;
 
 // ========== 测试夹具 ==========
 class FeatureEngineTest : public ::testing::Test {
@@ -1149,7 +1149,7 @@ TEST_F(FeatureEngineTest, BatchSizeEdgeCases)
     batch.batch_size = 1;
     EXPECT_EQ(kadd_seq_to_feature_batch(&batch), KADD_SUCCESS);
 
-    // batch_size > KADD_MAX_BATCH_SIZE (应自动限制)
+    // batch_size > KADD_FEATURE_MAX_BATCH_SIZE (应自动限制)
     batch.batch_size = 1025;
     EXPECT_EQ(kadd_seq_to_feature_batch(&batch), KADD_SUCCESS);
 
@@ -1236,14 +1236,14 @@ TEST_F(FeatureEngineTest, BatchWithZeroCount)
 
 TEST_F(FeatureEngineTest, BatchWithExceedsMaxSampleCount)
 {
-    // 测试 batch->count > KADD_CONFIG_MAX_SAMPLE_COUNT 的情况
+    // 测试 batch->count > KADD_FEATURE_MAX_SAMPLE_COUNT 的情况
     int seq[10] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
     const int *seqs[1] = {seq};
     const int lens[1] = {10};
     std::vector<int> features(config.ml.feature_dim, 0);
 
     kadd_feature_batch_t batch = {
-        seqs, lens, KADD_CONFIG_MAX_SAMPLE_COUNT + 1, features.data(),
+        seqs, lens, KADD_FEATURE_MAX_SAMPLE_COUNT + 1, features.data(),
         config.ml.feature_dim, kWinSize5, 64
     };
 
@@ -1253,7 +1253,7 @@ TEST_F(FeatureEngineTest, BatchWithExceedsMaxSampleCount)
 
 TEST_F(FeatureEngineTest, BatchWithExceedsMaxFeatureDim)
 {
-    // 测试 batch->feature_dim > KADD_CONFIG_DEFAULT_MAX_OUTPUT_DIM 的情况
+    // 测试 batch->feature_dim > KADD_FEATURE_DEFAULT_MAX_OUTPUT_DIM 的情况
     int seq[10] = {1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
     const int *seqs[1] = {seq};
     const int lens[1] = {10};

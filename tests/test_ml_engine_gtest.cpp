@@ -1228,7 +1228,7 @@ TEST_F(MLEngineTest, BatchSizeBoundary_1024)
     if (skip_test) GTEST_SKIP() << "模型文件不可用";
     ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
 
-    // 测试最大批次大小边界 (KADD_MAX_BATCH_SIZE = 1024)
+    // 测试最大批次大小边界 (KADD_ML_MAX_BATCH_SIZE = 1024)
     std::vector<float> features(config.ml.feature_dim * 1024, 0.0f);
     std::vector<float> probabilities(1024, 0.0f);
 
@@ -1255,7 +1255,7 @@ TEST_F(MLEngineTest, SampleCount_ExceedsMax_10Million)
     if (skip_test) GTEST_SKIP() << "模型文件不可用";
     ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
 
-    // 测试超过最大样本数 (KADD_CONFIG_MAX_SAMPLE_COUNT = 10000000)
+    // 测试超过最大样本数 (KADD_ML_MAX_SAMPLE_COUNT = 10000000)
     std::vector<float> features(config.ml.feature_dim * 10, 0.0f);
     std::vector<float> probabilities(10, 0.0f);
 

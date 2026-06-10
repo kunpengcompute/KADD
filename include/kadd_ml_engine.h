@@ -4,6 +4,12 @@
 
 #include <stddef.h>
 
+/* ========== ML 配置上限 ========== */
+#define KADD_ML_MAX_SAMPLE_COUNT    10000000    /* 批处理最大样本数 */
+#define KADD_ML_MAX_BATCH_SIZE          1024    /* 批次大小上限 */
+#define KADD_ML_DEFAULT_BATCH_SIZE        64    /* 默认批次大小 */
+#define KADD_ML_DEFAULT_MAX_OUTPUT_DIM  300    /* 默认输出维度上限 */
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -25,9 +31,11 @@ typedef struct kadd_model_handle_t kadd_model_handle_t;
  *
  * @param handle 模型句柄指针的指针
  * @param model_path 模型文件路径 (.onnx)
- * @param feature_dim 特征维度
+ * @param feature_dim 特征维度（必须 > 0，且不超过 KADD_FEATURE_DEFAULT_MAX_OUTPUT_DIM）
  *
  * @return 0 成功，<0 失败（错误码）
+ *
+ * @note 加载完成后会执行一次预热推理，预热失败会导致加载失败
  *
  * @example
  * kadd_model_handle_t *model = NULL;
@@ -56,15 +64,15 @@ int kadd_model_predict(kadd_model_handle_t *handle, const float *features, float
  * @param features 特征矩阵 (n x feature_dim)
  * @param n 样本数 建议根据实际内存判断，建议10,000,000以下
  * @param probabilities 输出概率数组
- * @param batch_size 批次大小（推荐值：32/64/128，范围：1-1024）
+ * @param batch_size 批次大小（推荐值：32/64/128，范围：1-1024，>1024自动重置为默认值64）
  *
  * @return KADD_SUCCESS (0) 完全成功，<0 失败（错误码）
  *
  * @note 使用分块批量推理，每次处理 batch_size 个样本，避免内存峰值过高
  * @note 较大的 batch_size 性能更好，但需要更多内存
- * @note 如果 batch_size > 1024，将自动限制为 1024
+ * @note 如果 batch_size > 1024，将自动重置为默认值 64
  * @note 如果 batch_size <= 0 或 n <= 0，返回 KADD_ERROR_INVALID_PARAM
- * @note 任何批次处理失败会立即返回 KADD_ERROR_INFERENCE_FAILED，不会部分成功
+ * @note 任何批次处理失败会立即返回错误码，不会部分成功
  */
 int kadd_model_predict_batch(kadd_model_handle_t *handle, const float *features,
                              int n, float *probabilities, int batch_size);
