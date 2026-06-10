@@ -157,8 +157,7 @@ static int parse_csv_line(char *line, char **query_out, int *label_out)
                     query_end += 2;
                     continue;
                 } else {
-                    // 结束引号
-                    query_end++;
+                    // 结束引号，不移动指针（query_end指向引号位置）
                     break;
                 }
             }
@@ -180,8 +179,14 @@ static int parse_csv_line(char *line, char **query_out, int *label_out)
     // 将CSV转义的引号转换回单个引号
     size_t query_len = unescape_csv_quotes(query_start, *query_out, raw_len);
 
-    // 查找Label列（query_end指向逗号，跳过它）
+    // 查找Label列
+    // query_end现在指向：结束引号（有引号时）或 逗号（无引号时）
     label_start = query_end;
+    // 跳过可能的结束引号
+    if (*label_start == '"') {
+        label_start++;
+    }
+    // 跳过逗号
     if (*label_start == ',') {
         label_start++;
     }
