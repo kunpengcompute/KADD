@@ -47,27 +47,6 @@ static int parse_string_field(cJSON *parent, const char *field_name,
 }
 
 /**
- * @brief 解析整数字段
- * @param parent JSON父对象
- * @param field_name 字段名
- * @param dest 目标整数指针
- * @param section_name 所属配置节名称（用于错误消息）
- * @return 成功返回 KADD_SUCCESS，失败返回 KADD_ERROR_CONFIG
- */
-static int parse_int_field(cJSON *parent, const char *field_name,
-                          int *dest, const char *section_name)
-{
-    cJSON *item = cJSON_GetObjectItem(parent, field_name);
-    if (!item || !cJSON_IsNumber(item)) {
-        fprintf(stderr, "[kadd_config] ERROR: Missing or invalid '%s' in %s\n",
-                field_name, section_name);
-        return KADD_ERROR_CONFIG;
-    }
-    *dest = item->valueint;
-    return KADD_SUCCESS;
-}
-
-/**
  * @brief 解析无符号整数字段（必须为正数）
  * @param parent JSON父对象
  * @param field_name 字段名

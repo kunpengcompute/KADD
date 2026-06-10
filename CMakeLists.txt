@@ -52,7 +52,7 @@ option(BUILD_TESTS "Build test programs" ON)
 option(USE_SYSTEM_LIBS "Use system libraries instead of third_party" ON)
 option(ENABLE_CODE_COVERAGE "Enable code coverage reporting" OFF)
 option(KADD_OPTIMIZE "Enable optimizations" OFF)
-option(ENABLE_ARM_SVE "Enable ARM SVE acceleration (auto-detects SVE2 support)" OFF)
+option(ENABLE_ARM_SVE "Enable ARM SVE acceleration (auto-detects SVE2 support)" ON)
 
 # 自动检测 assets 目录（优先级：项目根目录 > 构建目录 > 默认 assets）
 if(EXISTS "${CMAKE_SOURCE_DIR}/assets")
@@ -101,6 +101,25 @@ endif()
 if(ENABLE_ARM_SVE AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|ARM64")
     message(WARNING "ENABLE_ARM_SVE is ON but system is not ARM64. SVE will be disabled.")
     set(ENABLE_ARM_SVE OFF)
+elseif(ENABLE_ARM_SVE)
+    # 检测编译器是否支持 SVE（尝试编译 SVE 代码）
+    include(CheckCSourceCompiles)
+    check_c_source_compiles("
+        #if defined(__aarch64__) || defined(__ARM64)
+            #if defined(__ARM_FEATURE_SVE)
+                int main(void) { return 0; }
+            #else
+                #error SVE not supported
+            #endif
+        #else
+            #error Not ARM64
+        #endif
+    " ARM_SVE_COMPILER_SUPPORTED)
+
+    if(NOT ARM_SVE_COMPILER_SUPPORTED)
+        message(WARNING "Compiler does not support ARM SVE. SVE acceleration will be disabled.")
+        set(ENABLE_ARM_SVE OFF)
+    endif()
 endif()
 
 if(ENABLE_ARM_SVE)
@@ -124,10 +143,19 @@ endif()
 
 # 代码覆盖率
 if(ENABLE_CODE_COVERAGE)
-    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --coverage")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --coverage")
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        # Clang 使用显式的 coverage 标志
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
+    else()
+        # GCC 使用 --coverage
+        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --coverage")
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --coverage")
+    endif()
     set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --coverage")
     set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} --coverage")
+    # Coverage 构建时强制使用静态库，避免 .so 分散 coverage 数据
+    set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries" FORCE)
 endif()
 
 # 依赖查找策略: 优先使用系统库，如果找不到则使用 third_party
@@ -282,23 +310,21 @@ endif()
 # ============================================================================
 # FUZZ 测试支持检查（全局变量，供 tests/CMakeLists.txt 使用）
 # ============================================================================
-# ARM环境FUZZ测试支持（优先使用Clang）
+# FUZZ测试支持（需要Clang编译器）
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    # Clang环境 - 原生支持LibFuzzer
     set(FUZZ_TESTS_AVAILABLE TRUE CACHE BOOL "LibFuzzer tests available" FORCE)
-    message(STATUS "Clang detected - FUZZ tests will be built")
+    message(STATUS "Clang detected - FUZZ tests available (use Clang for best results)")
 elseif(ENABLE_ARM_FUZZ)
     # ARM环境强制启用FUZZ测试
     set(FUZZ_TESTS_AVAILABLE TRUE CACHE BOOL "LibFuzzer tests available (ARM)" FORCE)
-    message(STATUS "ARM FUZZ enabled - tests will build on target platform")
+
 else()
     set(FUZZ_TESTS_AVAILABLE FALSE CACHE BOOL "LibFuzzer tests available" FORCE)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
         message(STATUS "GCC detected - FUZZ tests skipped")
         message(STATUS "  ARM platform: use Clang for best results")
-        message(STATUS "  Or enable: cmake -DENABLE_ARM_FUZZ=ON ..")
     else()
-        message(STATUS "FUZZ tests skipped - ARM platform requires Clang")
+        message(STATUS "FUZZ tests skipped - requires Clang")
     endif()
 endif()
 
@@ -322,8 +348,8 @@ message(STATUS "  Version:         ${PROJECT_VERSION}")
 message(STATUS "  Build date:      ${KADD_VERSION_BUILDDATE}")
 message(STATUS "  Output path:     ${LIBRARY_OUTPUT_PATH}")
 message(STATUS "  Build type:      ${CMAKE_BUILD_TYPE}")
-message(STATUS "  C Standard:      ${CMAKE_C_STANDARD}")
-message(STATUS "  CXX Standard:    ${CMAKE_CXX_STANDARD}")
+message(STATUS "  C Standard:      ${C_STANDARD}")
+message(STATUS "  CXX Standard:    ${CXX_STANDARD}")
 message(STATUS "")
 message(STATUS "  Dependencies:")
 message(STATUS "    ONNX Runtime:  ${ONNXRUNTIME_LIBRARIES}")
@@ -334,15 +360,17 @@ message(STATUS "  Testing:")
 message(STATUS "    Unit Tests:    ${BUILD_TESTS}")
 message(STATUS "    FUZZ Tests:    ${FUZZ_TESTS_AVAILABLE}")
 if(FUZZ_TESTS_AVAILABLE)
-    message(STATUS "      Available: make fuzz-short|fuzz-medium|fuzz-long|fuzz-asan-real")
+	if(ENABLE_ARM_SVE)
+		message(STATUS "      ARM SVE: ${ENABLE_ARM_SVE}")
+	endif()
 endif()
 if(BUILD_TESTS)
     message(STATUS "")
     message(STATUS "  To run tests, set LD_LIBRARY_PATH:")
     message(STATUS "    export LD_LIBRARY_PATH=${ONNXRUNTIME_LIB_DIR}:$LD_LIBRARY_PATH")
     if(CJSON_FOUND AND NOT CJSON_IS_THIRD_PARTY)
-        get_filename_component(CJSON_LIB_DIR ${CJSON_LIBRARIES} DIRECTORY)
-        message(STATUS "    export LD_LIBRARY_PATH=${CJSON_LIB_DIR}:$LD_LIBRARY_PATH")
+		get_filename_component(CJSON_LIB_DIR ${CJSON_LIBRARIES} DIRECTORY)
+		message(STATUS "    export LD_LIBRARY_PATH=${CJSON_LIB_DIR}:$LD_LIBRARY_PATH")
     endif()
 endif()
 message(STATUS "============================================================")

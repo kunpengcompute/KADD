@@ -13,8 +13,30 @@ function(add_kadd_library NAME)
     set(multi_value_args SOURCES LINK_LIBRARIES)
     cmake_parse_arguments(ARG "${options}" "${one_value_args}" "${multi_value_args}" ${ARGN})
 
-    # 动态库
-    add_library(${NAME} SHARED ${ARG_SOURCES})
+    # 库类型（根据 BUILD_SHARED_LIBS 决定）
+    if(BUILD_SHARED_LIBS)
+        add_library(${NAME} SHARED ${ARG_SOURCES})
+        # 显式应用安全编译选项（确保 SP 栈保护和 Ftrapv 整数溢出检查生效）
+        target_compile_options(${NAME} PRIVATE
+            -fPIC                    # 位置无关代码（PIC）
+            -fstack-protector-strong # 栈保护（Stack Protection）
+            -Wformat -Wformat-security # 格式化字符串检查（Format String）
+            -ftrapv                  # 整数溢出检查
+        )
+        # 链接选项继承自 CMAKE_SHARED_LINKER_FLAGS: -Wl,-z,relro,-z,now
+        set_target_properties(${NAME} PROPERTIES
+            VERSION "${ARG_VERSION}"
+            SOVERSION 1
+        )
+    else()
+        add_library(${NAME} STATIC ${ARG_SOURCES})
+        # 静态库不需要 -fPIC 和版本属性
+        target_compile_options(${NAME} PRIVATE
+            -fstack-protector-strong
+            -Wformat -Wformat-security
+            -ftrapv
+        )
+    endif()
 
     # 显式应用安全编译选项（确保 SP 栈保护和 Ftrapv 整数溢出检查生效）
     target_compile_options(${NAME} PRIVATE

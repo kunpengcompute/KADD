@@ -343,16 +343,15 @@ static void FuzzEdgeCases(const uint8_t* data, size_t size) {
 static void FuzzInitFailures(const uint8_t* data, size_t size) {
     if (size < 4) return;
 
-    // 测试1: 模拟 ONNX API 不可用（通过重复加载/卸载）
+    // 测试1: 模拟 ONNX API 加载/卸载（使用临时引擎，不释放全局引擎）
     static int load_cycle = 0;
     if (data[0] % 10 == 0) {  // 10% 概率触发
-        if (g_fuzz_context.ml_model) {
-            kadd_model_free(g_fuzz_context.ml_model);
-            g_fuzz_context.ml_model = nullptr;
-
-            // 尝试重新加载（测试环境初始化逻辑）
-            kadd_model_load(&g_fuzz_context.ml_model,
-                           g_fuzz_context.config.ml.model_path, 28);
+        // 创建临时模型进行测试，不使用全局引擎
+        kadd_model_handle_t *tmp_model = nullptr;
+        if (kadd_model_load(&tmp_model,
+                           g_fuzz_context.config.ml.model_path, 28) == 0) {
+            // 测试后释放临时模型
+            kadd_model_free(tmp_model);
         }
     }
 
@@ -435,7 +434,7 @@ static void FuzzBoundaryConditions(const uint8_t* data, size_t size) {
 static void FuzzBatchDetection(const uint8_t* data, size_t size) {
     if (!g_fuzz_context.sqli_engine || size < 8) return;
 
-    int count = 1 + (data[0] % 64);  // 1-64 条输入
+    int count = 1 + (data[0] % std::min(64, static_cast<int>(size)));  // 1-64，但不超过 size
     int batch_size = 1 + (data[1] % 64);  // 1-64 批大小
 
     std::vector<std::string> inputs_str(count);
@@ -549,7 +548,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     size_t payload_size = size - 1;
     std::string input = CreateSafeString(payload, payload_size);
 
-    switch (selector % 11) {  // 扩展到11个分支
+    switch (selector % 12) {  // 扩展到12个分支
         case 0: FuzzSQLiEngine(input); break;
         case 1: FuzzDFAEngine(input); break;
         case 2: FuzzFeatureEngine(input); break;
@@ -561,6 +560,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         case 8: FuzzBoundaryConditions(payload, payload_size); break;
         case 9: FuzzInitFailures(payload, payload_size); break;
         case 10: FuzzSQLiEngineFree(data, size); break;
+        case 11: FuzzBatchErrorPaths(); break;
         default: break;  // 防御性编程：理论上不会执行，但满足静态分析要求
     }
 

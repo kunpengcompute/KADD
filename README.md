@@ -12,7 +12,9 @@
 
 > 详见 [第三方库安装指南](docs/DEPENDENCIES.md)
 
-### 构建与测试
+### 构建指南
+
+#### 📦 基础构建（生产部署）
 
 ```bash
 # 一键构建（下载依赖 + 编译）
@@ -20,19 +22,60 @@ chmod +x build.sh && ./build.sh
 
 # 或手动构建
 mkdir -p build && cd build
-cmake -DUSE_SYSTEM_LIBS=OFF -DKADD_OPTIMIZE=ON -DCMAKE_BUILD_TYPE=Release ..
+cmake ..
+cmake --build .
+```
+
+#### 🧪 单元测试构建（GCC 编译）
+
+```bash
+mkdir -p build_ut && cd build_ut
+cmake -DUSE_SYSTEM_LIBS=OFF -DENABLE_CODE_COVERAGE=ON ..
 cmake --build .
 
 # 运行测试
 export LD_LIBRARY_PATH=$(pwd)/src:../third_party/onnxruntime/lib:/usr/local/lib64:/usr/local/lib:$LD_LIBRARY_PATH
 ctest --verbose
 
-# 生成 UT 覆盖率报告（需安装 lcov）
-cmake -DUSE_SYSTEM_LIBS=OFF -DKADD_OPTIMIZE=ON -DENABLE_CODE_COVERAGE=ON -DCMAKE_BUILD_TYPE=Release ..
-cmake --build .
-ctest --output-on-failure
+# 生成 ut 覆盖率报告
 make coverage
 ```
+
+#### 🎯 Fuzz 测试构建（Clang + ASan）
+
+```bash
+mkdir -p build_fuzz && cd build_fuzz
+cmake -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang \
+      -DUSE_SYSTEM_LIBS=OFF -DENABLE_CODE_COVERAGE=ON ..
+cmake --build .
+
+# 运行 Fuzz 生成覆盖率数据（3小时，ONNX 内存泄漏故使用 -detect_leaks=0）
+cd tests && ./kadd_fuzzer assets/fuzz_corpus -detect_leaks=0 \
+    -runs=30000000 -max_total_time=10800 > /dev/null 2>&1
+
+# 展示覆盖率报告
+llvm-profdata merge -sparse default.profraw -o kadd.profdata
+llvm-cov report ./kadd_fuzzer -instr-profile=kadd.profdata \
+    -ignore-filename-regex="tests/.*|third_party/.*|include/*"
+
+# 生成 fuzz 覆盖率报告
+llvm-cov show ./kadd_fuzzer -instr-profile=kadd.profdata \
+    -format=html -o coverage_html \
+    -ignore-filename-regex="tests/.*|third_party/.*|include/*"
+```
+
+#### 🔧 编译选项速查表
+
+| 选项 | 默认值 | 说明 | 使用场景 |
+|------|--------|------|---------|
+| `-DCMAKE_BUILD_TYPE=Release` | Debug | 发布构建（-O3 优化） | 生产部署 |
+| `-DKADD_OPTIMIZE=ON` | OFF | 额外优化选项 | 性能测试 |
+| `-DENABLE_ARM_SVE=ON` | ON | ARM SVE 加速（默认开启） | ARM 平台 |
+| `-DENABLE_CODE_COVERAGE=ON` | OFF | 代码覆盖率 | 覆盖率分析 |
+| `-DBUILD_TESTS=ON` | ON | 构建测试程序 | 测试构建 |
+| `-DUSE_SYSTEM_LIBS=OFF` | ON | 使用第三方库 | 独立构建 |
+| `-DCMAKE_CXX_COMPILER=clang++` | auto | 指定编译器 | Fuzz/覆盖 |
+| `-DCMAKE_C_COMPILER=clang` | auto | 指定编译器 | Fuzz/覆盖 |
 
 ## 📦 模块说明
 
@@ -76,52 +119,6 @@ int main() {
 
 - [第三方库安装指南](docs/DEPENDENCIES.md) - 依赖安装说明
 
-## 🔬 FUZZ 测试
-
-KADD 项目集成了 LibFuzzer 进行自动化模糊测试（ARM平台优化）。
-
-> **注意：** FUZZ 测试需要 Clang 编译器（LibFuzzer 不支持 GCC）
-
-### 测试覆盖
-
-- **SQLi 引擎**：各种注入模式、编码绕过、边界情况
-- **DFA 引擎**：特殊字符、超长输入、空指针处理
-- **Feature 引擎**：随机序列、负值序列、批量处理边界
-- **ML 引擎**：异常特征向量、批处理大小边界、内存泄漏
-
-### 覆盖率报告
-
-LibFuzzer 测试支持生成代码覆盖率报告。
-
-#### 生成覆盖率报告
-
-```bash
-# 1. 使用 Clang 编译（必需）
-mkdir build_fuzz && cd build_fuzz
-# 如果使用third party; 规避 -fPIC 报错
-CC=clang CXX=clang++ cmake -DUSE_SYSTEM_LIBS=OFF -DKADD_OPTIMIZE=ON -DCMAKE_BUILD_TYPE=Release ..
-cmake --build .
-
-# 2. 进入测试目录运行 FUZZ（语料已由 cmake 复制到 assets/fuzz_corpus/）
-cd tests && ./kadd_fuzzer assets/fuzz_corpus -runs=10000
-
-# 3. 合并覆盖率数据
-llvm-profdata merge -sparse default.profraw -o kadd.profdata
-
-# 4. 查看覆盖率报告（仅 src/ 源码）
-llvm-cov report ./kadd_fuzzer -instr-profile=kadd.profdata -ignore-filename-regex="tests/.*|third_party/.*|include/*"
-
-# 5. 生成 HTML 覆盖率报告
-llvm-cov show ./kadd_fuzzer -instr-profile=kadd.profdata  -format=html -o coverage_html -ignore-filename-regex="tests/.*|third_party/.*|include/*"
-```
-
-#### 覆盖率报告选项
-
-| 选项 | 描述 | 默认值 |
-|------|------|--------|
-| `-runs` | 运行的测试用例数量 | 无限 |
-| `-max_total_time` | 最大运行时间（秒） | 10 |
-| `-max_len` | 最大输入长度 | 4096 |
 
 ## 📁 目录结构
 
@@ -141,7 +138,7 @@ KADD/
 `tools/` 目录包含**模型和数据生成工具**，用于：
 
 - 训练和生成检测模型（`tools/train_tokens.py`）
-- 生成 DFA 状态转移表
+- 生成 DFA 状态转移表（`tools/dfa_compile/dfa_compiler.py`）
 
 **重要声明：**
 
@@ -152,29 +149,6 @@ KADD/
 >
 > 这些工具是**开发过程中的临时脚本**，可能未经过充分测试和审查。
 > 如需用于生产环境，请自行评估安全性并进行必要的加固。
-
-#### 运行机制说明
-
-**正常使用场景：**
-
-KADD 引擎运行时**仅使用** `tools/` 生成的二进制产物：
-
-| 产物文件 | 说明 | 引擎使用位置 |
-|---------|------|-------------|
-| `assets/model/model_tokens_rf.onnx` | 训练好的 ML 模型 | ML 引擎加载推理 |
-| `assets/data/dfa_states.json` | DFA 状态转移表 | DFA 引擎查表匹配 |
-
-**主项目代码不会执行** `tools/` 中的任何 Python 脚本。
-
-#### 何时需要使用 tools 工具
-
-仅在以下情况才需要运行 `tools/` 中的脚本：
-
-| 场景 | 需要运行的脚本 | 生成的产物 |
-|------|--------------|-----------|
-| 更新检测模型 | `tools/train_tokens.py` | 新的 `.onnx` 模型文件 |
-| 修改分词规则 | `tools/generate_dfa.py`* | 新的 DFA 状态表 |
-| 自定义训练数据 | `tools/train_tokens.py --dataset your_data.csv` | 定制化模型 |
 
 **示例：重新训练模型**
 
@@ -212,16 +186,6 @@ python tools/train_tokens.py \
 | Linux | aarch64 | ✅ 支持 (NEON) |
 | Linux | ARMv9-A | ✅ 支持 (SVE/SVE2) |
 
-## 🔧 编译选项
-
-| 选项 | 默认值 | 说明 |
-|------|--------|------|
-| `-DKADD_OPTIMIZE=ON` | OFF | 启用 -O3 优化 |
-| `-DENABLE_ARM_SVE=ON` | OFF | 启用 ARM SVE（自动检测 SVE2） |
-| `-DENABLE_CODE_COVERAGE=ON` | OFF | 启用代码覆盖率 |
-| `-DBUILD_TESTS=ON` | ON | 构建测试程序 |
-| `-DUSE_SYSTEM_LIBS=ON` | ON | 优先使用系统库 |
-
 ## 📜 第三方开源库
 
 本项目使用以下开源库：
@@ -237,4 +201,5 @@ python tools/train_tokens.py \
 ## 📄 许可证
 
 源代码 **Private Repository Source Code License 1.0**  [LICENSE](LICENSE)。
+
 文档 **CC-BY 4.0 (Creative Commons Attribution 4.0 International)** [LICENSE](./docs/LICENSE)。
