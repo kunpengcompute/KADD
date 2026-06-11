@@ -137,13 +137,15 @@ if(FUZZ_TESTS_AVAILABLE)
 
     target_compile_features(kadd_fuzzer PRIVATE cxx_std_17)
 
-    # LibFuzzer 编译和链接选项
-    # 安全选项继承自 CMAKE_C_FLAGS/CMAKE_CXX_FLAGS，只需添加 fuzzer 特定选项
+    # LibFuzzer 编译和链接选项（ASan + Coverage + Fuzzer 三合一）
     target_compile_options(kadd_fuzzer PRIVATE
-        -fsanitize=fuzzer
+        -fsanitize=fuzzer,address
+        -fprofile-instr-generate
+        -fcoverage-mapping
+        -g
     )
     target_link_options(kadd_fuzzer PRIVATE
-        -fsanitize=fuzzer
+        -fsanitize=fuzzer,address
     )
 
     # RELRO 和 BIND_NOW 继承自 CMAKE_EXE_LINKER_FLAGS: -Wl,-z,relro,-z,now
