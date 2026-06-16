@@ -50,8 +50,9 @@ cmake -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang \
 cmake --build .
 
 # 运行 Fuzz 生成覆盖率数据（3小时，ONNX 内存泄漏故使用 -detect_leaks=0）
-cd tests && ./kadd_fuzzer assets/fuzz_corpus -detect_leaks=0 \
-    -runs=30000000 -max_total_time=10800 > /dev/null 2>&1
+cd tests && export ASAN_OPTIONS=detect_leaks=0 && \
+    ./kadd_fuzzer -detect_leaks=0 -runs=30000000 -max_total_time=10800 \
+    assets/fuzz_corpus > /dev/null 2>&1
 
 # 展示覆盖率报告
 llvm-profdata merge -sparse default.profraw -o kadd.profdata

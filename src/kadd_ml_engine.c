@@ -28,6 +28,7 @@ struct kadd_model_handle_t {
 
 static OrtEnv *g_ort_env = NULL;
 static const OrtApi *g_ort_api = NULL;
+static int g_ort_env_ref_count = 0;  /* 全局环境引用计数 */
 
 #define KADD_ORT_API_MIN_VERSION 15
 #define KADD_MODEL_OUTPUT_CLASS_NUM 2
@@ -172,6 +173,7 @@ static int init_ort_env(kadd_model_handle_t *handle)
             return KADD_ERROR;
         }
     }
+    g_ort_env_ref_count++;  /* 增加引用计数 */
     handle->env = g_ort_env;
     return KADD_SUCCESS;
 }
@@ -701,6 +703,14 @@ void kadd_model_free(kadd_model_handle_t *handle)
             handle->session = NULL;
         }
     }
-    // 注意：handle->env 指向全局 g_ort_env，不需要释放
+
+    // 减少引用计数
+    g_ort_env_ref_count--;
+    if (g_ort_env_ref_count == 0 && g_ort_env) {
+        // 最后一个模型，释放全局环境
+        g_ort_api->ReleaseEnv(g_ort_env);
+        g_ort_env = NULL;
+    }
+
     free(handle);
 }

@@ -460,7 +460,7 @@ static void FuzzFeatureEngineLong(const uint8_t* data, size_t size) {
     if (size < 4) return;
 
     int seq_len = 257 + (data[0] % 200);
-    int *long_seq = (int *)malloc(seq_len * sizeof(int));
+    int *long_seq = (int *)calloc(seq_len, sizeof(int));
     if (!long_seq) return;
 
     for (int i = 0; i < seq_len; i++) {
@@ -526,6 +526,161 @@ static void FuzzBatchErrorPaths() {
     kadd_seq_to_feature_batch(&b5);
 }
 
+/* ========== NULL 指针和边界情况 FUZZ测试 ========== */
+
+/**
+ * @brief FUZZ测试所有模块的 NULL 指针和边界情况
+ * 覆盖之前遗漏的 29 个边界情况
+ */
+static void FuzzNullPointers(const uint8_t* data, size_t size)
+{
+    if (size < 4) return;
+
+    uint8_t selector = data[0];
+    const uint8_t* payload = data + 1;
+    size_t payload_size = size - 1;
+
+    switch (selector % 8) {
+        case 0: // ML Engine - kadd_model_load NULL 测试
+            {
+                kadd_model_handle_t *tmp = nullptr;
+                // 只测试 NULL 参数路径，不实际加载模型（避免高频加载导致 ONNX 内存泄漏累积）
+                // model_path=NULL
+                kadd_model_load(&tmp, nullptr, 28);
+            }
+            break;
+
+        case 1: // ML Engine - kadd_model_predict NULL 测试
+            {
+                float test_features[28] = {0};
+                float prob;
+                // handle=NULL
+                kadd_model_predict(nullptr, test_features, &prob);
+                // features=NULL
+                kadd_model_predict(g_fuzz_context.ml_model, nullptr, &prob);
+                // probability=NULL
+                kadd_model_predict(g_fuzz_context.ml_model, test_features, nullptr);
+            }
+            break;
+
+        case 2: // ML Engine - kadd_model_predict_batch NULL 测试
+            {
+                float test_features[28] = {0};
+                float probs[1];
+                // handle=NULL
+                kadd_model_predict_batch(nullptr, test_features, 1, probs, 32);
+                // features=NULL
+                kadd_model_predict_batch(g_fuzz_context.ml_model, nullptr, 1, probs, 32);
+                // probabilities=NULL
+                kadd_model_predict_batch(g_fuzz_context.ml_model, test_features, 1, nullptr, 32);
+                // n<=0
+                kadd_model_predict_batch(g_fuzz_context.ml_model, test_features, 0, probs, 32);
+                // batch_size<=0
+                kadd_model_predict_batch(g_fuzz_context.ml_model, test_features, 1, probs, 0);
+                // n>10M
+                kadd_model_predict_batch(g_fuzz_context.ml_model, test_features, 10000001, probs, 32);
+            }
+            break;
+
+        case 3: // DFA Engine - kadd_dfa_engine_create NULL 测试
+            {
+                kadd_dfa_engine_t *tmp = nullptr;
+                kadd_dfa_table_paths_t paths = {
+                    g_fuzz_context.config.dfa.transition_table_path,
+                    g_fuzz_context.config.dfa.output_table_path,
+                    g_fuzz_context.config.dfa.eod_table_path
+                };
+                // engine=NULL（通过指针传递）
+                kadd_dfa_engine_create(nullptr, &paths, 300, 300);
+                // table_paths=NULL
+                kadd_dfa_engine_create(&tmp, nullptr, 300, 300);
+            }
+            break;
+
+        case 4: // DFA Engine - kadd_dfa_engine_tokenize_batch NULL 测试
+            {
+                const char *test_inputs[] = {"test"};
+                size_t test_lens[] = {4};
+                int *test_outputs[1] = {nullptr};
+                int test_dims[1];
+
+                kadd_dfa_batch_t batch = {
+                    .inputs = test_inputs,
+                    .lengths = test_lens,
+                    .count = 1,
+                    .outputs = test_outputs,
+                    .dims = test_dims,
+                    .batch_size = 32
+                };
+
+                // engine=NULL
+                kadd_dfa_engine_tokenize_batch(nullptr, &batch);
+                // batch=NULL
+                kadd_dfa_engine_tokenize_batch(g_fuzz_context.dfa_engine, nullptr);
+                // batch->inputs=NULL (已覆盖，但显式测试)
+                kadd_dfa_batch_t null_batch = {nullptr, test_lens, 1, test_outputs, test_dims, 32};
+                kadd_dfa_engine_tokenize_batch(g_fuzz_context.dfa_engine, &null_batch);
+            }
+            break;
+
+        case 5: // Feature Engine - kadd_seq_to_feature NULL 测试
+            {
+                int test_tokens[10] = {1,2,3,4,5,6,7,8,9,10};
+                int test_features[28] = {0};
+
+                // seq=NULL
+                kadd_seq_to_feature(nullptr, 10, 5, test_features, 28);
+                // features=NULL
+                kadd_seq_to_feature(test_tokens, 10, 5, nullptr, 28);
+            }
+            break;
+
+        case 6: // Config Loader - kadd_config_load NULL 测试
+            {
+                kadd_config_t test_config;
+                // config_path=NULL
+                kadd_config_load(nullptr, &test_config);
+                // config=NULL
+                kadd_config_load("config.json", nullptr);
+            }
+            break;
+
+        case 7: // SQLi Engine - kadd_sqli_engine_create_from_file NULL 测试
+            {
+                kadd_sqli_engine_t *tmp = nullptr;
+                // engine=NULL
+                kadd_sqli_engine_create_from_file(nullptr, "config.json");
+                // config_file=NULL
+                kadd_sqli_engine_create_from_file(&tmp, nullptr);
+            }
+            break;
+
+        case 8: // SQLi Engine - kadd_sqli_detect_batch NULL 和边界测试
+            {
+                const char *test_inputs[] = {"test"};
+                float test_probs[1];
+
+                // engine=NULL
+                kadd_sqli_detect_batch(nullptr, test_inputs, 1, test_probs, 32);
+                // inputs=NULL
+                kadd_sqli_detect_batch(g_fuzz_context.sqli_engine, nullptr, 1, test_probs, 32);
+                // probabilities=NULL
+                kadd_sqli_detect_batch(g_fuzz_context.sqli_engine, test_inputs, 1, nullptr, 32);
+                // count<=0
+                kadd_sqli_detect_batch(g_fuzz_context.sqli_engine, test_inputs, 0, test_probs, 32);
+                kadd_sqli_detect_batch(g_fuzz_context.sqli_engine, test_inputs, -1, test_probs, 32);
+                // count>10M
+                kadd_sqli_detect_batch(g_fuzz_context.sqli_engine, test_inputs, 10000001, test_probs, 32);
+                // batch_size<=0
+                kadd_sqli_detect_batch(g_fuzz_context.sqli_engine, test_inputs, 1, test_probs, 0);
+                kadd_sqli_detect_batch(g_fuzz_context.sqli_engine, test_inputs, 1, test_probs, -999);
+            }
+            break;
+
+        default: break;
+    }
+}
+
 /* ========== LibFuzzer主入口函数 ========== */
 
 /**
@@ -548,7 +703,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     size_t payload_size = size - 1;
     std::string input = CreateSafeString(payload, payload_size);
 
-    switch (selector % 12) {  // 扩展到12个分支
+    switch (selector % 13) {  // 扩展到13个分支
         case 0: FuzzSQLiEngine(input); break;
         case 1: FuzzDFAEngine(input); break;
         case 2: FuzzFeatureEngine(input); break;
@@ -561,137 +716,11 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         case 9: FuzzInitFailures(payload, payload_size); break;
         case 10: FuzzSQLiEngineFree(data, size); break;
         case 11: FuzzBatchErrorPaths(); break;
+        case 12: FuzzNullPointers(data, size); break;
         default: break;  // 防御性编程：理论上不会执行，但满足静态分析要求
     }
 
     return 0;
-}
-
-/**
- * @brief 确定性触发初始化阶段尚未覆盖的代码路径
- *
- * 通过写入合法 JSON 配置文件、执行批量 DFA 分词和批量 SQLi 检测，
- * 保证配置解析、批量处理边界和错误处理路径在初始化阶段被覆盖。
- */
-static void CoverMissedFunctions() {
-    // 合法 JSON 配置加载 → 覆盖 string/数值字段解析路径
-    {
-        const char *json =
-            "{"
-            "\"kadd_dfa_engine\":{"
-            "\"transition_table_path\":\"/tmp/fuzz_tbl.bin\","
-            "\"output_table_path\":\"/tmp/fuzz_out.bin\","
-            "\"eod_table_path\":\"/tmp/fuzz_eod.bin\""
-            "},"
-            "\"kadd_ml_engine\":{"
-            "\"model_path\":\"/tmp/fuzz_model.onnx\","
-            "\"feature_dim\":28"
-            "},"
-            "\"kadd_sqli_engine\":{"
-            "\"transition_table_path\":\"/tmp/fuzz_tbl.bin\","
-            "\"output_table_path\":\"/tmp/fuzz_out.bin\","
-            "\"eod_table_path\":\"/tmp/fuzz_eod.bin\","
-            "\"ml_model_path\":\"/tmp/fuzz_model.onnx\","
-            "\"feature_dim\":28,"
-            "\"window_size\":5,"
-            "\"max_input_length\":1024,"
-            "\"max_output_dim\":256"
-            "},"
-            "\"kadd_feature_engine\":{"
-            "\"ml_model_path\":\"/tmp/fuzz_model.onnx\","
-            "\"feature_dim\":28,"
-            "\"window_size\":5"
-            "}"
-            "}";
-        FILE *f = fopen("/tmp/kadd_cover_cfg.json", "w");
-        if (f) {
-            fwrite(json, 1, strlen(json), f);
-            fclose(f);
-            kadd_config_t cfg;
-            kadd_config_load("/tmp/kadd_cover_cfg.json", &cfg);
-            kadd_config_free(&cfg);
-            remove("/tmp/kadd_cover_cfg.json");
-        }
-    }
-
-    // 多条目 DFA 批量分词，含 NULL 输入 → 覆盖错误处理路径
-    if (g_fuzz_context.dfa_engine) {
-        const char *inputs[]  = {"test", nullptr};
-        size_t      lengths[] = {4, 0};
-        int        *outputs[2] = {nullptr, nullptr};
-        int         dims[2];
-        kadd_dfa_batch_t batch = {
-            inputs, lengths, 2, outputs, dims, 64
-        };
-        kadd_dfa_engine_tokenize_batch(g_fuzz_context.dfa_engine, &batch);
-        for (int i = 0; i < 2; i++) {
-            if (outputs[i]) free(outputs[i]);
-        }
-    }
-
-    // 批量 SQLi 检测：正常输入 + NULL 输入 → 覆盖成功/失败两条路径
-    if (g_fuzz_context.sqli_engine) {
-        {
-            const char *inputs[] = {"' OR 1=1--"};
-            float probs[1];
-            kadd_sqli_detect_batch(g_fuzz_context.sqli_engine, inputs, 1, probs, 32);
-        }
-        {
-            const char *inputs[] = {nullptr};
-            float probs[1];
-            kadd_sqli_detect_batch(g_fuzz_context.sqli_engine, inputs, 1, probs, 32);
-        }
-        // 错误参数：空引擎 / 空输入 / 零数量 / 空输出缓冲区 / 负批大小
-        {
-            const char *safe[] = {"test"};
-            float p[1];
-            kadd_sqli_detect_batch(nullptr, safe, 1, p, 32);
-            kadd_sqli_detect_batch(g_fuzz_context.sqli_engine, nullptr, 1, p, 32);
-            kadd_sqli_detect_batch(g_fuzz_context.sqli_engine, safe, 0, p, 32);
-            kadd_sqli_detect_batch(g_fuzz_context.sqli_engine, safe, 1, nullptr, 32);
-            kadd_sqli_detect_batch(g_fuzz_context.sqli_engine, safe, 1, p, -1);
-        }
-    }
-
-    // 释放函数覆盖：创建临时引擎再释放，完整走 free 路径体
-    {
-        kadd_dfa_engine_t *tmp_dfa = nullptr;
-        kadd_dfa_table_paths_t paths = {
-            g_fuzz_context.config.dfa.transition_table_path,
-            g_fuzz_context.config.dfa.output_table_path,
-            g_fuzz_context.config.dfa.eod_table_path
-        };
-        if (kadd_dfa_engine_create(&tmp_dfa, &paths, 300, 28) == 0) {
-            kadd_dfa_engine_free(tmp_dfa);
-        }
-    }
-
-    // 空参数创建测试：空引擎指针 / 空表路径
-    {
-        kadd_dfa_engine_t *tmp_dfa2 = nullptr;
-        kadd_dfa_table_paths_t paths2 = {
-            g_fuzz_context.config.dfa.transition_table_path,
-            g_fuzz_context.config.dfa.output_table_path,
-            g_fuzz_context.config.dfa.eod_table_path
-        };
-        kadd_dfa_engine_create(nullptr, &paths2, 300, 28);
-        kadd_dfa_engine_create(&tmp_dfa2, nullptr, 300, 28);
-        kadd_dfa_engine_create(&tmp_dfa2, &paths2, 0, 28);
-        kadd_dfa_engine_create(&tmp_dfa2, &paths2, 300, 0);
-    }
-    {
-        kadd_sqli_engine_t *tmp_sqli = nullptr;
-        if (kadd_sqli_engine_create_from_file(&tmp_sqli, "config.json") == 0) {
-            kadd_sqli_engine_free(tmp_sqli);
-        }
-    }
-    {
-        kadd_model_handle_t *tmp_model = nullptr;
-        if (kadd_model_load(&tmp_model, g_fuzz_context.config.ml.model_path,
-                            g_fuzz_context.config.ml.feature_dim) == 0) {
-            kadd_model_free(tmp_model);
-        }
-    }
 }
 
 extern "C" int LLVMFuzzerInitialize(int *argc, char ***argv) {

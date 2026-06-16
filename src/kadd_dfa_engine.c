@@ -140,7 +140,7 @@ static int load_u16_table(const char *path, uint32_t expected_states, size_t cel
         return KADD_DFA_ERROR_PARSE;
     }
 
-    uint16_t *table = (uint16_t *)malloc(total_cells * sizeof(uint16_t));
+    uint16_t *table = (uint16_t *)calloc(total_cells, sizeof(uint16_t));
     if (table == NULL) {
         fprintf(stderr, "[kadd_dfa] ERROR: Failed to allocate table memory (%zu cells) for: %s\n", total_cells, path);
         fclose(fp);
@@ -193,9 +193,6 @@ static int kadd_dfa_engine_load_tables(kadd_dfa_engine_t *engine, const kadd_dfa
 int kadd_dfa_engine_create(kadd_dfa_engine_t **engine, const kadd_dfa_table_paths_t *table_paths,
                            size_t max_input_length, size_t max_output_dim)
 {
-    kadd_dfa_engine_t *eng;
-    int rc;
-
     // 空指针检查
     if (engine == NULL || table_paths == NULL) {
         fprintf(stderr, "[kadd_dfa] ERROR: NULL pointer (engine=%s, table_paths=%s)\n",
@@ -214,6 +211,7 @@ int kadd_dfa_engine_create(kadd_dfa_engine_t **engine, const kadd_dfa_table_path
     }
 
     *engine = NULL;
+    kadd_dfa_engine_t *eng = NULL;
     eng = (kadd_dfa_engine_t *)calloc(1, sizeof(kadd_dfa_engine_t));
     if (eng == NULL) {
         fprintf(stderr, "[kadd_dfa] ERROR: Failed to allocate DFA engine\n");
@@ -223,7 +221,7 @@ int kadd_dfa_engine_create(kadd_dfa_engine_t **engine, const kadd_dfa_table_path
     eng->max_input_length = max_input_length;
     eng->max_output_dim = max_output_dim;
 
-    rc = kadd_dfa_engine_load_tables(eng, table_paths);
+    int rc = kadd_dfa_engine_load_tables(eng, table_paths);
     if (rc != KADD_SUCCESS) {
         kadd_dfa_engine_free(eng);
         return rc;
@@ -246,6 +244,7 @@ void kadd_dfa_engine_free(kadd_dfa_engine_t *engine)
     free(engine->eod_table);
     engine->eod_table = NULL;
     free(engine);
+    engine = NULL;
 }
 
 static int kadd_dfa_emit_token(size_t max_output_dim, size_t input_length, size_t *pos, size_t *token_start_pos,
@@ -454,7 +453,7 @@ static int kadd_dfa_tokenize_batch_item(const kadd_dfa_engine_t *engine, kadd_df
     }
     size_t input_len = (batch->lengths != NULL) ? batch->lengths[idx] : strlen(input);
     // 分配输出缓冲区
-    int *output = (int *)malloc(engine->max_output_dim * sizeof(int));
+    int *output = (int *)calloc(engine->max_output_dim, sizeof(int));
     if (output == NULL) {
         fprintf(stderr, "[kadd_dfa] ERROR: Failed to allocate output buffer at batch index %d\n", idx);
         cleanup_dfa_batch(batch, KADD_DFA_BATCH_CLEANUP_ALL);
