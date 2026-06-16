@@ -112,18 +112,23 @@ static void cleanup_sqli_batch_buffers(int **dfa_outputs, int *dfa_dims,
         for (int i = 0; i < count; i++) {
             if (dfa_outputs[i]) {
                 free(dfa_outputs[i]);
+                dfa_outputs[i] = NULL;
             }
         }
         free(dfa_outputs);
+        dfa_outputs = NULL;
     }
     if (dfa_dims) {
         free(dfa_dims);
+        dfa_dims = NULL;
     }
     if (features) {
         free(features);
+        features = NULL;
     }
     if (float_features) {
         free(float_features);
+        float_features = NULL;
     }
 }
 
@@ -131,7 +136,7 @@ static void cleanup_sqli_batch_buffers(int **dfa_outputs, int *dfa_dims,
 static int allocate_engine_memory_pool(kadd_sqli_engine_t *e)
 {
     /* 分配内存池 */
-    e->token_buffer = (int *)malloc(e->max_output_dim * sizeof(int));
+    e->token_buffer = (int *)calloc(e->max_output_dim, sizeof(int));
     e->feature_buffer = (int *)calloc(e->feature_dim, sizeof(int));
     if (posix_memalign((void **)&e->float_feature_buffer, KADD_ALIGN_BYTES, e->feature_dim * sizeof(float)) != 0) {
         e->float_feature_buffer = NULL;
@@ -288,7 +293,7 @@ static int allocate_batch_buffers(kadd_sqli_engine_t *engine, int batch_size,
     int **dfa_outputs = (int **)calloc(batch_size, sizeof(int *));
     int *dfa_dims = (int *)calloc(batch_size, sizeof(int));
     int *features = (int *)calloc(batch_size * engine->feature_dim, sizeof(int));
-    float *float_features = (float *)malloc(batch_size * engine->feature_dim * sizeof(float));
+    float *float_features = (float *)calloc(batch_size * engine->feature_dim, sizeof(float));
 
     if (!dfa_outputs || !dfa_dims || !features || !float_features) {
         fprintf(stderr, "[kadd_sqli] ERROR: Failed to allocate batch buffers (batch_size=%d, feature_dim=%d)\n",

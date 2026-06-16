@@ -59,7 +59,7 @@ static int sliding_window_distance_shift_fast(const int *seq, int seq_len, int w
  */
 static int sliding_window_distance_sve(const int *seq, int seq_len, int window_size, int *result)
 {
-    int *weighted = (int *)malloc(seq_len * sizeof(int));
+    int *weighted = (int *)calloc(seq_len, sizeof(int));
     if (!weighted) {
         fprintf(stderr, "[kadd_feature] ERROR: Failed to allocate weighted array (seq_len=%d)\n", seq_len);
         return KADD_ERROR_OUT_OF_MEMORY;

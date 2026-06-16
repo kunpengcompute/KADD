@@ -252,7 +252,7 @@ static int read_file_to_string(const char *path, char **out_content)
         return KADD_ERROR_FILE_OPERATION_FAILED;
     }
 
-    char *content = (char *)malloc(file_size + 1);
+    char *content = (char *)calloc(file_size + 1, sizeof(char));
     if (!content) {
         fprintf(stderr, "[kadd_config] ERROR: Failed to allocate memory for file content (%ld bytes)\n", file_size);
         fclose(file);

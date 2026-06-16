@@ -24,6 +24,9 @@ set(SECURE_COMPILE_FLAGS "${SECURE_COMPILE_FLAGS} -Wformat -Wformat-security")
 # 整数溢出检查（Ftrapv）
 set(SECURE_COMPILE_FLAGS "${SECURE_COMPILE_FLAGS} -ftrapv")
 
+# 缓冲区安全检查（_FORTIFY_SOURCE）需配合 -O2 及以上优化级别
+set(SECURE_COMPILE_FLAGS "${SECURE_COMPILE_FLAGS} -D_FORTIFY_SOURCE=2")
+
 # RELRO（Relocation Read-Only）和 BIND_NOW
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,relro,-z,now")
 set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,relro,-z,now")
@@ -48,6 +51,7 @@ set(KADD_VERSION_BUILDDATE "${BUILDDATE}")
 # ============================================================================
 # 选项配置
 # ============================================================================
+option(BUILD_SHARED_LIBS "Build shared libraries (dynamic libraries)" ON)
 option(BUILD_TESTS "Build test programs" ON)
 option(USE_SYSTEM_LIBS "Use system libraries instead of third_party" ON)
 option(ENABLE_CODE_COVERAGE "Enable code coverage reporting" OFF)
@@ -86,8 +90,8 @@ endif()
 # 优化选项
 if(KADD_OPTIMIZE)
     add_definitions(-DKADD_OPTIMIZE)
-    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O3 -DNDEBUG")
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -DNDEBUG")
+    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O2 -DNDEBUG")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2 -DNDEBUG")
 endif()
 
 # Strip - Release 构建时剥离符号信息
@@ -160,6 +164,7 @@ endif()
 
 # 依赖查找策略: 优先使用系统库，如果找不到则使用 third_party
 message(STATUS "Build tests: ${BUILD_TESTS}")
+message(STATUS "Build shared libs: ${BUILD_SHARED_LIBS}")
 message(STATUS "Use system libs: ${USE_SYSTEM_LIBS}")
 message(STATUS "Enable coverage: ${ENABLE_CODE_COVERAGE}")
 message(STATUS "Enable optimize: ${KADD_OPTIMIZE}")
