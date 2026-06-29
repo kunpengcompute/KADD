@@ -15,52 +15,53 @@ get_filename_component(PROJECT_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../" ABSO
 message(STATUS "Project Root: ${PROJECT_ROOT}")
 
 # ============================================================================
-# cJSON 依赖查找
+# cJSON 依赖查找：优先 util/ 源码（源码内嵌），其次系统库
 # ============================================================================
 set(CJSON_FOUND FALSE)
 
-# 1. 尝试查找系统cJSON库
-find_path(CJSON_INCLUDE_DIR
-    NAMES cJSON.h
-    PATHS
-        /usr/include /usr/local/include
-        $ENV{CJSON_ROOT_DIR}
-    PATH_SUFFIXES cjson
-)
-
-find_library(CJSON_LIBRARY
-    NAMES cjson
-    PATHS
-        /usr/lib /usr/local/lib /usr/lib64
-        /usr/lib/x86_64-linux-gnu
-        /usr/lib/aarch64-linux-gnu
-)
-
-if(CJSON_INCLUDE_DIR AND CJSON_LIBRARY)
+# 1. 优先 util/cJSON 源码
+set(cjson_path "${PROJECT_ROOT}/util/cJSON")
+set(cjson_header "${cjson_path}/cJSON.h")
+set(cjson_source "${cjson_path}/cJSON.c")
+if(EXISTS "${cjson_header}" AND EXISTS "${cjson_source}")
     set(CJSON_FOUND TRUE)
-    set(CJSON_INCLUDE_DIRS "${CJSON_INCLUDE_DIR}")
-    set(CJSON_LIBRARIES "${CJSON_LIBRARY}")
-    set(CJSON_IS_THIRD_PARTY FALSE)
-    message(STATUS "Found system cJSON: ${CJSON_LIBRARY}")
+    set(CJSON_INCLUDE_DIRS "${cjson_path}")
+    set(CJSON_LIBRARIES "${cjson_source}")
+    set(CJSON_IS_THIRD_PARTY TRUE)
+    message(STATUS "Using util/ cJSON: ${cjson_path}")
 endif()
 
-# 2. 如果系统库未找到，尝试使用 third_party 中的 cJSON
+# 2. 备选：系统 cJSON 库
 if(NOT CJSON_FOUND)
-    set(cjson_path "${PROJECT_ROOT}/third_party/cJSON")
-    set(cjson_header "${cjson_path}/cJSON.h")
-    set(cjson_source "${cjson_path}/cJSON.c")
+    find_path(CJSON_INCLUDE_DIR
+        NAMES cJSON.h
+        PATHS
+            /usr/include /usr/local/include
+            $ENV{CJSON_ROOT_DIR}
+        PATH_SUFFIXES cjson
+    )
 
-    if(EXISTS "${cjson_header}" AND EXISTS "${cjson_source}")
+    find_library(CJSON_LIBRARY
+        NAMES cjson
+        PATHS
+            /usr/lib /usr/local/lib /usr/lib64
+            /usr/lib/x86_64-linux-gnu
+            /usr/lib/aarch64-linux-gnu
+    )
+
+    if(CJSON_INCLUDE_DIR AND CJSON_LIBRARY)
         set(CJSON_FOUND TRUE)
-        set(CJSON_INCLUDE_DIRS "${cjson_path}")
-        set(CJSON_LIBRARIES "${cjson_source}")
-        set(CJSON_IS_THIRD_PARTY TRUE)
-        message(STATUS "Using third_party cJSON: ${cjson_path}")
-    else()
-        message(FATAL_ERROR "cJSON not found! Please install:"
-            "\n  sudo apt-get install libcjson-dev"
-            "\nOr download cJSON source to: third_party/cJSON/")
+        set(CJSON_INCLUDE_DIRS "${CJSON_INCLUDE_DIR}")
+        set(CJSON_LIBRARIES "${CJSON_LIBRARY}")
+        set(CJSON_IS_THIRD_PARTY FALSE)
+        message(STATUS "Found system cJSON: ${CJSON_LIBRARY}")
     endif()
+endif()
+
+if(NOT CJSON_FOUND)
+    message(FATAL_ERROR "cJSON not found! Please install:"
+        "\n  sudo apt-get install libcjson-dev"
+        "\nOr download cJSON source to: util/cJSON/")
 endif()
 
 # ============================================================================
@@ -128,7 +129,7 @@ message(STATUS "  Build Output: ${CMAKE_BINARY_DIR}/csv_to_vector_tool")
 message(STATUS "  Training Data: ${CMAKE_CURRENT_SOURCE_DIR}")
 message(STATUS "  cJSON: ${CJSON_FOUND}")
 if(CJSON_IS_THIRD_PARTY)
-    message(STATUS "    Using: third_party source")
+    message(STATUS "    Using: util/ source")
 else()
     message(STATUS "    Library: ${CJSON_LIBRARIES}")
 endif()
