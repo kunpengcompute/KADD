@@ -1,0 +1,137 @@
+# KADD FUZZ测试语料库 - 边界情况和特殊输入
+#
+# 此文件包含边界情况和特殊输入，用于测试系统鲁棒性
+
+# ========== 空输入 / 极短输入 ==========
+a
+ab
+abc
+
+# ========== 重复字符输入 ==========
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz
+11111111111111111111111111111111111111
+22222222222222222222222222222222222222
+
+# ========== 特殊字符输入 ==========
+!@#$%^&*()_+-={}[]|\:";'<>,.?/
+~`|\<>{}[]
+^&*()
+!@#$%
+测试中文输入
+🔥🚀💻输入测试
+
+# ========== 超长字符串 (>1KB) ==========
+AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF
+
+# ========== Unicode 边界 ==========
+﻿key=value
+﻿SELECT * FROM users
+\xef\xbb\xbfquery=test
+﻿test
+测试中文输入测试中文输入测试中文输入测试中文输入测试中文输入测试中文输入测试中文输入测试中文输入测试中文输入测试中文输入测试中文输入测试中文输入测试中文输入测试中文输入测试中文输入
+áéíóúñüçãõ
+日本語テスト 한국어테스트
+اللغة العربية اختبار
+
+# ========== 换行符变体 ==========
+key=value\r\nextra
+line1\rline2\rline3
+line1\nline2\nline3
+line1\r\nline2\r\nline3
+\r\n\r\n\r\n
+
+# ========== 空白字符变体 ==========
+key	=	value
+key = value
+    leading spaces
+trailing spaces
+    leading tabs
+trailing tabs
+\x20\x09\x0a\x0d\x0b\x0c
+
+# ========== 空键值对 ==========
+=
+key=
+=value
+=   =
+a=b&c=d&e=&f=g
+;;;
+:::
+,,,
+
+# ========== 深层嵌套 ==========
+[[[[[[[[[[[[[[[[[[[[test]]]]]]]]]]]]]]]]]]]]
+{{{{{{{{{{{{{{{{{{{{data}}}}}}}}}}}}}}}}}}}}
+((((((((((((((((((((expr))))))))))))))))))))
+
+# ========== 边界数值 ==========
+0
+-1
+2147483647
+-2147483648
+4294967295
+1.7976931348623157e+308
+-1.7976931348623157e+308
+NaN
+Infinity
+-Infinity
+1e308
+
+# ========== 数据类型边界 ==========
+key=true
+key=false
+key=null
+key=undefined
+key=
+key=NaN
+key=Infinity
+
+# ========== 混合特殊结构 ==========
+key='value"
+key="value'
+key=\'value\'
+key=\"value\"
+key=SELECT * FROM users WHERE id = ' OR 1=1--
+key=<script>alert(1)</script>
+
+# ========== 控制字符注入 ==========
+key\x01value
+key\x1bvalue
+key\x7fvalue
+
+# ========== 极短SQL注入（触发极短输入路径）=
+'
+"
+;
+)
+(
+\
+-
+#
+/
+*
+@
+!
+?
+%
+&
+|
+^
+~
+=
++
+:
+<
+
+# ========== 空白变体（触发空输入/纯空白路径）=
+
+\t
+\n
+\r\n
+  \t
+\x20\x20\x20
+
+# ========== 超长重复模式（触发长序列处理）=
+' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--' OR 1=1--
