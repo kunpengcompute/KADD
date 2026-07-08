@@ -1,0 +1,107 @@
+# KADD FUZZ测试语料库 - 正常输入样本
+#
+# 此文件包含正常的用户输入，用于FUZZ测试的正常基线
+
+# ========== 基本查询参数 ==========
+id=123
+search=hello world
+user=john@example.com
+page=1&sort=date
+filter=active&status=enabled
+
+# ========== 正常SQL语句 ==========
+query=SELECT * FROM users WHERE id = 1
+query=SELECT username, email FROM users WHERE status = 'active'
+query=INSERT INTO logs (message, created_at) VALUES ('test', NOW())
+query=UPDATE users SET last_login = NOW() WHERE id = 123
+
+# ========== 用户数据输入 ==========
+name=John Doe
+age=25
+city=New York
+product=laptop
+category=electronics
+price=999.99
+description=A great product
+review=This is amazing!
+rating=5
+
+# ========== 系统命令 ==========
+cmd=ls -la
+cmd=pwd
+cmd=whoami
+cmd=date
+cmd=uname -a
+
+# ========== JSON数据 ==========
+data={"name":"test","value":123}
+data={"user":"admin","action":"login"}
+data={"query":"SELECT * FROM table","params":[]}
+
+# ========== 认证相关 ==========
+token=abc123def456
+session_id=sess_987654321
+user_id=12345
+api_key=key_1234567890abcdef
+
+# ========== 国际化 ==========
+lang=en_US
+lang=zh_CN
+lang=ja_JP
+lang=fr_FR
+
+# ========== 分页和排序 ==========
+format=json
+limit=10
+offset=20
+order=desc
+field=name
+sort_by=created_at
+
+# ========== 回调和脚本 ==========
+callback=processResponse
+jsonp=jQuery_callback
+debug=true
+verbose=false
+
+# ========== 缓存控制 ==========
+cache=false
+no_cache=true
+max_age=3600
+expires=2024-12-31
+
+# ========== URL相关 ==========
+url=https://example.com/api/data
+redirect=/home
+referer=https://google.com
+
+# ========== 文件上传 ==========
+filename=document.pdf
+content_type=application/json
+file_size=1024
+upload_path=/tmp/upload
+
+# ========== 搜索和过滤 ==========
+search=laptop
+filter=price:100-500
+category=electronics
+brand=Apple
+in_stock=true
+
+# ========== 表单提交 ==========
+form_id=contact_form
+submit=true
+action=send_message
+method=post
+
+# ========== 时间和日期 ==========
+date=2024-05-27
+time=14:30:00
+timestamp=1716821400
+timezone=UTC+8
+
+# ========== 版本和配置 ==========
+version=1.0
+build=20240527
+environment=production
+debug_mode=false
