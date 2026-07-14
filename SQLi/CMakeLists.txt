@@ -24,8 +24,7 @@ set(SECURE_COMPILE_FLAGS "${SECURE_COMPILE_FLAGS} -Wformat -Wformat-security")
 # 整数溢出检查（Ftrapv）
 set(SECURE_COMPILE_FLAGS "${SECURE_COMPILE_FLAGS} -ftrapv")
 
-# 缓冲区安全检查（_FORTIFY_SOURCE）需配合 -O2 及以上优化级别
-set(SECURE_COMPILE_FLAGS "${SECURE_COMPILE_FLAGS} -D_FORTIFY_SOURCE=2")
+# 注：_FORTIFY_SOURCE 需 -O2 及以上优化级别，已与 KADD_OPTIMIZE 选项绑定（见下文），避免无优化时告警
 
 # RELRO（Relocation Read-Only）和 BIND_NOW
 set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,relro,-z,now")
@@ -53,7 +52,6 @@ set(KADD_VERSION_BUILDDATE "${BUILDDATE}")
 # ============================================================================
 option(BUILD_SHARED_LIBS "Build shared libraries (dynamic libraries)" ON)
 option(BUILD_TESTS "Build test programs" ON)
-option(USE_SYSTEM_LIBS "Use system libraries instead of third_party" ON)
 option(ENABLE_CODE_COVERAGE "Enable code coverage reporting" OFF)
 option(KADD_OPTIMIZE "Enable optimizations" OFF)
 option(ENABLE_ARM_SVE "Enable ARM SVE acceleration (auto-detects SVE2 support)" ON)
@@ -90,8 +88,9 @@ endif()
 # 优化选项
 if(KADD_OPTIMIZE)
     add_definitions(-DKADD_OPTIMIZE)
-    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O2 -DNDEBUG")
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2 -DNDEBUG")
+    # _FORTIFY_SOURCE 需配合 -O2 及以上优化级别，故与优化选项绑定
+    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O2 -DNDEBUG -D_FORTIFY_SOURCE=2")
+    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2 -DNDEBUG -D_FORTIFY_SOURCE=2")
 endif()
 
 # Strip - Release 构建时剥离符号信息
@@ -162,10 +161,9 @@ if(ENABLE_CODE_COVERAGE)
     set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries" FORCE)
 endif()
 
-# 依赖查找策略: 优先使用系统库，如果找不到则使用 third_party
+# 依赖查找策略: 优先使用系统库，如果找不到则使用 util/ 源码
 message(STATUS "Build tests: ${BUILD_TESTS}")
 message(STATUS "Build shared libs: ${BUILD_SHARED_LIBS}")
-message(STATUS "Use system libs: ${USE_SYSTEM_LIBS}")
 message(STATUS "Enable coverage: ${ENABLE_CODE_COVERAGE}")
 message(STATUS "Enable optimize: ${KADD_OPTIMIZE}")
 message(STATUS "Enable ARM SVE: ${ENABLE_ARM_SVE}")
@@ -187,8 +185,8 @@ if(ONNXRUNTIME_ROOT)
     set(SEARCH_PATHS "${ONNXRUNTIME_ROOT}")
     set(SEARCH_MODE NO_DEFAULT_PATH)
 else()
-    # 未指定，搜索 third_party 和系统路径
-    set(SEARCH_PATHS "${CMAKE_SOURCE_DIR}/third_party/onnxruntime" "/usr/local" "/usr")
+    # 未指定 ONNXRUNTIME_HOME，仅搜索系统路径
+    set(SEARCH_PATHS "/usr/local" "/usr")
     set(SEARCH_MODE "")
 endif()
 
@@ -210,8 +208,7 @@ if(NOT ONNXRUNTIME_LIBRARIES OR NOT ONNXRUNTIME_INCLUDE_DIRS)
     message(FATAL_ERROR "ONNX Runtime not found!"
         "\n  Solutions:"
         "\n    1. Set ONNXRUNTIME_HOME environment variable"
-        "\n    2. Install: sudo apt-get install libonnxruntime-dev"
-        "\n    3. Place in: third_party/lib/")
+        "\n    2. Install: sudo apt-get install libonnxruntime-dev")
 endif()
 
 get_filename_component(ONNXRUNTIME_LIB_DIR ${ONNXRUNTIME_LIBRARIES} DIRECTORY)
@@ -220,9 +217,23 @@ message(STATUS "Found ONNX Runtime: ${ONNXRUNTIME_LIBRARIES}")
 # ============================================================================
 # cJSON 依赖
 # ============================================================================
-# cJSON 查找
+# cJSON 查找：优先 util/ 源码（源码内嵌，无外部 .so 依赖），其次系统库
 set(CJSON_FOUND FALSE)
-if(USE_SYSTEM_LIBS)
+
+# 1. 优先 util/cJSON 源码（源码内嵌方式）
+set(cjson_path "${CMAKE_SOURCE_DIR}/util/cJSON")
+set(cjson_header "${cjson_path}/cJSON.h")
+set(cjson_source "${cjson_path}/cJSON.c")
+if(EXISTS "${cjson_header}" AND EXISTS "${cjson_source}")
+    set(CJSON_FOUND TRUE)
+    set(CJSON_INCLUDE_DIRS "${cjson_path}")
+    set(CJSON_LIBRARIES "${cjson_source}")
+    set(CJSON_IS_THIRD_PARTY TRUE)
+    message(STATUS "Using util/ cJSON (source): ${cjson_path}")
+endif()
+
+# 2. 备选：系统 cJSON 库
+if(NOT CJSON_FOUND)
     find_path(CJSON_INCLUDE_DIR
         NAMES cJSON.h
         PATHS
@@ -241,26 +252,13 @@ if(USE_SYSTEM_LIBS)
         set(CJSON_FOUND TRUE)
         set(CJSON_INCLUDE_DIRS "${CJSON_INCLUDE_DIR}")
         set(CJSON_LIBRARIES "${CJSON_LIBRARY}")
-        message(STATUS "cJSON include: ${CJSON_INCLUDE_DIR}")
-        message(STATUS "cJSON library: ${CJSON_LIBRARY}")
+        set(CJSON_IS_THIRD_PARTY FALSE)
+        message(STATUS "Using system cJSON: ${CJSON_LIBRARY}")
     endif()
 endif()
 
 if(NOT CJSON_FOUND)
-    # 使用 third_party 中的 cJSON
-    set(cjson_path "${CMAKE_SOURCE_DIR}/third_party/cJSON")
-    set(cjson_header "${cjson_path}/cJSON.h")
-    set(cjson_source "${cjson_path}/cJSON.c")
-
-    if(EXISTS "${cjson_header}" AND EXISTS "${cjson_source}")
-        set(CJSON_FOUND TRUE)
-        set(CJSON_INCLUDE_DIRS "${cjson_path}")
-        set(CJSON_LIBRARIES "${cjson_source}")
-        set(CJSON_IS_THIRD_PARTY TRUE)
-        message(STATUS "Using third_party cJSON")
-    else()
-        message(WARNING "cJSON not found! JSON-dependent features will be disabled.")
-    endif()
+    message(WARNING "cJSON not found! JSON-dependent features will be disabled.")
 endif()
 
 # ============================================================================
@@ -268,37 +266,35 @@ endif()
 # ============================================================================
 set(GTest_FOUND FALSE)
 if(BUILD_TESTS)
-    if(USE_SYSTEM_LIBS)
+    # Google Test 查找：优先 util/gtest 源码（GTEST_HOME 可覆盖路径），其次系统库
+    set(gtest_path "$ENV{GTEST_HOME}")
+    if(NOT gtest_path OR NOT EXISTS "${gtest_path}/src/gtest-all.cc")
+        set(gtest_path "${CMAKE_SOURCE_DIR}/util/gtest")
+    endif()
+    set(gtest_source "${gtest_path}/src/gtest-all.cc")
+
+    if(EXISTS "${gtest_source}")
+        message(STATUS "Using util/ Google Test: ${gtest_path}")
+        set(GTEST_INCLUDE_DIR "${gtest_path}/include")
+        set(GTest_FOUND TRUE)
+
+        # 创建 gtest 静态库
+        add_library(gtest STATIC "${gtest_source}")
+        target_include_directories(gtest PUBLIC "${GTEST_INCLUDE_DIR}")
+        target_include_directories(gtest PRIVATE "${gtest_path}")  # 为 #include "src/xxx.cc" 提供路径
+
+        add_library(gtest_main STATIC "${gtest_path}/src/gtest_main.cc")
+        target_include_directories(gtest_main PUBLIC "${GTEST_INCLUDE_DIR}")
+        target_include_directories(gtest_main PRIVATE "${gtest_path}")  # 为 gtest_main.cc 的 include 提供
+        target_link_libraries(gtest_main PUBLIC gtest)
+        # gtest / gtest_main 自动继承全局 CMAKE_CXX_FLAGS 中的安全编译选项
+    else()
+        # 备选：系统 Google Test
         find_package(GTest QUIET)
         if(GTest_FOUND)
-            message(STATUS "Found system Google Test")
-        endif()
-    endif()
-
-    if(NOT GTest_FOUND)
-        # 使用 third_party 中的 Google Test
-        set(gtest_path "${CMAKE_SOURCE_DIR}/third_party/gtest")
-        set(gtest_source "${gtest_path}/src/gtest-all.cc")
-
-        if(EXISTS "${gtest_source}")
-            message(STATUS "Using third_party Google Test")
-            set(GTEST_INCLUDE_DIR "${gtest_path}/include")
-            set(GTest_FOUND TRUE)
-
-            # 创建 gtest 静态库
-            # 使用 CMAKE_CURRENT_SOURCE_DIR 确保 gtest-all.cc 的 include 路径正确
-            add_library(gtest STATIC "${gtest_source}")
-            target_include_directories(gtest PUBLIC "${GTEST_INCLUDE_DIR}")
-            target_include_directories(gtest PRIVATE "${gtest_path}")  # 为 #include "src/xxx.cc" 提供路径
-            # gtest 自动继承全局 CMAKE_CXX_FLAGS 中的安全编译选项
-
-            add_library(gtest_main STATIC "${gtest_path}/src/gtest_main.cc")
-            target_include_directories(gtest_main PUBLIC "${GTEST_INCLUDE_DIR}")
-            target_include_directories(gtest_main PRIVATE "${gtest_path}")  # 为 gtest_main.cc 的 include 提供
-            target_link_libraries(gtest_main PUBLIC gtest)
-            # gtest_main 自动继承全局 CMAKE_CXX_FLAGS 中的安全编译选项
+            message(STATUS "Using system Google Test")
         else()
-            message(WARNING "Google Test not found! Tests will be disabled.")
+            message(WARNING "Google Test not found! Place gtest source in util/gtest (or set GTEST_HOME), or install system gtest. Tests will be disabled.")
             set(BUILD_TESTS OFF)
         endif()
     endif()
@@ -337,6 +333,9 @@ endif()
 # 子目录 (不包含 tools 目录)
 # ============================================================================
 add_subdirectory(src)
+
+# 添加 demo 目录（CMake 一键编译示例程序）
+add_subdirectory(demo)
 
 # 仅在启用测试时添加 tests 目录
 if(BUILD_TESTS)

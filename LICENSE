@@ -1,38 +1,28 @@
-Private Repository Source Code License 1.0
-Copyright (c) 2026 Huawei Technologies Co., Ltd. All rights reserved.
-1. Acceptance
-By accessing, viewing, copying, downloading, or otherwise using the Source Code made available by the Licensor in a private repository, you agree to be bound by this License. If you do not agree to this License, you must not access, copy, or use the Source Code.
-2. Definitions
-For purposes of this License:
-“Licensor” means Huawei Technologies Co., Ltd.
-“Licensee” means the person or entity that accesses, copies, or uses the Source Code.
-“Source Code” means all source code, object definitions, interfaces, build scripts, configuration files, related documentation, and any other materials made available by the Licensor in the private repository.
-“Product” means a product developed, owned, and operated by the Licensee for its own business purposes.
-3. Grant of License
-Subject to full compliance with this License, the Licensor grants the Licensee a limited, non-exclusive, non-transferable, non-sublicensable, revocable license to:
-(a) permit access to the private repository only to its employees or individual contractors who have a need to know for the permitted use under this License, provided that: (i) such persons are bound by written confidentiality obligations no less protective than this License, and (ii) the Licensee remains fully responsible for their compliance;
-(b) copy the Source Code solely for the Licensee’s internal use; and
-(c) use the Source Code solely as incorporated into or for development of the Licensee’s own Product.
-4. Restrictions
-Except as expressly permitted in Section 3, the Licensee must not, and must not permit any third party to:
-(a) distribute, publish, disclose, provide, transfer, assign, sell, resell, lease, lend, sublicense, or otherwise make the Source Code available, in whole or in part, to any third party;
-(b) allow any third party to access the private repository, whether by sharing accounts, credentials, access tokens, mirrored repositories, exported archives, or by any other means;
-(c) use the Source Code for any product or service of any third party;
-(d) use the Source Code except in connection with the Licensee’s own Product;
-(e) remove, alter, obscure, or bypass any copyright notice, proprietary notice, repository access control, or attribution notice included with the Source Code.
-5. Intellectual Property
-The Source Code is licensed, not sold. All rights, title, and interest, including all intellectual property rights, in and to the Source Code are and shall remain exclusively with the Licensor.
-No provision of this License shall be interpreted as transferring, assigning, or otherwise conveying any ownership or intellectual property rights in the Source Code to the Licensee.
-6. Confidentiality
-The Source Code is confidential and proprietary information of the Licensor. The Licensee shall protect the Source Code with at least reasonable care and shall not disclose it to any third party.
-7. Termination
-This License terminates automatically and immediately if the Licensee breaches any term of this License.
-Upon termination, the Licensee must immediately cease all access to and use of the Source Code and delete or destroy all copies of the Source Code in its possession or control, unless applicable law requires otherwise.
-8. No Warranty
-THE SOURCE CODE IS PROVIDED “AS IS”, WITHOUT WARRANTIES OF ANY KIND, WHETHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE, INCLUDING ANY WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, TITLE, OR NON-INFRINGEMENT.
-9. Limitation of Liability
-TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE LICENSOR SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR FOR ANY LOSS OF PROFITS, REVENUE, DATA, OR BUSINESS, ARISING OUT OF OR RELATING TO THIS LICENSE OR THE SOURCE CODE.
-10. Governing Law
-This License shall be governed by, construed, and interpreted in accordance with the laws of the People's Republic of China, excluding its conflict of law rules. 
-11. Entire License
-This License constitutes the entire agreement between the Licensor and the Licensee concerning the Source Code and supersedes all prior or contemporaneous understandings regarding the same subject matter.
+BSD 3-Clause License
+
+Copyright (c) Huawei Technologies Co., Ltd. 2026. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+1. Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+2. Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+3. Neither the name of the copyright holder nor the names of its
+   contributors may be used to endorse or promote products derived from
+   this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.

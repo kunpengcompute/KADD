@@ -34,9 +34,9 @@ typedef struct {
  */
 typedef struct {
     const char **inputs;      /**< 输入字符串数组 */
-    const size_t *lengths;    /**< 长度数组（NULL表示自动计算） */
+    const size_t *lengths;    /**< 长度数组 */
     int count;                /**< 输入数量 */
-    int **outputs;            /**< 输出token数组（调用者分配，每项需free） */
+    int **outputs;            /**< 输出token数组 */
     int *dims;                /**< 每个的token数量 */
     int batch_size;           /**< 批次大小（0或负数表示默认64，>1024自动限制为1024） */
 } kadd_dfa_batch_t;
@@ -68,7 +68,7 @@ void kadd_dfa_engine_free(kadd_dfa_engine_t *engine);
  * @param engine DFA 引擎
  * @param input 输入字符串
  * @param input_length 输入字符串长度
- * @param output 输出数组（存储token索引）
+ * @param output 输出数组
  * @param token_count 输出参数，返回实际的token数量
  * @return 0 成功，<0 失败（错误码）
  */

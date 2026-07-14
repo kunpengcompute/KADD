@@ -88,7 +88,9 @@ function(add_kadd_gtest TEST_NAME SOURCE_FILE)
 
     add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
 
-    # RPATH 已移除，运行测试前需要设置 LD_LIBRARY_PATH
+    # 构建未启用 RPATH（安全考虑），通过 ctest ENVIRONMENT 自动注入库搜索路径
+    set_tests_properties(${TEST_NAME} PROPERTIES
+        ENVIRONMENT "LD_LIBRARY_PATH=${CMAKE_BINARY_DIR}/src:${ONNXRUNTIME_LIB_DIR}")
 endfunction()
 
 # ============================================================================
@@ -102,7 +104,7 @@ if(ENABLE_CODE_COVERAGE)
         COMMAND ${CMAKE_COMMAND} -E chdir ${CMAKE_BINARY_DIR}
             lcov --remove coverage.info
                 '/usr/*'
-                '*third_party/*'
+                '*util/*'
                 '*tests/*'
                 '*include/*'
                 '*tools/*'

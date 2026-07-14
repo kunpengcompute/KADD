@@ -1,39 +1,26 @@
-yum search onnxruntime
+#!/bin/bash
+# ============================================================================
+# KADD 一键构建脚本
+# ============================================================================
 
-# openEuler
-yum install cmake gcc-c++ make
+PROJECT_ROOT="$(cd "$(dirname "$0")" && pwd)"
 
-# --- cJSON ---
-mkdir -p third_party/cJSON
-wget https://buildtools.obs.cn-north-4.myhuaweicloud.com/cJSON-master.zip
-unzip -q cJSON*.zip
-cp cJSON-master/cJSON.h third_party/cJSON/
-cp cJSON-master/cJSON.c third_party/cJSON/
-rm -rf cJSON-master cJSON.zip
+echo "==================== KADD 一键构建 ===================="
+echo "项目根目录: ${PROJECT_ROOT}"
+echo ""
 
-# --- ONNX Runtime ---
-wget https://buildtools.obs.cn-north-4.myhuaweicloud.com/onnxruntime-linux-aarch64-1.22.0.tgz
-tar xzf onnxruntime-linux-*.tgz
-mkdir -p third_party/onnxruntime/lib third_party/onnxruntime/include/onnxruntime
-cp -r onnxruntime-linux-*/lib/* third_party/onnxruntime/lib/
-cp -r onnxruntime-linux-*/include/* third_party/onnxruntime/include/
-rm -rf onnxruntime-linux-*
+# 构建 SQLi
+if [ -d "${PROJECT_ROOT}/SQLi" ]; then
+    echo "[1/1] 构建 SQLi 特性..."
+    cd "${PROJECT_ROOT}/SQLi"
+    chmod +x build.sh && ./build.sh
+    echo "✅ SQLi 构建完成"
+fi
 
-# --- Google Test ---
-wget https://buildtools.obs.cn-north-4.myhuaweicloud.com/googletest-release-1.12.1.zip
-unzip googletest*.zip
-mkdir -p third_party/gtest
-cp -r googletest-release-1.12.1/googletest/include third_party/gtest/
-cp -r googletest-release-1.12.1/googletest/src third_party/gtest/
-rm -rf googletest*
-
-# ============================================================
-# CMake 构建
-# ============================================================
-mkdir -p build && cd build
-cmake -DUSE_SYSTEM_LIBS=OFF -DKADD_OPTIMIZE=ON -DCMAKE_BUILD_TYPE=Release ..
-cmake --build .
-
-# 运行测试（设置 LD_LIBRARY_PATH 以找到动态库）
-export LD_LIBRARY_PATH=$(pwd)/src:$(pwd)/../third_party/onnxruntime/lib:$LD_LIBRARY_PATH
-ctest --verbose
+echo ""
+echo "==================== 构建完成 ===================="
+echo ""
+echo "输出："
+echo "  库文件: ${PROJECT_ROOT}/SQLi/build/src/"
+echo "  Demo:   ${PROJECT_ROOT}/SQLi/build/demo/"
+echo ""

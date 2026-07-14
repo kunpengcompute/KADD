@@ -25,7 +25,7 @@ typedef struct {
     const int **seqs;         /**< token序列数组 */
     const int *seq_lens;      /**< 序列长度数组 */
     int count;                /**< 序列数量 */
-    int *features;            /**< 输出特征（调用者分配，二维展平） */
+    int *features;            /**< 输出特征 */
     int feature_dim;          /**< 特征维度 */
     int window_size;          /**< 滑动窗口大小 */
     int batch_size;           /**< 批次大小 */
