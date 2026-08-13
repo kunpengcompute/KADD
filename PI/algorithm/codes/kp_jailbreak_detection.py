@@ -9,6 +9,7 @@ from algorithm.codes.filter.kp_blackwhitelist_filter import BlackwhitelistFilter
 
 class JailbreakDetection:
     def __init__(self, logger: Logger):
+        self._verify_logger(logger)
         self.logger = logger
 
         try:
@@ -20,6 +21,14 @@ class JailbreakDetection:
                 KpErrorCode.InitError,
                 str(e)
             ) from e
+
+    @staticmethod
+    def _verify_logger(logger):
+        if not isinstance(logger, Logger):
+            raise KpInitializationException(
+                KpErrorCode.InitError,
+                "invalid logger type."
+            )
 
     @staticmethod
     def _verify_blackwhitelist(blackwhitelist):
@@ -55,12 +64,24 @@ class JailbreakDetection:
                         "every item must be str formatted."
                     )
 
+                if len(item) > KunpengConstant.MAX_PROMPT_LENGTH:
+                    raise KpUpdateException(
+                        KpErrorCode.UpdateError,
+                        f"every item's length must be less than {KunpengConstant.MAX_PROMPT_LENGTH}."
+                    )
+
     @staticmethod
     def _verify_prompt(prompt):
         if not isinstance(prompt, str):
             raise KpDetectionException(
                 KpErrorCode.DetectError,
                 "prompt must be str formatted."
+            )
+
+        if len(prompt) > KunpengConstant.MAX_PROMPT_LENGTH:
+            raise KpDetectionException(
+                KpErrorCode.DetectError,
+                f"prompt exceeds max length: {len(prompt)}/{KunpengConstant.MAX_PROMPT_LENGTH}."
             )
 
     def init_regex_filter(self):

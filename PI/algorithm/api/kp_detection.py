@@ -20,6 +20,12 @@ def kp_detector_initialization(logger: Logger):
         ) from e
 
 def kp_detect(kp_detector: JailbreakDetection, prompt: str):
+    if not isinstance(kp_detector, JailbreakDetection):
+        raise KpDetectionException(
+            KpErrorCode.DetectError,
+            "invalid kp_detector type."
+        )
+    
     start = time.perf_counter()
 
     try:
@@ -42,6 +48,11 @@ def kp_detect(kp_detector: JailbreakDetection, prompt: str):
 
 
 def kp_detector_update_blackwhitelist(kp_detector: JailbreakDetection, blackwhitelist: Dict[str, List[str]]):
+    if not isinstance(kp_detector, JailbreakDetection):
+        raise KpUpdateException(
+            KpErrorCode.UpdateError,
+            "invalid kp_detector type."
+        )
     try:
         kp_detector.update_blackwhitelist(blackwhitelist)
     except KpUpdateException:

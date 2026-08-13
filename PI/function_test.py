@@ -116,5 +116,39 @@ class TestKPApiIntegration(unittest.TestCase):
                 {"wrong_key": ["a"]},
             )
 
+    def test_initialization_with_invalid_logger(self):
+        with self.assertRaises(KpInitializationException):
+            kp_detector_initialization("not a logger")
+
+    def test_initialization_with_none_logger(self):
+        with self.assertRaises(KpInitializationException):
+            kp_detector_initialization(None)
+
+    def test_detect_with_oversized_prompt(self):
+        if self.detector is None:
+            self.skipTest("detector initialization failed, skip real-model exception test")
+
+        oversized_prompt = "a" * (KunpengConstant.MAX_PROMPT_LENGTH + 1)
+        with self.assertRaises(KpDetectionException):
+            kp_detect(self.detector, oversized_prompt)
+
+    def test_update_with_oversized_blacklist_item(self):
+        if self.detector is None:
+            self.skipTest("detector initialization failed, skip real-model exception test")
+
+        oversized_item = "a" * (KunpengConstant.MAX_PROMPT_LENGTH + 1)
+        blackwhitelist = {"blacklist": [oversized_item], "whitelist": []}
+        with self.assertRaises(KpUpdateException):
+            kp_detector_update_blackwhitelist(self.detector, blackwhitelist)
+
+    def test_update_with_oversized_whitelist_item(self):
+        if self.detector is None:
+            self.skipTest("detector initialization failed, skip real-model exception test")
+
+        oversized_item = "a" * (KunpengConstant.MAX_PROMPT_LENGTH + 1)
+        blackwhitelist = {"blacklist": [], "whitelist": [oversized_item]}
+        with self.assertRaises(KpUpdateException):
+            kp_detector_update_blackwhitelist(self.detector, blackwhitelist)
+
 if __name__ == "__main__":
     unittest.main()
