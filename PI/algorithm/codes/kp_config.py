@@ -9,6 +9,7 @@ class KunpengConstant:
     LOG_PREFIX = "[Kunpeng Detection] "
     JAILBREAK = 1
     BENIGN = 0
+    MAX_PROMPT_LENGTH = 8500
     KNOWLEDGE_BASE_PATH = os.path.realpath(os.path.join(_BASE_DIR, "knowledge_base"))
     ALLOWED_CONFIG_KEYS = ["blacklist", "whitelist"]
     ALLOWED_CONFIG_TYPES = {
