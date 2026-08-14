@@ -1,0 +1,690 @@
+/**
+ * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * @file kadd_rf_engine.c
+ * @brief Portable sklearn RandomForest inference, with an AArch64 SVE batch path.
+ */
+
+#include "kadd_rf_engine.h"
+#include "kadd_errors.h"
+
+#include <errno.h>
+#include <math.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#if defined(__aarch64__) && defined(__ARM_FEATURE_SVE)
+#include <arm_sve.h>
+#define KADD_RF_HAVE_SVE 1
+#else
+#define KADD_RF_HAVE_SVE 0
+#endif
+
+#define KADD_RF_HEADER_SIZE 64U
+#define KADD_RF_NODE_SIZE 32U
+#define KADD_RF_VERSION 1U
+#define KADD_RF_CLASS_COUNT 2U
+#define KADD_RF_POSITIVE_CLASS_INDEX 1U
+#define KADD_RF_MAX_FEATURE_COUNT 4096U
+#define KADD_RF_MAX_TREE_COUNT 1000000U
+#define KADD_RF_MAX_NODE_COUNT 100000000U
+#define KADD_RF_DEFAULT_BATCH_SIZE 64
+#define KADD_RF_MAX_BATCH_SIZE 1024
+#define KADD_RF_MAX_SAMPLE_COUNT 10000000
+
+static const unsigned char g_kadd_rf_magic[8] = {
+    'K', 'A', 'D', 'D', 'R', 'F', '1', '\0'
+};
+
+typedef union {
+    uint32_t bits;
+    float value;
+} kadd_rf_float_bits_t;
+
+typedef union {
+    uint64_t bits;
+    double value;
+} kadd_rf_double_bits_t;
+
+typedef struct {
+    int32_t feature;
+    uint32_t left;
+    uint32_t right;
+    uint32_t reserved;
+    double threshold;
+    double positive_probability;
+} kadd_rf_node_t;
+
+struct kadd_rf_model_t {
+    uint32_t feature_count;
+    uint32_t tree_count;
+    uint32_t node_count;
+    uint32_t *tree_offsets;
+    kadd_rf_node_t *nodes;
+#if KADD_RF_HAVE_SVE
+    /*
+     * Structure-of-arrays view used only by the SVE traversal. Keeping the
+     * hot fields in separate compact arrays turns each node lookup into one
+     * 32-bit gather instead of several 64-bit gathers from a 32-byte AoS node.
+     */
+    uint32_t *sve_features;
+    uint32_t *sve_left;
+    uint32_t *sve_right;
+    float *sve_thresholds;
+    double *sve_probabilities;
+#endif
+};
+
+typedef char kadd_rf_node_size_must_be_32[
+    sizeof(kadd_rf_node_t) == KADD_RF_NODE_SIZE ? 1 : -1
+];
+
+static uint32_t read_u32_le(const unsigned char *p)
+{
+    return ((uint32_t)p[0]) |
+           ((uint32_t)p[1] << 8U) |
+           ((uint32_t)p[2] << 16U) |
+           ((uint32_t)p[3] << 24U);
+}
+
+static uint64_t read_u64_le(const unsigned char *p)
+{
+    return ((uint64_t)read_u32_le(p)) |
+           ((uint64_t)read_u32_le(p + 4) << 32U);
+}
+
+static double read_f64_le(const unsigned char *p)
+{
+    const kadd_rf_double_bits_t converter = {
+        .bits = read_u64_le(p)
+    };
+    return converter.value;
+}
+
+static uint32_t crc32_bytes(const unsigned char *data, size_t size)
+{
+    uint32_t crc = UINT32_C(0xFFFFFFFF);
+    for (size_t i = 0; i < size; ++i) {
+        crc ^= data[i];
+        for (int bit = 0; bit < 8; ++bit) {
+            const uint32_t mask = (uint32_t)(-(int32_t)(crc & 1U));
+            crc = (crc >> 1U) ^ (UINT32_C(0xEDB88320) & mask);
+        }
+    }
+    return ~crc;
+}
+
+static int read_entire_file(const char *path, unsigned char **bytes_out, size_t *size_out)
+{
+    FILE *file = NULL;
+    unsigned char *bytes = NULL;
+    long file_size_long;
+    size_t file_size;
+
+    if (!path || !bytes_out || !size_out) {
+        return KADD_ERROR_NULL_PTR;
+    }
+    *bytes_out = NULL;
+    *size_out = 0;
+
+    file = fopen(path, "rb");
+    if (!file) {
+        fprintf(stderr, "[kadd_rf] ERROR: Cannot open '%s': %s\n", path, strerror(errno));
+        return KADD_ERROR_FILE_OPERATION_FAILED;
+    }
+    if (fseek(file, 0, SEEK_END) != 0 ||
+        (file_size_long = ftell(file)) < 0 ||
+        fseek(file, 0, SEEK_SET) != 0) {
+        (void)fclose(file);
+        return KADD_ERROR_FILE_OPERATION_FAILED;
+    }
+    file_size = (size_t)file_size_long;
+    if ((long)file_size != file_size_long || file_size < KADD_RF_HEADER_SIZE) {
+        (void)fclose(file);
+        return KADD_ERROR_MODEL_LOAD_FAILED;
+    }
+
+    bytes = (unsigned char *)malloc(file_size);
+    if (!bytes) {
+        (void)fclose(file);
+        return KADD_ERROR_OUT_OF_MEMORY;
+    }
+    if (fread(bytes, 1, file_size, file) != file_size) {
+        free(bytes);
+        (void)fclose(file);
+        return KADD_ERROR_FILE_OPERATION_FAILED;
+    }
+    (void)fclose(file);
+    *bytes_out = bytes;
+    *size_out = file_size;
+    return KADD_SUCCESS;
+}
+
+int kadd_rf_model_is_file(const char *model_path)
+{
+    unsigned char magic[sizeof(g_kadd_rf_magic)];
+    FILE *file;
+
+    if (!model_path) {
+        return 0;
+    }
+    file = fopen(model_path, "rb");
+    if (!file) {
+        return 0;
+    }
+    const size_t count = fread(magic, 1, sizeof(magic), file);
+    (void)fclose(file);
+    return count == sizeof(magic) &&
+           memcmp(magic, g_kadd_rf_magic, sizeof(magic)) == 0;
+}
+
+static int validate_tree(const kadd_rf_model_t *model, uint32_t tree_index)
+{
+    const uint32_t begin = model->tree_offsets[tree_index];
+    const uint32_t end = model->tree_offsets[tree_index + 1U];
+
+    if (begin >= end || end > model->node_count) {
+        return KADD_ERROR_MODEL_LOAD_FAILED;
+    }
+    for (uint32_t index = begin; index < end; ++index) {
+        const kadd_rf_node_t *node = &model->nodes[index];
+        if (node->feature < 0) {
+            if (node->feature != -1 ||
+                node->left != UINT32_MAX ||
+                node->right != UINT32_MAX ||
+                !isfinite(node->positive_probability) ||
+                node->positive_probability < 0.0 ||
+                node->positive_probability > 1.0) {
+                return KADD_ERROR_MODEL_LOAD_FAILED;
+            }
+            continue;
+        }
+        if (node->reserved != 0U ||
+            (uint32_t)node->feature >= model->feature_count ||
+            !isfinite(node->threshold) ||
+            node->left <= index || node->right <= index ||
+            node->left < begin || node->left >= end ||
+            node->right < begin || node->right >= end) {
+            return KADD_ERROR_MODEL_LOAD_FAILED;
+        }
+    }
+    return KADD_SUCCESS;
+}
+
+#if KADD_RF_HAVE_SVE
+static float adjacent_f32(float value, int toward_positive)
+{
+    kadd_rf_float_bits_t converter = {
+        .value = value
+    };
+    uint32_t bits = converter.bits;
+
+    if (toward_positive) {
+        if (bits == UINT32_C(0x7F800000)) { /* +infinity */
+            return value;
+        }
+        if ((bits & UINT32_C(0x7FFFFFFF)) == 0U) {
+            bits = UINT32_C(0x00000001); /* +smallest subnormal */
+        } else if ((bits & UINT32_C(0x80000000)) == 0U) {
+            ++bits;
+        } else {
+            --bits;
+        }
+    } else {
+        if (bits == UINT32_C(0xFF800000)) { /* -infinity */
+            return value;
+        }
+        if ((bits & UINT32_C(0x7FFFFFFF)) == 0U) {
+            bits = UINT32_C(0x80000001); /* -smallest subnormal */
+        } else if ((bits & UINT32_C(0x80000000)) == 0U) {
+            --bits;
+        } else {
+            ++bits;
+        }
+    }
+    converter.bits = bits;
+    return converter.value;
+}
+
+/*
+ * Return the greatest float32 value c for which (double)c <= threshold.
+ * Comparing a float32 input with c is therefore exactly equivalent to the
+ * sklearn rule (double)input <= double_threshold for every finite float32
+ * input, even when the original threshold itself is not representable as
+ * float32.
+ */
+static float make_f32_threshold_cutoff(double threshold)
+{
+    float cutoff = (float)threshold;
+    if ((double)cutoff > threshold) {
+        cutoff = adjacent_f32(cutoff, 0);
+    }
+
+    /*
+     * This also makes the conversion independent of a non-default floating
+     * point rounding mode. A correctly rounded cast needs at most one step,
+     * but the loop is bounded by the adjacent representable values around the
+     * converted result in all standard rounding modes.
+     */
+    for (;;) {
+        const float next = adjacent_f32(cutoff, 1);
+        if ((double)next > threshold) {
+            break;
+        }
+        cutoff = next;
+    }
+    return cutoff;
+}
+
+static int prepare_sve_layout(kadd_rf_model_t *model)
+{
+    const size_t u32_bytes = (size_t)model->node_count * sizeof(uint32_t);
+    const size_t f32_bytes = (size_t)model->node_count * sizeof(float);
+    const size_t f64_bytes = (size_t)model->node_count * sizeof(double);
+
+    model->sve_features = (uint32_t *)malloc(u32_bytes);
+    model->sve_left = (uint32_t *)malloc(u32_bytes);
+    model->sve_right = (uint32_t *)malloc(u32_bytes);
+    model->sve_thresholds = (float *)malloc(f32_bytes);
+    model->sve_probabilities = (double *)malloc(f64_bytes);
+    if (!model->sve_features || !model->sve_left ||
+        !model->sve_right || !model->sve_thresholds ||
+        !model->sve_probabilities) {
+        return KADD_ERROR_OUT_OF_MEMORY;
+    }
+
+    for (uint32_t index = 0; index < model->node_count; ++index) {
+        const kadd_rf_node_t *node = &model->nodes[index];
+        model->sve_features[index] =
+            node->feature < 0 ? UINT32_MAX : (uint32_t)node->feature;
+        model->sve_left[index] = node->left;
+        model->sve_right[index] = node->right;
+        model->sve_thresholds[index] =
+            node->feature < 0 ? 0.0F
+                              : make_f32_threshold_cutoff(node->threshold);
+        model->sve_probabilities[index] =
+            node->positive_probability;
+    }
+    return KADD_SUCCESS;
+}
+#endif
+
+int kadd_rf_model_load(kadd_rf_model_t **model_out, const char *model_path)
+{
+    unsigned char *file_bytes = NULL;
+    size_t file_size = 0;
+    kadd_rf_model_t *model = NULL;
+    int ret;
+
+    if (!model_out || !model_path) {
+        return KADD_ERROR_NULL_PTR;
+    }
+    *model_out = NULL;
+
+    ret = read_entire_file(model_path, &file_bytes, &file_size);
+    if (ret != KADD_SUCCESS) {
+        return ret;
+    }
+
+    const unsigned char *header = file_bytes;
+    if (memcmp(header, g_kadd_rf_magic, sizeof(g_kadd_rf_magic)) != 0 ||
+        read_u32_le(header + 8) != KADD_RF_VERSION ||
+        read_u32_le(header + 12) != KADD_RF_HEADER_SIZE ||
+        read_u32_le(header + 16) != KADD_RF_NODE_SIZE ||
+        read_u32_le(header + 24) != KADD_RF_CLASS_COUNT ||
+        read_u32_le(header + 28) != KADD_RF_POSITIVE_CLASS_INDEX) {
+        free(file_bytes);
+        return KADD_ERROR_MODEL_LOAD_FAILED;
+    }
+
+    const uint32_t feature_count = read_u32_le(header + 20);
+    const uint32_t tree_count = read_u32_le(header + 32);
+    const uint32_t node_count = read_u32_le(header + 36);
+    const uint32_t flags = read_u32_le(header + 40);
+    const uint64_t payload_size_u64 = read_u64_le(header + 44);
+    const uint32_t expected_crc = read_u32_le(header + 52);
+
+    if (feature_count == 0 || feature_count > KADD_RF_MAX_FEATURE_COUNT ||
+        tree_count == 0 || tree_count > KADD_RF_MAX_TREE_COUNT ||
+        node_count == 0 || node_count > KADD_RF_MAX_NODE_COUNT ||
+        flags != 0U ||
+        read_u32_le(header + 56) != 0U ||
+        read_u32_le(header + 60) != 0U ||
+        payload_size_u64 > SIZE_MAX) {
+        free(file_bytes);
+        return KADD_ERROR_MODEL_LOAD_FAILED;
+    }
+
+    const size_t offsets_size = ((size_t)tree_count + 1U) * sizeof(uint32_t);
+    if (node_count > (SIZE_MAX - offsets_size) / KADD_RF_NODE_SIZE) {
+        free(file_bytes);
+        return KADD_ERROR_MODEL_LOAD_FAILED;
+    }
+    const size_t expected_payload_size =
+        offsets_size + (size_t)node_count * KADD_RF_NODE_SIZE;
+    if ((size_t)payload_size_u64 != expected_payload_size ||
+        expected_payload_size > SIZE_MAX - KADD_RF_HEADER_SIZE ||
+        file_size != KADD_RF_HEADER_SIZE + expected_payload_size) {
+        free(file_bytes);
+        return KADD_ERROR_MODEL_LOAD_FAILED;
+    }
+
+    const unsigned char *payload = file_bytes + KADD_RF_HEADER_SIZE;
+    if (crc32_bytes(payload, expected_payload_size) != expected_crc) {
+        fprintf(stderr, "[kadd_rf] ERROR: Model checksum mismatch\n");
+        free(file_bytes);
+        return KADD_ERROR_MODEL_LOAD_FAILED;
+    }
+
+    model = (kadd_rf_model_t *)calloc(1, sizeof(*model));
+    if (!model) {
+        free(file_bytes);
+        return KADD_ERROR_OUT_OF_MEMORY;
+    }
+    model->feature_count = feature_count;
+    model->tree_count = tree_count;
+    model->node_count = node_count;
+    model->tree_offsets = (uint32_t *)malloc(offsets_size);
+    model->nodes = (kadd_rf_node_t *)malloc((size_t)node_count * sizeof(kadd_rf_node_t));
+    if (!model->tree_offsets || !model->nodes) {
+        kadd_rf_model_free(model);
+        free(file_bytes);
+        return KADD_ERROR_OUT_OF_MEMORY;
+    }
+
+    for (uint32_t i = 0; i <= tree_count; ++i) {
+        model->tree_offsets[i] = read_u32_le(payload + (size_t)i * 4U);
+    }
+    if (model->tree_offsets[0] != 0U ||
+        model->tree_offsets[tree_count] != node_count) {
+        kadd_rf_model_free(model);
+        free(file_bytes);
+        return KADD_ERROR_MODEL_LOAD_FAILED;
+    }
+
+    const unsigned char *node_bytes = payload + offsets_size;
+    for (uint32_t i = 0; i < node_count; ++i) {
+        const unsigned char *src = node_bytes + (size_t)i * KADD_RF_NODE_SIZE;
+        kadd_rf_node_t *dst = &model->nodes[i];
+        dst->feature = (int32_t)read_u32_le(src);
+        dst->left = read_u32_le(src + 4);
+        dst->right = read_u32_le(src + 8);
+        dst->reserved = read_u32_le(src + 12);
+        dst->threshold = read_f64_le(src + 16);
+        dst->positive_probability = read_f64_le(src + 24);
+    }
+    free(file_bytes);
+
+    for (uint32_t tree = 0; tree < tree_count; ++tree) {
+        if (validate_tree(model, tree) != KADD_SUCCESS) {
+            kadd_rf_model_free(model);
+            return KADD_ERROR_MODEL_LOAD_FAILED;
+        }
+    }
+
+#if KADD_RF_HAVE_SVE
+    if (prepare_sve_layout(model) != KADD_SUCCESS) {
+        kadd_rf_model_free(model);
+        return KADD_ERROR_OUT_OF_MEMORY;
+    }
+#endif
+
+    *model_out = model;
+    return KADD_SUCCESS;
+}
+
+static double predict_tree(const kadd_rf_model_t *model,
+                           uint32_t root,
+                           const float *features)
+{
+    uint32_t index = root;
+    for (;;) {
+        const kadd_rf_node_t *node = &model->nodes[index];
+        if (node->feature < 0) {
+            return node->positive_probability;
+        }
+        index = ((double)features[node->feature] <= node->threshold)
+                    ? node->left
+                    : node->right;
+    }
+}
+
+int kadd_rf_model_predict(const kadd_rf_model_t *model,
+                          const float *features,
+                          float *positive_probability)
+{
+    if (!model || !features || !positive_probability) {
+        return KADD_ERROR_NULL_PTR;
+    }
+    double sum = 0.0;
+    for (uint32_t tree = 0; tree < model->tree_count; ++tree) {
+        sum += predict_tree(model, model->tree_offsets[tree], features);
+    }
+    double probability = sum / (double)model->tree_count;
+    if (probability < 0.0) {
+        probability = 0.0;
+    } else if (probability > 1.0) {
+        probability = 1.0;
+    }
+    *positive_probability = (float)probability;
+    return KADD_SUCCESS;
+}
+
+static void predict_batch_scalar(const kadd_rf_model_t *model,
+                                 const float *features,
+                                 int sample_count,
+                                 float *probabilities)
+{
+    for (int row = 0; row < sample_count; ++row) {
+        (void)kadd_rf_model_predict(model,
+                                    features + (size_t)row * model->feature_count,
+                                    &probabilities[row]);
+    }
+}
+
+#if KADD_RF_HAVE_SVE
+/*
+ * Traverse svcntw() samples together using 32-bit lanes. The precomputed
+ * threshold cutoff preserves sklearn's double-threshold branch decisions,
+ * while leaf probabilities are accumulated in 64-bit SVE lanes in tree order
+ * so the returned float is identical to scalar inference.
+ *
+ * This hot path performs no heap allocation and no input type conversion.
+ */
+static void predict_batch_sve_chunk(const kadd_rf_model_t *model,
+                                    const float *features,
+                                    int sample_count,
+                                    float *probabilities)
+{
+    const double inverse_tree_count = 1.0 / (double)model->tree_count;
+    const uint32_t lane_capacity = (uint32_t)svcntw();
+    const uint32_t f64_lane_capacity = (uint32_t)svcntd();
+    double lane_sums[lane_capacity];
+
+    for (uint32_t row = 0; row < (uint32_t)sample_count;
+         row += lane_capacity) {
+        const svbool_t pg =
+            svwhilelt_b32(row, (uint32_t)sample_count);
+        const svbool_t pg_low = svunpklo_b(pg);
+        const svbool_t pg_high = svunpkhi_b(pg);
+        const uint32_t lane_count =
+            row + lane_capacity <= (uint32_t)sample_count
+                ? lane_capacity
+                : (uint32_t)sample_count - row;
+        const svuint32_t rows = svindex_u32(row, 1U);
+        svfloat64_t sums_low = svdup_f64(0.0);
+        svfloat64_t sums_high = svdup_f64(0.0);
+
+        for (uint32_t tree = 0; tree < model->tree_count; ++tree) {
+            svuint32_t nodes = svdup_u32(model->tree_offsets[tree]);
+            svbool_t active = pg;
+            uint32_t traversal_steps = 0U;
+            const uint32_t maximum_steps =
+                model->tree_offsets[tree + 1U] -
+                model->tree_offsets[tree];
+
+            while (svptest_any(pg, active)) {
+                if (++traversal_steps > maximum_steps) {
+                    predict_batch_scalar(model, features, sample_count,
+                                         probabilities);
+                    return;
+                }
+
+                const svuint32_t feature =
+                    svld1_gather_u32index_u32(
+                        active, model->sve_features, nodes);
+                active =
+                    svcmpne_n_u32(active, feature, UINT32_MAX);
+                if (!svptest_any(pg, active)) {
+                    break;
+                }
+
+                const svuint32_t flat_indices =
+                    svadd_u32_x(
+                        active,
+                        svmul_n_u32_x(active, rows,
+                                      model->feature_count),
+                        feature);
+                const svfloat32_t values =
+                    svld1_gather_u32index_f32(
+                        active, features, flat_indices);
+                const svfloat32_t thresholds =
+                    svld1_gather_u32index_f32(
+                        active, model->sve_thresholds, nodes);
+                const svbool_t go_left =
+                    svcmple_f32(active, values, thresholds);
+                const svuint32_t left =
+                    svld1_gather_u32index_u32(
+                        active, model->sve_left, nodes);
+                const svuint32_t right =
+                    svld1_gather_u32index_u32(
+                        active, model->sve_right, nodes);
+                const svuint32_t next_nodes =
+                    svsel_u32(go_left, left, right);
+                nodes = svsel_u32(active, next_nodes, nodes);
+            }
+
+            const svuint64_t leaf_nodes_low =
+                svunpklo_u64(nodes);
+            const svuint64_t leaf_nodes_high =
+                svunpkhi_u64(nodes);
+            const svfloat64_t probabilities_low =
+                svld1_gather_u64index_f64(
+                    pg_low, model->sve_probabilities,
+                    leaf_nodes_low);
+            const svfloat64_t probabilities_high =
+                svld1_gather_u64index_f64(
+                    pg_high, model->sve_probabilities,
+                    leaf_nodes_high);
+            sums_low =
+                svadd_f64_x(pg_low, sums_low, probabilities_low);
+            sums_high =
+                svadd_f64_x(pg_high, sums_high, probabilities_high);
+        }
+
+        svst1_f64(pg_low, lane_sums, sums_low);
+        svst1_f64(pg_high, lane_sums + f64_lane_capacity,
+                  sums_high);
+        for (uint32_t lane = 0; lane < lane_count; ++lane) {
+            double probability =
+                lane_sums[lane] * inverse_tree_count;
+            if (probability < 0.0) {
+                probability = 0.0;
+            } else if (probability > 1.0) {
+                probability = 1.0;
+            }
+            probabilities[row + lane] = (float)probability;
+        }
+    }
+}
+#endif
+
+int kadd_rf_model_predict_batch(const kadd_rf_model_t *model,
+                                const float *features,
+                                int sample_count,
+                                float *positive_probabilities,
+                                int batch_size)
+{
+    if (!model || !features || !positive_probabilities) {
+        return KADD_ERROR_NULL_PTR;
+    }
+    if (sample_count <= 0 ||
+        sample_count > KADD_RF_MAX_SAMPLE_COUNT ||
+        batch_size <= 0) {
+        return KADD_ERROR_INVALID_PARAM;
+    }
+    int effective_batch = batch_size;
+    if (effective_batch > KADD_RF_MAX_BATCH_SIZE) {
+        effective_batch = KADD_RF_DEFAULT_BATCH_SIZE;
+    }
+
+    for (int begin = 0; begin < sample_count; begin += effective_batch) {
+        const int count =
+            begin + effective_batch < sample_count ? effective_batch : sample_count - begin;
+        const float *chunk_features =
+            features + (size_t)begin * model->feature_count;
+#if KADD_RF_HAVE_SVE
+        predict_batch_sve_chunk(model,
+                                chunk_features,
+                                count,
+                                positive_probabilities + begin);
+#else
+        predict_batch_scalar(model,
+                             chunk_features,
+                             count,
+                             positive_probabilities + begin);
+#endif
+    }
+    return KADD_SUCCESS;
+}
+
+int kadd_rf_model_get_feature_dim(const kadd_rf_model_t *model)
+{
+    return model ? (int)model->feature_count : KADD_ERROR_NULL_PTR;
+}
+
+const char *kadd_rf_runtime_backend(void)
+{
+#if KADD_RF_HAVE_SVE
+    return "sve";
+#else
+    return "scalar";
+#endif
+}
+
+int kadd_rf_runtime_vector_bits(void)
+{
+#if KADD_RF_HAVE_SVE
+    return (int)(svcntb() * 8U);
+#else
+    return 0;
+#endif
+}
+
+const char *kadd_rf_runtime_kernel(void)
+{
+#if KADD_RF_HAVE_SVE
+    return "sve-f32-soa-v2";
+#else
+    return "scalar-aos-v1";
+#endif
+}
+
+void kadd_rf_model_free(kadd_rf_model_t *model)
+{
+    if (!model) {
+        return;
+    }
+#if KADD_RF_HAVE_SVE
+    free(model->sve_features);
+    free(model->sve_left);
+    free(model->sve_right);
+    free(model->sve_thresholds);
+    free(model->sve_probabilities);
+#endif
+    free(model->tree_offsets);
+    free(model->nodes);
+    free(model);
+}
