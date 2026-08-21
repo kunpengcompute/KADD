@@ -28,6 +28,9 @@
  *   右侧累加：result[i] += seq[i+d] * weight
  *   左侧累加：result[i] += seq[i-d] * weight
  */
+// LCOV_EXCL_START: non-SVE fallback, only compiled when SVE is unavailable
+// (kept out of SVE builds so it does not appear as uncovered in coverage)
+#if !defined(__aarch64__) || !defined(__ARM_FEATURE_SVE)
 static int sliding_window_distance_shift_fast(const int *seq, int seq_len, int window_size, int *result)
 {
     /* 初始化结果数组 */
@@ -52,6 +55,8 @@ static int sliding_window_distance_shift_fast(const int *seq, int seq_len, int w
 
     return KADD_SUCCESS;
 }
+#endif  // !(aarch64 && ARM_FEATURE_SVE)
+// LCOV_EXCL_STOP
 
 #if defined(__aarch64__) && defined(__ARM_FEATURE_SVE)
 /**

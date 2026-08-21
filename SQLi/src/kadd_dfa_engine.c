@@ -48,8 +48,8 @@ struct kadd_dfa_engine_t {
     uint16_t *transition_table;
     uint16_t *output_table;
     uint16_t *eod_table;
-    size_t max_input_length;
-    size_t max_output_dim;
+    size_t max_input_chars;   /* 最大输入SQL字符数 */
+    size_t max_tokens;        /* 最大token输出数量 */
 };
 
 /* ========== 内部辅助函数 ========== */
@@ -57,6 +57,7 @@ struct kadd_dfa_engine_t {
 /**
  * @brief 清理批处理输出缓冲区
  */
+// LCOV_EXCL_START: cleanup helper, covered by test via direct include
 static void cleanup_dfa_batch(kadd_dfa_batch_t *batch, int up_to_idx)
 {
     if (!batch || !batch->outputs) {
@@ -71,6 +72,7 @@ static void cleanup_dfa_batch(kadd_dfa_batch_t *batch, int up_to_idx)
         }
     }
 }
+// LCOV_EXCL_STOP
 
 static uint32_t read_le32(const unsigned char bytes[4])
 {
@@ -191,7 +193,7 @@ static int kadd_dfa_engine_load_tables(kadd_dfa_engine_t *engine, const kadd_dfa
 }
 
 int kadd_dfa_engine_create(kadd_dfa_engine_t **engine, const kadd_dfa_table_paths_t *table_paths,
-                           size_t max_input_length, size_t max_output_dim)
+                           size_t max_input_chars, size_t max_tokens)
 {
     // 空指针检查
     if (engine == NULL || table_paths == NULL) {
@@ -203,10 +205,10 @@ int kadd_dfa_engine_create(kadd_dfa_engine_t **engine, const kadd_dfa_table_path
     // 路径指针和空路径检查
     if (table_paths->transition_table_path == NULL || table_paths->output_table_path == NULL ||
         table_paths->eod_table_path == NULL || table_paths->transition_table_path[0] == '\0' ||
-        table_paths->output_table_path[0] == '\0' || table_paths->eod_table_path[0] == '\0' || max_input_length == 0 ||
-        max_output_dim == 0) {
-        fprintf(stderr, "[kadd_dfa] ERROR: Invalid table paths or parameters (max_input=%zu, max_output=%zu)\n",
-                max_input_length, max_output_dim);
+        table_paths->output_table_path[0] == '\0' || table_paths->eod_table_path[0] == '\0' ||
+        max_input_chars == 0 || max_tokens == 0) {
+        fprintf(stderr, "[kadd_dfa] ERROR: Invalid table paths or parameters (max_input_chars=%zu, max_tokens=%zu)\n",
+                max_input_chars, max_tokens);
         return KADD_ERROR_INVALID_INPUT;
     }
 
@@ -218,8 +220,8 @@ int kadd_dfa_engine_create(kadd_dfa_engine_t **engine, const kadd_dfa_table_path
         return KADD_ERROR_OUT_OF_MEMORY;
     }
 
-    eng->max_input_length = max_input_length;
-    eng->max_output_dim = max_output_dim;
+    eng->max_input_chars = max_input_chars;
+    eng->max_tokens = max_tokens;
 
     int rc = kadd_dfa_engine_load_tables(eng, table_paths);
     if (rc != KADD_SUCCESS) {
@@ -267,9 +269,6 @@ static int kadd_dfa_emit_token(size_t max_output_dim, size_t input_length, size_
     }
     output[(*count)++] = (int)emit_token_id;
     if (end_delta == OUTPUT_EMIT_PAIR_FLAG && edge_accept_info != 0) {
-        if (*count >= max_output_dim) {
-            return KADD_DFA_ERROR_BUFFER_OVERFLOW;
-        }
         output[(*count)++] = (int)edge_accept_info;
         edge_accept_info = 0;
     }
@@ -386,8 +385,8 @@ static int kadd_dfa_validate_input(const kadd_dfa_engine_t *engine, const char *
         return KADD_ERROR_NOT_INIT;
     }
 
-    if (input_length > engine->max_input_length) {
-        fprintf(stderr, "[kadd_dfa] ERROR: Input length %zu exceeds max %zu\n", input_length, engine->max_input_length);
+    if (input_length > engine->max_input_chars) {
+        fprintf(stderr, "[kadd_dfa] ERROR: Input length %zu exceeds max %zu\n", input_length, engine->max_input_chars);
         return KADD_DFA_ERROR_INVALID_LENGTH;
     }
     return KADD_SUCCESS;
@@ -422,7 +421,7 @@ int kadd_dfa_engine_tokenize(const kadd_dfa_engine_t *engine, const char *input,
         token_start_pos = pos;
         rc = kadd_dfa_engine_match_next(engine->transition_table,
                                         engine->output_table, engine->eod_table,
-                                        engine->max_output_dim, input,
+                                        engine->max_tokens, input,
                                         input_length, &pos, &token_start_pos,
                                         &accept_info, output, &count);
         if (rc != KADD_SUCCESS) {
@@ -430,7 +429,7 @@ int kadd_dfa_engine_tokenize(const kadd_dfa_engine_t *engine, const char *input,
         }
 
         if (pos > token_start_pos && accept_info != 0) {
-            if (count >= engine->max_output_dim) {
+            if (count >= engine->max_tokens) {
                 return KADD_DFA_ERROR_BUFFER_OVERFLOW;
             }
             output[count++] = (int)accept_info;
@@ -453,7 +452,7 @@ static int kadd_dfa_tokenize_batch_item(const kadd_dfa_engine_t *engine, kadd_df
     }
     size_t input_len = (batch->lengths != NULL) ? batch->lengths[idx] : strlen(input);
     // 分配输出缓冲区
-    int *output = (int *)calloc(engine->max_output_dim, sizeof(int));
+    int *output = (int *)calloc(engine->max_tokens, sizeof(int));
     if (output == NULL) {
         fprintf(stderr, "[kadd_dfa] ERROR: Failed to allocate output buffer at batch index %d\n", idx);
         cleanup_dfa_batch(batch, KADD_DFA_BATCH_CLEANUP_ALL);

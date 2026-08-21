@@ -38,16 +38,16 @@ int main()
 
     // 3. 提取特征
     printf("[3] 提取特征...\n");
-    int features[config.feature.feature_dim];
-    for (int i = 0; i < config.feature.feature_dim; i++) {
+    int features[KADD_FEATURE_DIM];
+    for (int i = 0; i < KADD_FEATURE_DIM; i++) {
         features[i] = 0;
     }
 
-    if (kadd_seq_to_feature(seq, seq_len, config.feature.window_size,
-                           features, config.feature.feature_dim) == KADD_SUCCESS) {
-        printf("特征向量 (%d 维):\n", config.feature.feature_dim);
+    if (kadd_seq_to_feature(seq, seq_len, KADD_FEATURE_WINDOW_SIZE,
+                           features, KADD_FEATURE_DIM) == KADD_SUCCESS) {
+        printf("特征向量 (%d 维):\n", KADD_FEATURE_DIM);
         printf("[");
-        for (int i = 0; i < config.feature.feature_dim; i++) {
+        for (int i = 0; i < KADD_FEATURE_DIM; i++) {
             printf("%d ", features[i]);
         }
         printf("]\n");

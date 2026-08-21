@@ -6,6 +6,10 @@
 #include "kadd_config_loader.h"
 #include "kadd_errors.h"
 
+/* ========== Feature 参数 ========== */
+#define KADD_FEATURE_WINDOW_SIZE  5     /* 滑动窗口大小（固定） */
+#define KADD_FEATURE_DIM          28    /* 特征维度（固定） */
+
 /* ========== Feature 配置上限 ========== */
 #define KADD_FEATURE_MAX_WINDOW_SIZE     100   /* window_size 最大值 */
 #define KADD_FEATURE_MAX_SAMPLE_COUNT  10000000  /* 批处理最大样本数 */

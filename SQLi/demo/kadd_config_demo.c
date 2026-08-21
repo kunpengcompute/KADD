@@ -23,15 +23,13 @@ int main()
         printf("\n✅ 配置加载成功\n\n");
 
         printf("DFA 引擎:\n");
-        printf("  转移表路径: %s\n", config.dfa.transition_table_path);
-        printf("  最大输入长度: %d\n", config.dfa.max_input_length);
+        printf("  转移表路径: %s\n", config.transition_table);
+        printf("  输出表路径: %s\n", config.output_table);
+        printf("  结束表路径: %s\n", config.eod_table);
 
         printf("\nML 引擎:\n");
-        printf("  模型路径: %s\n", config.ml.model_path);
-        printf("  特征维度: %d\n", config.ml.feature_dim);
-
-        printf("\nSQLi 引擎:\n");
-        printf("  特征维度: %d\n", config.sqli.feature_dim);
+        printf("  RF 模型路径: %s\n", config.model_rf);
+        printf("  CNN 模型路径: %s\n", config.model_cnn);
     } else {
         printf("❌ 配置加载失败\n");
     }

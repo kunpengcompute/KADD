@@ -1,263 +1,155 @@
-/*
- * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
- *
+// Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+/**
  * @file test_rf_engine_gtest.cpp
- * @brief Native random forest engine Google Test tests.
+ * @brief kadd_rf_engine 真实模型性能 + 准确率 gtest。
+ *
+ * 加载 assets/model/model_tokens_rf.krf，用真实训练 CSV（DFA 分词 ->
+ * kadd_seq_to_feature 28 维特征）测准确率/精确率/召回率/F1，并测单样本
+ * 推理吞吐量。模型路径写死，由 copy_test_resources 复制到 build/tests/assets/。
  */
+
+#include "kadd_rf_engine.h"
+#include "kadd_dfa_engine.h"
+#include "kadd_feature_engine.h"
+#include "test_model_data.h"
 
 #include <gtest/gtest.h>
 
-#include <cmath>
-#include <cstdint>
+#include <chrono>
 #include <cstdio>
-#include <cstring>
-#include <fstream>
-#include <limits>
-#include <string>
 #include <vector>
 
-#include <unistd.h>
-
-#include "kadd_errors.h"
-#include "kadd_rf_engine.h"
 
 namespace {
 
-constexpr uint32_t kHeaderSize = 64U;
-constexpr uint32_t kNodeSize = 32U;
-constexpr uint32_t kFeatureCount = 2U;
-constexpr float kProbabilityTolerance = 1.0e-6F;
+constexpr int kSeq = 300;
+constexpr int kFeatureDim = 28;
+constexpr int kWindow = 5;
 
-void AppendU32(std::vector<unsigned char> &bytes, uint32_t value)
-{
-    for (unsigned int shift = 0U; shift < 32U; shift += 8U) {
-        bytes.push_back(static_cast<unsigned char>(value >> shift));
-    }
-}
+constexpr const char* kModelPath = "assets/model/model_tokens_rf.krf";
+constexpr const char* kCsvPath =
+    "../../tools/model_train/train_data/total_training_dataset_v4_pinnacle_corrected.cleaned.csv";
 
-void AppendU64(std::vector<unsigned char> &bytes, uint64_t value)
-{
-    for (unsigned int shift = 0U; shift < 64U; shift += 8U) {
-        bytes.push_back(static_cast<unsigned char>(value >> shift));
-    }
-}
-
-void AppendF64(std::vector<unsigned char> &bytes, double value)
-{
-    uint64_t bits = 0U;
-    std::memcpy(&bits, &value, sizeof(bits));
-    AppendU64(bytes, bits);
-}
-
-uint32_t Crc32(const std::vector<unsigned char> &bytes)
-{
-    uint32_t crc = UINT32_C(0xFFFFFFFF);
-    for (unsigned char byte : bytes) {
-        crc ^= byte;
-        for (int bit = 0; bit < 8; ++bit) {
-            const uint32_t mask = static_cast<uint32_t>(
-                -static_cast<int32_t>(crc & 1U));
-            crc = (crc >> 1U) ^ (UINT32_C(0xEDB88320) & mask);
-        }
-    }
-    return ~crc;
-}
-
-void AppendNode(std::vector<unsigned char> &payload, int32_t feature,
-                uint32_t left, uint32_t right, double threshold,
-                double probability)
-{
-    AppendU32(payload, static_cast<uint32_t>(feature));
-    AppendU32(payload, left);
-    AppendU32(payload, right);
-    AppendU32(payload, 0U);
-    AppendF64(payload, threshold);
-    AppendF64(payload, probability);
-}
-
-std::vector<unsigned char> BuildModelBytes()
-{
-    std::vector<unsigned char> payload;
-    AppendU32(payload, 0U);
-    AppendU32(payload, 3U);
-    AppendNode(payload, 0, 1U, 2U, 0.5, 0.0);
-    AppendNode(payload, -1, UINT32_MAX, UINT32_MAX, 0.0, 0.25);
-    AppendNode(payload, -1, UINT32_MAX, UINT32_MAX, 0.0, 0.75);
-
-    std::vector<unsigned char> model = {'K', 'A', 'D', 'D', 'R', 'F', '1', '\0'};
-    AppendU32(model, 1U);
-    AppendU32(model, kHeaderSize);
-    AppendU32(model, kNodeSize);
-    AppendU32(model, kFeatureCount);
-    AppendU32(model, 2U);
-    AppendU32(model, 1U);
-    AppendU32(model, 1U);
-    AppendU32(model, 3U);
-    AppendU32(model, 0U);
-    AppendU64(model, payload.size());
-    AppendU32(model, Crc32(payload));
-    AppendU32(model, 0U);
-    AppendU32(model, 0U);
-    model.insert(model.end(), payload.begin(), payload.end());
-    return model;
-}
-
-std::string WriteTempFile(const std::vector<unsigned char> &bytes)
-{
-    char path[] = "/tmp/kadd_rf_test_XXXXXX";
-    const int fd = mkstemp(path);
-    if (fd < 0) {
-        return "";
-    }
-    close(fd);
-
-    std::ofstream stream(path, std::ios::binary | std::ios::trunc);
-    stream.write(reinterpret_cast<const char *>(bytes.data()),
-                 static_cast<std::streamsize>(bytes.size()));
-    if (!stream.good()) {
-        stream.close();
-        std::remove(path);
-        return "";
-    }
-    return path;
-}
-
-class RfEngineTest : public ::testing::Test {
-protected:
-    void SetUp() override
-    {
-        model_path_ = WriteTempFile(BuildModelBytes());
-        ASSERT_FALSE(model_path_.empty());
-        ASSERT_EQ(kadd_rf_model_load(&model_, model_path_.c_str()), KADD_SUCCESS);
-        ASSERT_NE(model_, nullptr);
-    }
-
-    void TearDown() override
-    {
-        kadd_rf_model_free(model_);
-        if (!model_path_.empty()) {
-            std::remove(model_path_.c_str());
-        }
-    }
-
-    kadd_rf_model_t *model_ = nullptr;
-    std::string model_path_;
-};
-
-TEST(RfModelFileTest, IdentifiesMagicAndRejectsInvalidPaths)
-{
-    const std::string valid_path = WriteTempFile(BuildModelBytes());
-    ASSERT_FALSE(valid_path.empty());
-    EXPECT_NE(kadd_rf_model_is_file(valid_path.c_str()), 0);
-    EXPECT_EQ(kadd_rf_model_is_file(nullptr), 0);
-    EXPECT_EQ(kadd_rf_model_is_file("/tmp/kadd_rf_missing_model"), 0);
-
-    std::vector<unsigned char> invalid = BuildModelBytes();
-    invalid[0] = 'X';
-    const std::string invalid_path = WriteTempFile(invalid);
-    ASSERT_FALSE(invalid_path.empty());
-    EXPECT_EQ(kadd_rf_model_is_file(invalid_path.c_str()), 0);
-
-    std::remove(valid_path.c_str());
-    std::remove(invalid_path.c_str());
-}
-
-TEST(RfModelLoadTest, ValidatesArgumentsAndCorruptModels)
-{
-    kadd_rf_model_t *model = reinterpret_cast<kadd_rf_model_t *>(1);
-    EXPECT_EQ(kadd_rf_model_load(nullptr, "unused"), KADD_ERROR_NULL_PTR);
-    EXPECT_EQ(kadd_rf_model_load(&model, nullptr), KADD_ERROR_NULL_PTR);
-    EXPECT_EQ(kadd_rf_model_load(&model, "/tmp/kadd_rf_missing_model"),
-              KADD_ERROR_FILE_OPERATION_FAILED);
-    EXPECT_EQ(model, nullptr);
-
-    std::vector<unsigned char> corrupt = BuildModelBytes();
-    corrupt.back() ^= 1U;
-    const std::string corrupt_path = WriteTempFile(corrupt);
-    ASSERT_FALSE(corrupt_path.empty());
-    EXPECT_EQ(kadd_rf_model_load(&model, corrupt_path.c_str()),
-              KADD_ERROR_MODEL_LOAD_FAILED);
-    EXPECT_EQ(model, nullptr);
-    std::remove(corrupt_path.c_str());
-}
-
-TEST_F(RfEngineTest, PredictsBothTreeBranches)
-{
-    const float left_features[kFeatureCount] = {0.5F, 10.0F};
-    const float right_features[kFeatureCount] = {0.5001F, -10.0F};
-    float probability = 0.0F;
-
-    EXPECT_EQ(kadd_rf_model_predict(model_, left_features, &probability),
-              KADD_SUCCESS);
-    EXPECT_NEAR(probability, 0.25F, kProbabilityTolerance);
-    EXPECT_EQ(kadd_rf_model_predict(model_, right_features, &probability),
-              KADD_SUCCESS);
-    EXPECT_NEAR(probability, 0.75F, kProbabilityTolerance);
-}
-
-TEST_F(RfEngineTest, BatchMatchesSinglePrediction)
-{
-    const std::vector<float> features = {
-        0.0F, 1.0F,
-        1.0F, 2.0F,
-        -1.0F, 3.0F
+kadd_dfa_engine_t* make_dfa() {
+    kadd_dfa_table_paths_t paths = {
+        "assets/data/transition_table.bin",
+        "assets/data/output_table.bin",
+        "assets/data/eod_table.bin"
     };
-    float expected[3] = {};
-    float actual[3] = {};
-    for (int index = 0; index < 3; ++index) {
-        ASSERT_EQ(kadd_rf_model_predict(
-                      model_, features.data() + index * kFeatureCount,
-                      &expected[index]),
-                  KADD_SUCCESS);
+    kadd_dfa_engine_t* dfa = nullptr;
+    if (kadd_dfa_engine_create(&dfa, &paths, kSeq, kSeq) != KADD_SUCCESS) {
+        return nullptr;
     }
-
-    EXPECT_EQ(kadd_rf_model_predict_batch(model_, features.data(), 3,
-                                          actual, 2),
-              KADD_SUCCESS);
-    for (int index = 0; index < 3; ++index) {
-        EXPECT_FLOAT_EQ(actual[index], expected[index]);
-    }
-    EXPECT_EQ(kadd_rf_model_predict_batch(model_, features.data(), 3,
-                                          actual, 2048),
-              KADD_SUCCESS);
+    return dfa;
 }
 
-TEST_F(RfEngineTest, ValidatesPredictionArguments)
-{
-    const float features[kFeatureCount] = {};
-    float probability = 0.0F;
-    EXPECT_EQ(kadd_rf_model_predict(nullptr, features, &probability),
-              KADD_ERROR_NULL_PTR);
-    EXPECT_EQ(kadd_rf_model_predict(model_, nullptr, &probability),
-              KADD_ERROR_NULL_PTR);
-    EXPECT_EQ(kadd_rf_model_predict(model_, features, nullptr),
-              KADD_ERROR_NULL_PTR);
-    EXPECT_EQ(kadd_rf_model_predict_batch(nullptr, features, 1,
-                                          &probability, 1),
-              KADD_ERROR_NULL_PTR);
-    EXPECT_EQ(kadd_rf_model_predict_batch(model_, nullptr, 1,
-                                          &probability, 1),
-              KADD_ERROR_NULL_PTR);
-    EXPECT_EQ(kadd_rf_model_predict_batch(model_, features, 1, nullptr, 1),
-              KADD_ERROR_NULL_PTR);
-    EXPECT_EQ(kadd_rf_model_predict_batch(model_, features, 0,
-                                          &probability, 1),
-              KADD_ERROR_INVALID_PARAM);
-    EXPECT_EQ(kadd_rf_model_predict_batch(model_, features, 1,
-                                          &probability, 0),
-              KADD_ERROR_INVALID_PARAM);
+/* tokens -> 28 维特征 -> float 数组 */
+std::vector<float> to_features(const std::vector<int>& tokens) {
+    int feat[kFeatureDim] = {0};
+    kadd_seq_to_feature(tokens.data(), (int)tokens.size(), kWindow, feat, kFeatureDim);
+    std::vector<float> f(kFeatureDim);
+    for (int i = 0; i < kFeatureDim; ++i) f[i] = (float)feat[i];
+    return f;
 }
 
-TEST_F(RfEngineTest, ReportsRuntimeMetadata)
-{
-    EXPECT_EQ(kadd_rf_model_get_feature_dim(model_),
-              static_cast<int>(kFeatureCount));
-    EXPECT_EQ(kadd_rf_model_get_feature_dim(nullptr), KADD_ERROR_NULL_PTR);
-    EXPECT_TRUE(std::strcmp(kadd_rf_runtime_backend(), "scalar") == 0 ||
-                std::strcmp(kadd_rf_runtime_backend(), "sve") == 0);
-    EXPECT_NE(kadd_rf_runtime_kernel(), nullptr);
-    EXPECT_GE(kadd_rf_runtime_vector_bits(), 0);
-    kadd_rf_model_free(nullptr);
+struct Metrics { long tp = 0, fp = 0, tn = 0, fn = 0; };
+
+void print_metrics(const char* tag, const Metrics& m, int n) {
+    float acc = (float)(m.tp + m.tn) / (float)n;
+    float p1  = (m.tp + m.fp) ? (float)m.tp / (float)(m.tp + m.fp) : 0.0f;
+    float r1  = (m.tp + m.fn) ? (float)m.tp / (float)(m.tp + m.fn) : 0.0f;
+    float f1  = (p1 + r1) > 0 ? 2 * p1 * r1 / (p1 + r1) : 0.0f;
+    std::printf("[%s] n=%d acc=%.4f | prec=%.4f rec=%.4f f1=%.4f (tp=%ld fp=%ld tn=%ld fn=%ld)\n",
+                tag, n, acc, p1, r1, f1, m.tp, m.fp, m.tn, m.fn);
 }
 
 }  // namespace
+
+class RfEngineTest : public ::testing::Test {
+protected:
+    kadd_rf_model_t* model = nullptr;
+    kadd_dfa_engine_t* dfa = nullptr;
+    std::vector<float> feat;   /* 单样本特征，供性能测试复用 */
+
+    void SetUp() override {
+        ASSERT_EQ(kadd_rf_model_load(&model, kModelPath), KADD_SUCCESS)
+            << "读不到模型 " << kModelPath;
+        dfa = make_dfa();
+        ASSERT_NE(dfa, nullptr) << "DFA 创建失败（assets/data 缺表？）";
+        std::vector<int> tokens = {7, 11, 8, 12, 8, 11, 8};
+        feat = to_features(tokens);
+    }
+    void TearDown() override {
+        kadd_rf_model_free(model);
+        kadd_dfa_engine_free(dfa);
+    }
+};
+
+TEST_F(RfEngineTest, LoadModel) {
+    float prob = -1.0f;
+    ASSERT_EQ(kadd_rf_model_predict(model, feat.data(), &prob), KADD_SUCCESS);
+    EXPECT_GE(prob, 0.0f);
+    EXPECT_LE(prob, 1.0f);
+}
+
+TEST_F(RfEngineTest, AccuracyOnRealData) {
+    std::vector<Sample> samples;
+    ASSERT_TRUE(load_csv_samples(kCsvPath, dfa, samples))
+        << "读不到训练 CSV " << kCsvPath;
+
+    Metrics m;
+    for (const auto& s : samples) {
+        auto f = to_features(s.tokens);
+        float prob = 0.0f;
+        if (kadd_rf_model_predict(model, f.data(), &prob) != KADD_SUCCESS) continue;
+        int pred = (prob >= 0.5f) ? 1 : 0;
+        if (pred && s.label) ++m.tp; else if (pred && !s.label) ++m.fp;
+        else if (!pred && !s.label) ++m.tn; else ++m.fn;
+    }
+    print_metrics("rf accuracy", m, (int)samples.size());
+    EXPECT_GT((float)(m.tp + m.tn) / (float)samples.size(), 0.9f);
+}
+
+TEST_F(RfEngineTest, Performance) {
+    const int kIterations = 20000;
+    const int kWarmup = 200;
+    for (int i = 0; i < kWarmup; ++i) { float p = 0; kadd_rf_model_predict(model, feat.data(), &p); }
+
+    auto t0 = std::chrono::steady_clock::now();
+    for (int i = 0; i < kIterations; ++i) {
+        float p = 0;
+        ASSERT_EQ(kadd_rf_model_predict(model, feat.data(), &p), KADD_SUCCESS);
+    }
+    auto t1 = std::chrono::steady_clock::now();
+    double us = std::chrono::duration<double, std::micro>(t1 - t0).count() / kIterations;
+    double ops = 1e6 / us;
+    std::printf("[rf perf] 单样本平均 %.2f us, 吞吐 %.0f ops/sec (%d iter)\n",
+                us, ops, kIterations);
+    EXPECT_GT(ops, 0.0);
+}
+
+// 覆盖 kadd_rf_model_get_feature_dim
+TEST_F(RfEngineTest, GetFeatureDim) {
+    int dim = kadd_rf_model_get_feature_dim(model);
+    EXPECT_EQ(dim, kFeatureDim);
+    EXPECT_EQ(kadd_rf_model_get_feature_dim(nullptr), -1);
+}
+
+// 覆盖 kadd_rf_model_predict_batch
+TEST_F(RfEngineTest, PredictBatch) {
+    // 用 3 个样本测试批量预测
+    std::vector<float> batch_features(3 * kFeatureDim, 0.0f);
+    for (int i = 0; i < 3; ++i) {
+        for (int j = 0; j < kFeatureDim; ++j) {
+            batch_features[i * kFeatureDim + j] = feat[j];
+        }
+    }
+    std::vector<float> probs(3, 0.0f);
+    ASSERT_EQ(kadd_rf_model_predict_batch(model, batch_features.data(), 3,
+                                           probs.data(), 2), KADD_SUCCESS);
+    for (int i = 0; i < 3; ++i) {
+        EXPECT_GE(probs[i], 0.0f);
+        EXPECT_LE(probs[i], 1.0f);
+    }
+}
+

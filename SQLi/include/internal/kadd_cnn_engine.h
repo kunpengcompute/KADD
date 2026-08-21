@@ -37,21 +37,7 @@ int kadd_cnn_model_predict_batch(const kadd_cnn_model_t *model,
                                  float *positive_probabilities,
                                  int batch_size);
 
-int kadd_cnn_model_get_feature_dim(const kadd_cnn_model_t *model);
-
-/** Return the compiled hot-path backend: "sve" or "scalar". */
-const char *kadd_cnn_runtime_backend(void);
-
-/** Return the active SVE vector width in bits, or 0 for scalar builds. */
-int kadd_cnn_runtime_vector_bits(void);
-
-/** Return a stable name for the compiled TextCNN kernel. */
-const char *kadd_cnn_runtime_kernel(void);
-
 void kadd_cnn_model_free(kadd_cnn_model_t *model);
-
-/** Return non-zero when model_path starts with the KADD-CNN v1 magic. */
-int kadd_cnn_model_is_file(const char *model_path);
 
 #ifdef __cplusplus
 }
