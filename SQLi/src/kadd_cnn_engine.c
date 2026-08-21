@@ -54,11 +54,6 @@ static const uint32_t g_kernel_widths[KADD_CNN_BRANCH_COUNT] = {
     2U, 3U, 4U, 5U
 };
 
-typedef union {
-    uint32_t bits;
-    float value;
-} kadd_cnn_float_bits_t;
-
 struct kadd_cnn_model_t {
     /*
      * Contribution table:
@@ -82,7 +77,7 @@ struct kadd_cnn_model_t {
     int pad_embedding_is_zero;
 };
 
-#if KADD_CNN_HAVE_SVE
+#if KADD_CNN_HAVE_SVE && defined(KADD_CNN_EXPECTED_SVE_BITS)
 /*
  * Unlike svcntb(), the CNTB inline assembly is not folded to the
  * -msve-vector-bits compile-time value.  This lets fixed-width builds reject
@@ -95,13 +90,12 @@ static size_t runtime_sve_vector_bits(void)
     return vector_bytes * 8U;
 }
 
-#if defined(KADD_CNN_EXPECTED_SVE_BITS)
 static int runtime_sve_width_is_compatible(void)
 {
     return runtime_sve_vector_bits() ==
            (size_t)KADD_CNN_EXPECTED_SVE_BITS;
 }
-#endif
+// LCOV_EXCL_STOP
 #endif
 
 static uint32_t read_u32_le(const unsigned char *p)
@@ -120,10 +114,12 @@ static uint64_t read_u64_le(const unsigned char *p)
 
 static float read_f32_le(const unsigned char *p)
 {
-    const kadd_cnn_float_bits_t converter = {
-        .bits = read_u32_le(p)
-    };
-    return converter.value;
+    union {
+        uint32_t u;
+        float    f;
+    } conv;
+    conv.u = read_u32_le(p);
+    return conv.f;
 }
 
 static uint32_t crc32_bytes(const unsigned char *data, size_t size)
@@ -213,24 +209,6 @@ static int read_entire_file(const char *path,
     *bytes_out = bytes;
     *size_out = file_size;
     return KADD_SUCCESS;
-}
-
-int kadd_cnn_model_is_file(const char *model_path)
-{
-    unsigned char magic[sizeof(g_kadd_cnn_magic)];
-    FILE *stream;
-
-    if (!model_path) {
-        return 0;
-    }
-    stream = fopen(model_path, "rb");
-    if (!stream) {
-        return 0;
-    }
-    const size_t count = fread(magic, 1U, sizeof(magic), stream);
-    (void)fclose(stream);
-    return count == sizeof(magic) &&
-           memcmp(magic, g_kadd_cnn_magic, sizeof(magic)) == 0;
 }
 
 static int decode_payload_floats(const unsigned char *payload,
@@ -380,11 +358,8 @@ static int prepare_model(kadd_cnn_model_t *model,
 
         model->branch_contribution_offsets[branch] =
             contribution_offset;
-        for (size_t channel = 0;
-             channel < KADD_CNN_CHANNEL_COUNT;
-             ++channel) {
-            model->conv_bias[
-                branch * KADD_CNN_CHANNEL_COUNT + channel] = bias[channel];
+        for (size_t ch = 0; ch < KADD_CNN_CHANNEL_COUNT; ++ch) {
+            model->conv_bias[branch * KADD_CNN_CHANNEL_COUNT + ch] = bias[ch];
         }
 
         for (size_t kpos = 0; kpos < kernel_width; ++kpos) {
@@ -427,21 +402,17 @@ static int prepare_model(kadd_cnn_model_t *model,
                 fc1_weights[output * KADD_CNN_FC1_INPUT_DIM + input];
         }
     }
-    for (size_t output = 0; output < KADD_CNN_HIDDEN_DIM; ++output) {
-        model->fc1_bias[output] = raw[cursor + output];
+    for (size_t i = 0; i < KADD_CNN_HIDDEN_DIM; ++i) {
+        model->fc1_bias[i] = (raw + cursor)[i];
     }
     cursor += KADD_CNN_HIDDEN_DIM;
 
-    for (size_t index = 0;
-         index < KADD_CNN_CLASS_COUNT * KADD_CNN_HIDDEN_DIM;
-         ++index) {
-        model->fc2_weights[index] = raw[cursor + index];
+    for (size_t i = 0; i < (size_t)KADD_CNN_CLASS_COUNT * KADD_CNN_HIDDEN_DIM; ++i) {
+        model->fc2_weights[i] = (raw + cursor)[i];
     }
     cursor += KADD_CNN_CLASS_COUNT * KADD_CNN_HIDDEN_DIM;
-    for (size_t class_index = 0;
-         class_index < KADD_CNN_CLASS_COUNT;
-         ++class_index) {
-        model->fc2_bias[class_index] = raw[cursor + class_index];
+    for (size_t i = 0; i < KADD_CNN_CLASS_COUNT; ++i) {
+        model->fc2_bias[i] = (raw + cursor)[i];
     }
     cursor += KADD_CNN_CLASS_COUNT;
 
@@ -606,19 +577,15 @@ static void pool_convolutions_scalar(const kadd_cnn_model_t *model,
             model->branch_contribution_offsets[branch];
         float *maximum =
             pooled + branch * KADD_CNN_CHANNEL_COUNT;
-        for (size_t channel = 0;
-             channel < KADD_CNN_CHANNEL_COUNT;
-             ++channel) {
-            maximum[channel] = 0.0F;
+        for (size_t ch = 0; ch < KADD_CNN_CHANNEL_COUNT; ++ch) {
+            maximum[ch] = 0.0f;
         }
 
         for (size_t position = 0;
              position < position_count;
              ++position) {
-            for (size_t channel = 0;
-                 channel < KADD_CNN_CHANNEL_COUNT;
-                 ++channel) {
-                values[channel] = bias[channel];
+            for (size_t ch = 0; ch < KADD_CNN_CHANNEL_COUNT; ++ch) {
+                values[ch] = bias[ch];
             }
             for (size_t kpos = 0;
                  kpos < kernel_width;
@@ -651,10 +618,8 @@ static void fully_connected_scalar(const kadd_cnn_model_t *model,
                                    float *hidden,
                                    float logits[KADD_CNN_CLASS_COUNT])
 {
-    for (size_t output = 0;
-         output < KADD_CNN_HIDDEN_DIM;
-         ++output) {
-        hidden[output] = model->fc1_bias[output];
+    for (size_t i = 0; i < KADD_CNN_HIDDEN_DIM; ++i) {
+        hidden[i] = model->fc1_bias[i];
     }
     for (size_t input = 0; input < KADD_CNN_FC1_INPUT_DIM; ++input) {
         const float input_value = pooled[input];
@@ -776,6 +741,8 @@ static void pool_branch_sve256(const kadd_cnn_model_t *model,
     KADD_CNN_SVE256_STORE_MAXIMUM(7, 56U);
 }
 
+// LCOV_EXCL_START: VLA fallback only compiled when not fixed at 256-bit SVE
+#if KADD_CNN_HAVE_SVE && !defined(KADD_CNN_SVE256_ONLY)
 static void pool_branch_sve_vla(const kadd_cnn_model_t *model,
                                 const uint8_t *tokens,
                                 size_t branch,
@@ -822,13 +789,16 @@ static void pool_branch_sve_vla(const kadd_cnn_model_t *model,
         svst1_f32(pg, output + channel, maximum);
     }
 }
+#endif  // KADD_CNN_HAVE_SVE && !KADD_CNN_SVE256_ONLY
 
 static void pool_convolutions_sve(const kadd_cnn_model_t *model,
                                   const uint8_t *tokens,
                                   size_t active_length,
                                   float *pooled)
 {
+#if KADD_CNN_HAVE_SVE && !defined(KADD_CNN_SVE256_ONLY)
     const int is_sve256 = svcntw() == 8U;
+#endif
     for (size_t branch = 0;
          branch < KADD_CNN_BRANCH_COUNT;
          ++branch) {
@@ -837,6 +807,10 @@ static void pool_convolutions_sve(const kadd_cnn_model_t *model,
                 model, active_length, g_kernel_widths[branch]);
         float *output =
             pooled + branch * KADD_CNN_CHANNEL_COUNT;
+#if KADD_CNN_HAVE_SVE && defined(KADD_CNN_SVE256_ONLY)
+        pool_branch_sve256(
+            model, tokens, branch, position_count, output);
+#else
         if (is_sve256) {
             pool_branch_sve256(
                 model, tokens, branch, position_count, output);
@@ -844,6 +818,7 @@ static void pool_convolutions_sve(const kadd_cnn_model_t *model,
             pool_branch_sve_vla(
                 model, tokens, branch, position_count, output);
         }
+#endif
     }
 }
 
@@ -903,6 +878,10 @@ static void fc1_sve256(const kadd_cnn_model_t *model,
     KADD_CNN_SVE256_FC1_STORE(7, 56U);
 }
 
+// LCOV_EXCL_STOP
+
+// LCOV_EXCL_START: VLA fallback only compiled when not fixed at 256-bit SVE
+#if KADD_CNN_HAVE_SVE && !defined(KADD_CNN_SVE256_ONLY)
 static void fc1_sve_vla(const kadd_cnn_model_t *model,
                         const float *pooled,
                         float *hidden)
@@ -934,17 +913,24 @@ static void fc1_sve_vla(const kadd_cnn_model_t *model,
         svst1_f32(pg, hidden + output, value);
     }
 }
+#endif  // KADD_CNN_HAVE_SVE && !KADD_CNN_SVE256_ONLY
+
+// LCOV_EXCL_STOP
 
 static void fully_connected_sve(const kadd_cnn_model_t *model,
                                 const float *pooled,
                                 float *hidden,
                                 float logits[KADD_CNN_CLASS_COUNT])
 {
+#if KADD_CNN_HAVE_SVE && defined(KADD_CNN_SVE256_ONLY)
+    fc1_sve256(model, pooled, hidden);
+#else
     if (svcntw() == 8U) {
         fc1_sve256(model, pooled, hidden);
     } else {
         fc1_sve_vla(model, pooled, hidden);
     }
+#endif
 
     const size_t vector_length = svcntw();
     svfloat32_t sum0 = svdup_f32(0.0F);
@@ -1078,42 +1064,6 @@ int kadd_cnn_model_predict_batch(const kadd_cnn_model_t *model,
         }
     }
     return KADD_SUCCESS;
-}
-
-int kadd_cnn_model_get_feature_dim(const kadd_cnn_model_t *model)
-{
-    return model
-               ? (int)KADD_CNN_SEQUENCE_LENGTH
-               : KADD_ERROR_NULL_PTR;
-}
-
-const char *kadd_cnn_runtime_backend(void)
-{
-#if KADD_CNN_HAVE_SVE
-    return "sve";
-#else
-    return "scalar";
-#endif
-}
-
-int kadd_cnn_runtime_vector_bits(void)
-{
-#if KADD_CNN_HAVE_SVE
-    return (int)runtime_sve_vector_bits();
-#else
-    return 0;
-#endif
-}
-
-const char *kadd_cnn_runtime_kernel(void)
-{
-#if KADD_CNN_HAVE_SVE
-    return runtime_sve_vector_bits() == 256U
-               ? "sve256-token-table-fused-v1"
-               : "sve-vla-token-table-fused-v1";
-#else
-    return "scalar-token-table-fused-v1";
-#endif
 }
 
 void kadd_cnn_model_free(kadd_cnn_model_t *model)

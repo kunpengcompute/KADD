@@ -31,14 +31,14 @@ int main()
     kadd_dfa_engine_t *engine = NULL;
 
     kadd_dfa_table_paths_t table_paths = {
-        .transition_table_path = config.dfa.transition_table_path,
-        .output_table_path = config.dfa.output_table_path,
-        .eod_table_path = config.dfa.eod_table_path
+        .transition_table_path = config.transition_table,
+        .output_table_path = config.output_table,
+        .eod_table_path = config.eod_table
     };
 
     if (kadd_dfa_engine_create(&engine, &table_paths,
-                               config.dfa.max_input_length,
-                               config.dfa.max_output_dim) != KADD_SUCCESS) {
+                               KADD_DFA_MAX_INPUT_CHARS,
+                               KADD_DFA_MAX_TOKENS) != KADD_SUCCESS) {
         printf("❌ 引擎创建失败\n");
         kadd_config_free(&config);
         return 1;

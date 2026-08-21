@@ -4,7 +4,7 @@
  * @file test_sqli_engine_gtest.cpp
  * @brief SQL 注入检测引擎 Google Test 测试套件
  *
- * 包含功能测试、边界测试、异常测试、性能测试
+ * 包含功能测试、边界测试、异常测试、性能测试、静态函数测试
  * 使用统计指标评估模型性能，适应模型训练的随机性
  */
 
@@ -16,11 +16,15 @@
 #include <iomanip>
 #include <iostream>
 #include <cmath>
+#include <fstream>
 #include <cstdio>
 #include <cstdlib>
 #include "kadd_sqli_engine.h"
 #include "kadd_ml_engine.h"
 #include "kadd_config_loader.h"
+
+// ========== 包含源文件以测试 static 函数 ==========
+#include "kadd_sqli_engine.c"
 
 constexpr int kDefaultBatchSize = 10;
 constexpr int kPercentScale = 100;
@@ -164,33 +168,126 @@ static const std::vector<TestCase> g_full_dataset = []() {
     return dataset;
 }();
 
+// 对数据集逐样本检测，统计混淆矩阵
+static Metrics evaluate_dataset(kadd_sqli_engine_t* engine, const TestCase* data, size_t count, float threshold)
+{
+    Metrics m;
+    for (size_t i = 0; i < count; ++i) {
+        float prob = 0.0f;
+        if (kadd_sqli_detect(engine, data[i].input, &prob) != KADD_SUCCESS) {
+            continue;
+        }
+        int predicted = (prob >= threshold) ? 1 : 0;
+        int expected  = data[i].is_injection ? 1 : 0;
+        if (predicted && expected)  ++m.true_positive;
+        else if (predicted && !expected) ++m.false_positive;
+        else if (!predicted && !expected) ++m.true_negative;
+        else ++m.false_negative;
+    }
+    return m;
+}
+
+// 打印混淆矩阵
+static void print_confusion_matrix(const Metrics& m)
+{
+    std::cout << "  TP=" << m.true_positive
+              << "  FP=" << m.false_positive
+              << "  TN=" << m.true_negative
+              << "  FN=" << m.false_negative
+              << "  acc=" << (m.accuracy() * kPercentScale) << "%"
+              << "  prec=" << (m.precision() * kPercentScale) << "%"
+              << "  rec=" << (m.recall() * kPercentScale) << "%"
+              << "  f1=" << (m.f1_score() * kPercentScale) << "%" << std::endl;
+}
+
 /* ========== 测试夹具 ========== */
 
-class SQLiEngineTest : public ::testing::Test {
+class SQLiEngineTest : public ::testing::TestWithParam<std::string> {
 protected:
     kadd_sqli_engine_t* engine;
-    float threshold = 0.5f;  // 默认检测阈值
-    bool skip_test = false;
+    float threshold = 0.5f;
+    std::string temp_config_path_;
+
+    // Search for config.json in common paths
+    std::string find_config_path() {
+        const char* paths[] = {
+            "config.json", "../config.json",
+            "../../config.json", "../../../config.json"
+        };
+        for (const char* p : paths) {
+            FILE* f = fopen(p, "r");
+            if (f) { fclose(f); return p; }
+        }
+        return "";
+    }
+
+    // Read entire file into string
+    std::string read_file(const std::string& path) {
+        std::ifstream ifs(path);
+        if (!ifs.is_open()) return "";
+        return std::string((std::istreambuf_iterator<char>(ifs)),
+                           std::istreambuf_iterator<char>());
+    }
+
+    // Replace engine_mode value in JSON content
+    std::string modify_engine_mode(const std::string& content, const std::string& mode) {
+        std::string result = content;
+        std::string key = "\"engine_mode\"";
+        auto pos = result.find(key);
+        if (pos != std::string::npos) {
+            auto colon = result.find(':', pos + key.size());
+            if (colon != std::string::npos) {
+                auto q1 = result.find('"', colon + 1);
+                if (q1 != std::string::npos) {
+                    auto q2 = result.find('"', q1 + 1);
+                    if (q2 != std::string::npos) {
+                        result.replace(q1 + 1, q2 - q1 - 1, mode);
+                    }
+                }
+            }
+        } else {
+            auto brace = result.rfind('}');
+            if (brace != std::string::npos) {
+                result.insert(brace, "  \"engine_mode\": \"" + mode + "\",\n");
+            }
+        }
+        return result;
+    }
 
     void SetUp() override
     {
-        int ret = kadd_sqli_engine_create_from_file(&engine, "config.json");
-        if (ret != KADD_SUCCESS) {
-            std::cout << "[WARNING] SQLi 引擎创建失败 (ret=" << ret << "),跳过功能测试" << std::endl;
-            skip_test = true;
-            engine = nullptr;
-            return;
-        }
+        std::string mode = GetParam();
 
-        /* 验证引擎是否能正常检测（warmup 可能未捕获所有推理问题） */
+        std::string config_path = find_config_path();
+        ASSERT_FALSE(config_path.empty())
+            << "Cannot find config.json, please check file paths";
+
+        std::string content = read_file(config_path);
+        ASSERT_FALSE(content.empty()) << "Cannot read config: " << config_path;
+
+        std::string modified = modify_engine_mode(content, mode);
+
+        // Write temp config alongside original (keeps relative asset paths valid)
+        std::string dir;
+        auto slash = config_path.find_last_of("/\\");
+        if (slash != std::string::npos)
+            dir = config_path.substr(0, slash + 1);
+        temp_config_path_ = dir + "test_sqli_config_" + mode + ".json";
+
+        std::ofstream ofs(temp_config_path_);
+        ASSERT_TRUE(ofs.is_open()) << "Cannot write temp config: " << temp_config_path_;
+        ofs << modified;
+        ofs.close();
+
+        engine = nullptr;
+        int ret = kadd_sqli_engine_create_from_file(&engine, temp_config_path_.c_str());
+        ASSERT_EQ(ret, KADD_SUCCESS)
+            << "SQLi engine creation failed (mode=" << mode << ", ret=" << ret << ")";
+
         float prob = 0.0f;
         ret = kadd_sqli_detect(engine, "test_input", &prob);
-        if (ret != KADD_SUCCESS) {
-            std::cout << "[WARNING] SQLi 检测验证失败 (ret=" << ret << "),跳过功能测试" << std::endl;
-            kadd_sqli_engine_free(engine);
-            engine = nullptr;
-            skip_test = true;
-        }
+        ASSERT_EQ(ret, KADD_SUCCESS)
+            << "SQLi detect verification failed (mode=" << mode << ")";
     }
 
     void TearDown() override
@@ -199,96 +296,38 @@ protected:
             kadd_sqli_engine_free(engine);
             engine = nullptr;
         }
+        if (!temp_config_path_.empty()) {
+            remove(temp_config_path_.c_str());
+            temp_config_path_.clear();
+        }
     }
 
     float detect(const std::string &input)
     {
         float probability = 0.0f;
         int ret = kadd_sqli_detect(engine, input.c_str(), &probability);
-        EXPECT_EQ(ret, KADD_SUCCESS) << "检测失败: " << input;
+        EXPECT_EQ(ret, KADD_SUCCESS) << "detection failed: " << input;
         return probability;
-    }
-
-    // 运行批量检测并计算统计指标
-    // cases: 测试用例数组, count: 用例数量, thresh: 检测阈值
-    Metrics evaluate_dataset(const TestCase* cases, size_t count, float thresh)
-    {
-        Metrics metrics;
-
-        for (size_t i = 0; i < count; i++) {
-            float prob = detect(cases[i].input);
-            bool predicted = (prob >= thresh);
-            bool actual = cases[i].is_injection;
-
-            if (predicted && actual) {
-                metrics.true_positive++;
-            } else if (predicted && !actual) {
-                metrics.false_positive++;
-            } else if (!predicted && !actual) {
-                metrics.true_negative++;
-            } else {
-                metrics.false_negative++;
-            }
-        }
-
-        return metrics;
-    }
-
-    // 打印混淆矩阵和性能指标
-    void print_confusion_matrix(const Metrics& m)
-    {
-        std::cout << "\n========== 混淆矩阵 ==========\n";
-        std::cout << "                    实际注入    实际正常\n";
-        std::cout << "预测为注入:       " << m.true_positive << "         " << m.false_positive << "\n";
-        std::cout << "预测为安全:       " << m.false_negative << "         " << m.true_negative << "\n";
-        std::cout << "\n========== 性能指标 ==========\n";
-        constexpr int kDisplayPrecision = 3;
-        std::cout << std::fixed << std::setprecision(kDisplayPrecision);
-        std::cout << "准确率 (Accuracy):  " << (m.accuracy() * kPercentScale) << "%\n";
-        std::cout << "精确率 (Precision): " << (m.precision() * kPercentScale) << "%\n";
-        std::cout << "召回率 (Recall):    " << (m.recall() * kPercentScale) << "%\n";
-        std::cout << "特异度 (Specificity): " << (m.specificity() * kPercentScale) << "%\n";
-        std::cout << "F1分数:             " << m.f1_score() << "\n";
-        std::cout << "============================\n\n";
-    }
-
-    // 打印单个样本的检测详情
-    void print_detection_detail(const char* id, const char* input, float prob, bool predicted, bool actual)
-    {
-        constexpr int kDetectDisplayPrecision = 3;
-        std::cout << "[" << id << "] "
-                  << (predicted ? "注入" : "安全") << "("
-                  << std::fixed << std::setprecision(kDetectDisplayPrecision) << prob << ") "
-                  << "| 实际: " << (actual ? "注入" : "安全") << " "
-                  << (predicted == actual ? "✓" : "✗")
-                  << "\n    输入: " << input << "\n";
     }
 };
 
-/* ========== 1. 功能测试 ========== */
 
-TEST_F(SQLiEngineTest, BasicFunctionality)
+TEST_P(SQLiEngineTest, BasicFunctionality)
 {
-    if (skip_test) {
-        GTEST_SKIP() << "SQLi 引擎不可用";
-    }
     float prob = detect("id=1' OR '1'='1");
     EXPECT_GE(prob, 0.0f);
     EXPECT_LE(prob, 1.0f);
 }
 
 // 使用统计指标评估模型整体性能，适应模型训练的随机性
-TEST_F(SQLiEngineTest, ModelPerformanceMetrics)
+TEST_P(SQLiEngineTest, ModelPerformanceMetrics)
 {
-    if (skip_test) {
-        GTEST_SKIP() << "SQLi 引擎不可用";
-    }
     constexpr size_t sqli_count = sizeof(g_sqli_samples) / sizeof(g_sqli_samples[0]);
     constexpr size_t normal_count = sizeof(g_normal_samples) / sizeof(g_normal_samples[0]);
     constexpr size_t total_count = sqli_count + normal_count;
 
     // 计算整体指标
-    Metrics metrics = evaluate_dataset(g_full_dataset.data(), total_count, threshold);
+    Metrics metrics = evaluate_dataset(engine, g_full_dataset.data(), total_count, threshold);
 
     // 打印详细结果
     print_confusion_matrix(metrics);
@@ -308,11 +347,8 @@ TEST_F(SQLiEngineTest, ModelPerformanceMetrics)
 }
 
 // 不同阈值下的性能对比，帮助确定最佳检测阈值
-TEST_F(SQLiEngineTest, PerformanceAtDifferentThresholds)
+TEST_P(SQLiEngineTest, PerformanceAtDifferentThresholds)
 {
-    if (skip_test) {
-        GTEST_SKIP() << "SQLi 引擎不可用";
-    }
     size_t total_count = g_full_dataset.size();
 
     constexpr float kThresholdLow = 0.3f;
@@ -328,7 +364,7 @@ TEST_F(SQLiEngineTest, PerformanceAtDifferentThresholds)
 
     constexpr int kThresholdDisplayPrecision = 1;
     for (float thresh : thresholds) {
-        Metrics metrics = evaluate_dataset(g_full_dataset.data(), total_count, thresh);
+        Metrics metrics = evaluate_dataset(engine, g_full_dataset.data(), total_count, thresh);
 
         std::cout << std::fixed << std::setprecision(kThresholdDisplayPrecision)
                   << thresh << "\t"
@@ -348,11 +384,8 @@ TEST_F(SQLiEngineTest, PerformanceAtDifferentThresholds)
 }
 
 // 验证模型对同一输入多次检测的结果稳定性
-TEST_F(SQLiEngineTest, ModelStability)
+TEST_P(SQLiEngineTest, ModelStability)
 {
-    if (skip_test) {
-        GTEST_SKIP() << "SQLi 引擎不可用";
-    }
     std::string input = "id=1' OR '1'='1";
 
     constexpr int kStabilityIterations = 10;
@@ -382,21 +415,15 @@ TEST_F(SQLiEngineTest, ModelStability)
 
 /* ========== 2. 边界测试 ========== */
 
-TEST_F(SQLiEngineTest, EmptyInput)
+TEST_P(SQLiEngineTest, EmptyInput)
 {
-    if (skip_test) {
-        GTEST_SKIP() << "SQLi 引擎不可用";
-    }
     // 测试空输入
     float prob = detect("");
     EXPECT_LT(prob, threshold) << "空输入应该返回低概率";
 }
 
-TEST_F(SQLiEngineTest, SingleChar)
+TEST_P(SQLiEngineTest, SingleChar)
 {
-    if (skip_test) {
-        GTEST_SKIP() << "SQLi 引擎不可用";
-    }
     // 测试单字符输入
     std::vector<std::string> inputs = { "a", "1", "@" };
 
@@ -407,11 +434,8 @@ TEST_F(SQLiEngineTest, SingleChar)
     }
 }
 
-TEST_F(SQLiEngineTest, MaxInputBoundary)
+TEST_P(SQLiEngineTest, MaxInputBoundary)
 {
-    if (skip_test) {
-        GTEST_SKIP() << "SQLi 引擎不可用";
-    }
     // 测试接近最大限制的输入
     constexpr int kMaxInputLength = 300;
     std::string max_input(kMaxInputLength, 'a');
@@ -420,11 +444,8 @@ TEST_F(SQLiEngineTest, MaxInputBoundary)
     EXPECT_LE(prob, 1.0f);
 }
 
-TEST_F(SQLiEngineTest, SpecialChars)
+TEST_P(SQLiEngineTest, SpecialChars)
 {
-    if (skip_test) {
-        GTEST_SKIP() << "SQLi 引擎不可用";
-    }
     // 测试特殊字符
     std::vector<std::string> inputs = {
         "!@#$%",
@@ -439,11 +460,8 @@ TEST_F(SQLiEngineTest, SpecialChars)
     }
 }
 
-TEST_F(SQLiEngineTest, UnicodeInput)
+TEST_P(SQLiEngineTest, UnicodeInput)
 {
-    if (skip_test) {
-        GTEST_SKIP() << "SQLi 引擎不可用";
-    }
     // 测试 Unicode 输入
     std::vector<std::string> unicode_inputs = {
         "用户名=张三",
@@ -459,11 +477,8 @@ TEST_F(SQLiEngineTest, UnicodeInput)
     }
 }
 
-TEST_F(SQLiEngineTest, NewlineAndTabs)
+TEST_P(SQLiEngineTest, NewlineAndTabs)
 {
-    if (skip_test) {
-        GTEST_SKIP() << "SQLi 引擎不可用";
-    }
     // 测试换行符和制表符
     std::vector<std::string> inputs = {
         "line1\nline2\nline3",
@@ -478,11 +493,8 @@ TEST_F(SQLiEngineTest, NewlineAndTabs)
     }
 }
 
-TEST_F(SQLiEngineTest, MixedCase)
+TEST_P(SQLiEngineTest, MixedCase)
 {
-    if (skip_test) {
-        GTEST_SKIP() << "SQLi 引擎不可用";
-    }
     // 测试大小写混合
     std::vector<std::string> inputs = {
         "SeLeCt",
@@ -499,68 +511,69 @@ TEST_F(SQLiEngineTest, MixedCase)
 
 /* ========== 3. 异常测试 ========== */
 
-TEST_F(SQLiEngineTest, NullEngine)
+TEST_P(SQLiEngineTest, NullEngine)
 {
     float prob = 0.0f;
     int ret = kadd_sqli_detect(nullptr, "test", &prob);
     EXPECT_EQ(ret, KADD_ERROR_INVALID_INPUT) << "空引擎应该返回 KADD_ERROR_INVALID_INPUT";
 }
 
-TEST_F(SQLiEngineTest, NullInput)
+TEST_P(SQLiEngineTest, NullInput)
 {
-    if (skip_test) {
-        GTEST_SKIP() << "SQLi 引擎不可用";
-    }
     float prob = 0.0f;
     int ret = kadd_sqli_detect(engine, nullptr, &prob);
     EXPECT_EQ(ret, KADD_ERROR_INVALID_INPUT) << "空输入应该返回 KADD_ERROR_INVALID_INPUT";
 }
 
-TEST_F(SQLiEngineTest, NullProbability)
+TEST_P(SQLiEngineTest, NullProbability)
 {
-    if (skip_test) {
-        GTEST_SKIP() << "SQLi 引擎不可用";
-    }
     int ret = kadd_sqli_detect(engine, "test", nullptr);
     EXPECT_EQ(ret, KADD_ERROR_INVALID_INPUT) << "空概率指针应该返回 KADD_ERROR_INVALID_INPUT";
 }
 
-TEST_F(SQLiEngineTest, NullEngineWithAllOtherNull)
+TEST_P(SQLiEngineTest, NullEngineWithAllOtherNull)
 {
     int ret = kadd_sqli_detect(nullptr, nullptr, nullptr);
     EXPECT_EQ(ret, KADD_ERROR_INVALID_INPUT) << "全部空指针应该返回 KADD_ERROR_INVALID_INPUT";
 }
 
-TEST_F(SQLiEngineTest, CreateWithNullEnginePtr)
+TEST_P(SQLiEngineTest, CreateWithNullEnginePtr)
 {
     int ret = kadd_sqli_engine_create_from_file(nullptr, "config.json");
     EXPECT_NE(ret, KADD_SUCCESS) << "NULL engine 指针应该返回错误";
 }
 
-TEST_F(SQLiEngineTest, CreateWithNullConfigFile)
+TEST_P(SQLiEngineTest, CreateWithNullConfigFile)
 {
     kadd_sqli_engine_t* tmp = nullptr;
     int ret = kadd_sqli_engine_create_from_file(&tmp, nullptr);
     EXPECT_EQ(ret, KADD_ERROR_INVALID_INPUT) << "NULL 配置文件应该返回 KADD_ERROR_INVALID_INPUT";
 }
 
-TEST_F(SQLiEngineTest, CreateWithEmptyConfigFile)
+TEST_P(SQLiEngineTest, CreateWithEmptyConfigFile)
 {
     kadd_sqli_engine_t* tmp = nullptr;
     int ret = kadd_sqli_engine_create_from_file(&tmp, "");
     EXPECT_NE(ret, KADD_SUCCESS) << "空配置文件路径应该返回错误";
 }
 
-TEST_F(SQLiEngineTest, CreateWithNonexistentConfigFile)
+TEST_P(SQLiEngineTest, CreateWithNonexistentConfigFile)
 {
     kadd_sqli_engine_t* tmp = nullptr;
     int ret = kadd_sqli_engine_create_from_file(&tmp, "nonexistent_config.json");
     EXPECT_NE(ret, KADD_SUCCESS) << "不存在配置文件应该返回错误";
 }
 
+TEST_P(SQLiEngineTest, FreeWithNullEngine)
+{
+    // 测试 kadd_sqli_engine_free(NULL) 不应该崩溃
+    kadd_sqli_engine_free(nullptr);
+    SUCCEED() << "kadd_sqli_engine_free(NULL) 不应崩溃";
+}
+
 // ========== 覆盖率优化：触发 release_engine_buffers 错误处理 ==========
 
-TEST_F(SQLiEngineTest, CreateWithInvalidDFAPaths)
+TEST_P(SQLiEngineTest, CreateWithInvalidDFAPaths)
 {
     // 构造包含无效 DFA 表路径的配置来触发 DFA 引擎创建失败
     // 这将触发 create_engine_internal 中的 release_engine_buffers(e) 路径
@@ -603,7 +616,7 @@ TEST_F(SQLiEngineTest, CreateWithInvalidDFAPaths)
     }
 }
 
-TEST_F(SQLiEngineTest, CreateWithInvalidMLModelPath)
+TEST_P(SQLiEngineTest, CreateWithInvalidMLModelPath)
 {
     // 构造包含无效模型路径的配置来触发 ML 模型加载失败
     // 这将触发 create_engine_internal 中的 release_engine_buffers(e) 路径
@@ -660,11 +673,8 @@ TEST_F(SQLiEngineTest, CreateWithInvalidMLModelPath)
     }
 }
 
-TEST_F(SQLiEngineTest, EngineReuse)
+TEST_P(SQLiEngineTest, EngineReuse)
 {
-    if (skip_test) {
-        GTEST_SKIP() << "SQLi 引擎不可用";
-    }
     // 测试引擎重用 - 仅验证能正常工作，不检查具体结果
     float prob1 = detect("id=1' OR '1'='1");
     float prob2 = detect("admin'--");
@@ -680,11 +690,8 @@ TEST_F(SQLiEngineTest, EngineReuse)
 
 /* ========== 4. 性能测试 ========== */
 
-TEST_F(SQLiEngineTest, SingleDetectionPerformance)
+TEST_P(SQLiEngineTest, SingleDetectionPerformance)
 {
-    if (skip_test) {
-        GTEST_SKIP() << "SQLi 引擎不可用";
-    }
     constexpr int kPerfIterations = 1000;
     std::string input = "id=1' OR '1'='1";
     float prob = 0.0f;
@@ -704,11 +711,8 @@ TEST_F(SQLiEngineTest, SingleDetectionPerformance)
             << (total_time_us / kPerfIterations) << " us" << std::endl;
 }
 
-TEST_F(SQLiEngineTest, BatchDetectionPerformance)
+TEST_P(SQLiEngineTest, BatchDetectionPerformance)
 {
-    if (skip_test) {
-        GTEST_SKIP() << "SQLi 引擎不可用";
-    }
     // 测试批量检测性能
     constexpr int kBatchSize = 100;
     std::vector<std::string> inputs_str(kBatchSize);
@@ -736,11 +740,8 @@ TEST_F(SQLiEngineTest, BatchDetectionPerformance)
 
 /* ========== 5. 一致性测试 ========== */
 
-TEST_F(SQLiEngineTest, BatchVsSingleConsistency)
+TEST_P(SQLiEngineTest, BatchVsSingleConsistency)
 {
-    if (skip_test) {
-        GTEST_SKIP() << "SQLi 引擎不可用";
-    }
     // 测试批量检测与单次检测的一致性（不依赖具体检测结果）
     std::vector<std::string> inputs_str = {
         "id=1' OR '1'='1",
@@ -778,29 +779,8 @@ TEST_F(SQLiEngineTest, BatchVsSingleConsistency)
 
 // ========== 覆盖率优化：边界和批处理测试 ==========
 
-TEST_F(SQLiEngineTest, BatchSize_EdgeCases)
+TEST_P(SQLiEngineTest, BatchSize_EdgeCases)
 {
-    if (skip_test) GTEST_SKIP() << "SQLi 引擎不可用";
-
-    const char *inputs[1] = {"test"};
-    float probs[1];
-
-    // 测试 batch_size = 0 (应使用默认值)
-    EXPECT_EQ(kadd_sqli_detect_batch(engine, inputs, 1, probs, 0), KADD_SUCCESS);
-
-    // 测试 batch_size < 0 (应使用默认值)
-    EXPECT_EQ(kadd_sqli_detect_batch(engine, inputs, 1, probs, -1), KADD_SUCCESS);
-
-    // 测试 batch_size = 1
-    EXPECT_EQ(kadd_sqli_detect_batch(engine, inputs, 1, probs, 1), KADD_SUCCESS);
-
-    // 测试 batch_size > KADD_ML_MAX_BATCH_SIZE (应自动限制)
-    EXPECT_EQ(kadd_sqli_detect_batch(engine, inputs, 1, probs, 1025), KADD_SUCCESS);
-}
-
-TEST_F(SQLiEngineTest, VeryLongInput_400Chars)
-{
-    if (skip_test) GTEST_SKIP() << "SQLi 引擎不可用";
 
     // 测试超长输入 (超过默认 max_input_length = 300)
     std::string long_input(400, 'A');
@@ -810,21 +790,8 @@ TEST_F(SQLiEngineTest, VeryLongInput_400Chars)
 }
 
 // ========== 覆盖率优化：批处理边界和错误路径测试 ==========
-TEST_F(SQLiEngineTest, BatchWithZeroCount)
+TEST_P(SQLiEngineTest, BatchWithZeroCount)
 {
-    if (skip_test) GTEST_SKIP() << "SQLi 引擎不可用";
-
-    const char *inputs[1] = {"test"};
-    float probs[1];
-
-    // 测试 count = 0
-    EXPECT_EQ(kadd_sqli_detect_batch(engine, inputs, 0, probs, 64), KADD_ERROR_INVALID_INPUT)
-        << "count=0 应该返回 INVALID_INPUT 错误";
-}
-
-TEST_F(SQLiEngineTest, BatchWithNegativeCount)
-{
-    if (skip_test) GTEST_SKIP() << "SQLi 引擎不可用";
 
     const char *inputs[1] = {"test"};
     float probs[1];
@@ -834,22 +801,8 @@ TEST_F(SQLiEngineTest, BatchWithNegativeCount)
         << "count=-1 应该返回 INVALID_INPUT 错误";
 }
 
-TEST_F(SQLiEngineTest, BatchWithExceedsMaxSampleCount)
+TEST_P(SQLiEngineTest, BatchWithExceedsMaxSampleCount)
 {
-    if (skip_test) GTEST_SKIP() << "SQLi 引擎不可用";
-
-    // 测试 count > KADD_ML_MAX_SAMPLE_COUNT (10,000,000)
-    const char *inputs[1] = {"test"};
-    float probs[1];
-
-    EXPECT_EQ(kadd_sqli_detect_batch(engine, inputs, KADD_ML_MAX_SAMPLE_COUNT + 1, probs, 64),
-                KADD_ERROR_INVALID_PARAM)
-        << "count 超过最大限制应该返回 INVALID_PARAM 错误";
-}
-
-TEST_F(SQLiEngineTest, BatchWithNullProbabilities)
-{
-    if (skip_test) GTEST_SKIP() << "SQLi 引擎不可用";
 
     const char *inputs[1] = {"test"};
 
@@ -858,22 +811,8 @@ TEST_F(SQLiEngineTest, BatchWithNullProbabilities)
         << "NULL probabilities 应该返回 INVALID_INPUT 错误";
 }
 
-TEST_F(SQLiEngineTest, BatchWithNullInputElement)
+TEST_P(SQLiEngineTest, BatchWithNullInputElement)
 {
-    if (skip_test) GTEST_SKIP() << "SQLi 引擎不可用";
-
-    // 测试 inputs 数组中包含 NULL 元素
-    const char *inputs[3] = {"test", nullptr, "normal"};
-    float probs[3] = {0.0f, 0.0f, 0.0f};
-
-    // 期望返回错误（因为 inputs[1] 是 NULL）
-    int ret = kadd_sqli_detect_batch(engine, inputs, 3, probs, 64);
-    EXPECT_NE(ret, KADD_SUCCESS) << "inputs 数组中包含 NULL 应该返回错误";
-}
-
-TEST_F(SQLiEngineTest, BatchWithNullInputsArray)
-{
-    if (skip_test) GTEST_SKIP() << "SQLi 引擎不可用";
 
     float probs[1];
 
@@ -882,7 +821,7 @@ TEST_F(SQLiEngineTest, BatchWithNullInputsArray)
         << "NULL inputs 数组应该返回 INVALID_INPUT 错误";
 }
 
-TEST_F(SQLiEngineTest, BatchWithNullEngine)
+TEST_P(SQLiEngineTest, BatchWithNullEngine)
 {
     float probs[1];
     const char *inputs[1] = {"test"};
@@ -892,19 +831,19 @@ TEST_F(SQLiEngineTest, BatchWithNullEngine)
         << "NULL engine 应该返回 INVALID_INPUT 错误";
 }
 
-TEST_F(SQLiEngineTest, SingleInputWithNullProbability)
+TEST_P(SQLiEngineTest, BatchWithExceedsMaxCount)
 {
-    if (skip_test) GTEST_SKIP() << "SQLi 引擎不可用";
+    const char *inputs[1] = {"test"};
+    float probs[1];
 
-    // 测试单次检测时 probability = NULL
-    int ret = kadd_sqli_detect(engine, "test", nullptr);
-    EXPECT_EQ(ret, KADD_ERROR_INVALID_INPUT)
-        << "NULL probability 指针应该返回 INVALID_INPUT 错误";
+    // 测试 count > KADD_ML_MAX_SAMPLE_COUNT
+    EXPECT_EQ(kadd_sqli_detect_batch(engine, inputs, KADD_ML_MAX_SAMPLE_COUNT + 1, probs, 64),
+              KADD_ERROR_INVALID_PARAM)
+        << "count > MAX_SAMPLE_COUNT 应该返回 INVALID_PARAM 错误";
 }
 
-TEST_F(SQLiEngineTest, SingleInputWithNullInputString)
+TEST_P(SQLiEngineTest, SingleInputWithNullProbability)
 {
-    if (skip_test) GTEST_SKIP() << "SQLi 引擎不可用";
 
     float prob = 0.0f;
 
@@ -913,7 +852,7 @@ TEST_F(SQLiEngineTest, SingleInputWithNullInputString)
         << "NULL input 字符串应该返回 INVALID_INPUT 错误";
 }
 
-TEST_F(SQLiEngineTest, SingleInputWithNullEngine)
+TEST_P(SQLiEngineTest, SingleInputWithNullEngine)
 {
     float prob = 0.0f;
 
@@ -925,24 +864,8 @@ TEST_F(SQLiEngineTest, SingleInputWithNullEngine)
 // ========== 7. 边缘情况和特殊情况测试 ==========
 
 // SQLi_E001: 空字符串检测
-TEST_F(SQLiEngineTest, EmptyStringDetection)
+TEST_P(SQLiEngineTest, EmptyStringDetection)
 {
-    if (skip_test) GTEST_SKIP() << "SQLi 引擎不可用";
-
-    const char* empty_input = "";
-    float probability = 0.0f;
-
-    int ret = kadd_sqli_detect(engine, empty_input, &probability);
-
-    EXPECT_EQ(ret, KADD_SUCCESS) << "空字符串处理应成功";
-    EXPECT_TRUE(probability >= 0.0f && probability <= 1.0f) << "概率值应在 [0, 1] 范围内";
-    EXPECT_LT(probability, 0.5f) << "空字符串不应被判定为注入";
-}
-
-// SQLi_E002: 单个字符检测
-TEST_F(SQLiEngineTest, SingleCharDetection)
-{
-    if (skip_test) GTEST_SKIP() << "SQLi 引擎不可用";
 
     const char* single_chars[] = {"a", "1", "'", ";", "-", "#"};
 
@@ -955,3 +878,202 @@ TEST_F(SQLiEngineTest, SingleCharDetection)
         EXPECT_TRUE(probability >= 0.0f && probability <= 1.0f) << "概率值应在有效范围内";
     }
 }
+
+// ========== static 函数测试 ==========
+
+/**
+ * convert_int_to_float_features 函数测试 - 基本转换
+ */
+TEST(SQLiEngineStaticTest, ConvertIntToFloatFeatures_Basic)
+{
+    int int_features[3] = {1, 2, 3};
+    float float_features[3] = {0};
+
+    convert_int_to_float_features(int_features, float_features, 3);
+
+    EXPECT_FLOAT_EQ(float_features[0], 1.0f);
+    EXPECT_FLOAT_EQ(float_features[1], 2.0f);
+    EXPECT_FLOAT_EQ(float_features[2], 3.0f);
+}
+
+TEST(SQLiEngineStaticTest, ConvertIntToFloatFeatures_Zero)
+{
+    int int_features[3] = {0, 0, 0};
+    float float_features[3] = {0};
+
+    convert_int_to_float_features(int_features, float_features, 3);
+
+    EXPECT_FLOAT_EQ(float_features[0], 0.0f);
+    EXPECT_FLOAT_EQ(float_features[1], 0.0f);
+    EXPECT_FLOAT_EQ(float_features[2], 0.0f);
+}
+
+TEST(SQLiEngineStaticTest, ConvertIntToFloatFeatures_Negative)
+{
+    int int_features[3] = {-1, -2, -3};
+    float float_features[3] = {0};
+
+    convert_int_to_float_features(int_features, float_features, 3);
+
+    EXPECT_FLOAT_EQ(float_features[0], -1.0f);
+    EXPECT_FLOAT_EQ(float_features[1], -2.0f);
+    EXPECT_FLOAT_EQ(float_features[2], -3.0f);
+}
+
+/**
+ * free_buffer_if_set 函数测试 - NULL 指针
+ */
+TEST(SQLiEngineStaticTest, FreeBufferIfSet_Null)
+{
+    void *ptr = nullptr;
+    free_buffer_if_set(&ptr);
+    SUCCEED() << "free_buffer_if_set(NULL) 不应崩溃";
+}
+
+TEST(SQLiEngineStaticTest, FreeBufferIfSet_ValidPointer)
+{
+    void *ptr = malloc(10);
+    ASSERT_NE(ptr, nullptr);
+
+    free_buffer_if_set(&ptr);
+    EXPECT_EQ(ptr, nullptr) << "释放后指针应该置 NULL";
+}
+
+/**
+ * cleanup_sqli_batch_buffers 函数测试 - NULL 参数
+ */
+TEST(SQLiEngineStaticTest, CleanupSqliBatchBuffers_AllNull)
+{
+    cleanup_sqli_batch_buffers(nullptr, nullptr, nullptr, nullptr, 0);
+    SUCCEED() << "cleanup_sqli_batch_buffers(全 NULL) 不应崩溃";
+}
+
+TEST(SQLiEngineStaticTest, CleanupSqliBatchBuffers_PartialNull)
+{
+    int **dfa_outputs = (int **)calloc(2, sizeof(int *));
+    dfa_outputs[0] = (int *)calloc(10, sizeof(int));
+    dfa_outputs[1] = nullptr;
+
+    cleanup_sqli_batch_buffers(dfa_outputs, nullptr, nullptr, nullptr, 2);
+    SUCCEED() << "cleanup_sqli_batch_buffers(部分 NULL) 不应崩溃";
+}
+
+/**
+ * init_batch_detect_params 函数测试 - NULL 参数
+ */
+TEST(SQLiEngineStaticTest, InitBatchDetectParams_NullBatchSize)
+{
+    float probs[1] = {0};
+
+    int result = init_batch_detect_params(64, nullptr, probs, 1);
+    EXPECT_NE(result, KADD_SUCCESS);
+}
+
+TEST(SQLiEngineStaticTest, InitBatchDetectParams_NullProbabilities)
+{
+    int actual_batch_size = 0;
+
+    int result = init_batch_detect_params(64, &actual_batch_size, nullptr, 1);
+    EXPECT_NE(result, KADD_SUCCESS);
+}
+
+/**
+ * allocate_batch_buffers 函数测试 - NULL 参数
+ */
+TEST(SQLiEngineStaticTest, AllocateBatchBuffers_NullEngine)
+{
+    kadd_batch_buffers_t buffers = {0};
+
+    int result = allocate_batch_buffers(nullptr, 10, &buffers);
+    EXPECT_EQ(result, KADD_ERROR_INVALID_INPUT);
+}
+
+TEST(SQLiEngineStaticTest, AllocateBatchBuffers_NullBuffers)
+{
+    kadd_sqli_engine_t engine;
+    engine.feature_dim = 28;
+
+    int result = allocate_batch_buffers(&engine, 10, nullptr);
+    EXPECT_EQ(result, KADD_ERROR_INVALID_INPUT);
+}
+
+/**
+ * init_batch_detect_params 函数测试 - batch_size 边界
+ */
+TEST(SQLiEngineStaticTest, InitBatchDetectParams_ZeroBatchSize)
+{
+    int actual_batch_size = 0;
+    float probs[1] = {0};
+
+    int result = init_batch_detect_params(0, &actual_batch_size, probs, 1);
+    EXPECT_EQ(result, KADD_SUCCESS);
+    EXPECT_EQ(actual_batch_size, KADD_ML_DEFAULT_BATCH_SIZE);  // 应该设置为默认值
+}
+
+TEST(SQLiEngineStaticTest, InitBatchDetectParams_NegativeBatchSize)
+{
+    int actual_batch_size = 0;
+    float probs[1] = {0};
+
+    int result = init_batch_detect_params(-1, &actual_batch_size, probs, 1);
+    EXPECT_EQ(result, KADD_SUCCESS);
+    EXPECT_EQ(actual_batch_size, KADD_ML_DEFAULT_BATCH_SIZE);  // 应该设置为默认值
+}
+
+TEST(SQLiEngineStaticTest, InitBatchDetectParams_ExceedsMaxBatchSize)
+{
+    int actual_batch_size = 0;
+    float probs[1] = {0};
+
+    int result = init_batch_detect_params(KADD_ML_MAX_BATCH_SIZE + 1, &actual_batch_size, probs, 1);
+    EXPECT_EQ(result, KADD_SUCCESS);
+    EXPECT_EQ(actual_batch_size, KADD_ML_MAX_BATCH_SIZE);  // 应该截断为最大值
+}
+
+TEST(SQLiEngineStaticTest, CreateEngineInternal_NullEngine)
+{
+    kadd_dfa_table_paths_t table_paths = {};
+    kadd_config_t cfg = {};
+    cfg.engine_mode = KADD_ENGINE_MODE_ML;
+    {
+        const char *s = "model.onnx";
+        for (size_t i = 0; i < sizeof(cfg.model_rf) - 1 && s[i]; i++)
+            cfg.model_rf[i] = s[i];
+        cfg.model_rf[sizeof(cfg.model_rf) - 1] = '\0';
+    }
+    int result = create_engine_internal(nullptr, &table_paths, &cfg);
+    EXPECT_EQ(result, KADD_ERROR_INVALID_INPUT);
+}
+
+TEST(SQLiEngineStaticTest, CreateEngineInternal_NullTablePaths)
+{
+    kadd_sqli_engine_t *engine = nullptr;
+    kadd_config_t cfg2 = {};
+    cfg2.engine_mode = KADD_ENGINE_MODE_ML;
+    {
+        const char *s = "model.onnx";
+        for (size_t i = 0; i < sizeof(cfg2.model_rf) - 1 && s[i]; i++)
+            cfg2.model_rf[i] = s[i];
+        cfg2.model_rf[sizeof(cfg2.model_rf) - 1] = '\0';
+    }
+    int result = create_engine_internal(&engine, nullptr, &cfg2);
+    EXPECT_EQ(result, KADD_ERROR_INVALID_INPUT);
+}
+
+TEST(SQLiEngineStaticTest, CreateEngineInternal_NullModelPath)
+{
+    kadd_sqli_engine_t *engine = nullptr;
+    kadd_dfa_table_paths_t table_paths = {};
+    int result = create_engine_internal(&engine, &table_paths, nullptr);
+    EXPECT_EQ(result, KADD_ERROR_INVALID_INPUT);
+}
+
+// ========== Instantiate for both ML and DL modes ==========
+INSTANTIATE_TEST_SUITE_P(
+    ML_DL_Mode,
+    SQLiEngineTest,
+    ::testing::Values(std::string("ml"), std::string("dl")),
+    [](const ::testing::TestParamInfo<std::string>& info) {
+        return info.param == "ml" ? "ML" : "DL";
+    }
+);

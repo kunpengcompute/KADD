@@ -16,9 +16,9 @@ extern "C" {
 
 /**
  * @file kadd_ml_engine.h
- * @brief ONNX 推理引擎接口
+ * @brief 统一 ML/RF 推理引擎接口
  *
- * 提供模型加载、推理和资源释放功能
+ * 支持原生 RF（SVE 加速）和 ONNX 双后端，提供模型加载、推理和资源释放功能
  */
 
 /**
@@ -27,22 +27,24 @@ extern "C" {
 typedef struct kadd_model_handle_t kadd_model_handle_t;
 
 /**
- * @brief 加载 ONNX 模型
+ * @brief 加载 ML 模型（原生 RF 或 ONNX）
  *
  * @param handle 模型句柄指针的指针
- * @param model_path 模型文件路径 (.onnx)
- * @param feature_dim 特征维度（必须 > 0，且不超过 KADD_FEATURE_DEFAULT_MAX_OUTPUT_DIM）
+ * @param model_path 模型文件路径（.krf 原生格式或 .onnx）
+ * @param feature_dim 特征维度（0=从模型自动读取；>0=校验与模型维度是否一致）
  *
  * @return 0 成功，<0 失败（错误码）
  *
- * @note 加载完成后会执行一次预热推理，预热失败会导致加载失败
+ * @note ONNX 后端加载完成后会执行一次预热推理，预热失败会导致加载失败
+ * @note feature_dim=0 时从模型自动读取输入维度
+ * @note feature_dim>0 时校验与模型维度是否一致
  *
  * @example
- * kadd_model_handle_t *model = NULL;
- * if (kadd_model_load(&model, "assets/model/model_tokens_rf.onnx", 28) == KADD_SUCCESS) {
- *     // 使用模型
- *     kadd_model_free(model);
- * }
+ * // 方式1：加载原生 RF 模型（SVE 可用时优先）
+ * kadd_model_load(&model, "model_tokens_rf.krf", 0);
+ *
+ * // 方式2：加载 ONNX 模型
+ * kadd_model_load(&model, "model_rf.onnx", 0);
  */
 int kadd_model_load(kadd_model_handle_t **handle, const char *model_path, int feature_dim);
 
@@ -83,6 +85,14 @@ int kadd_model_predict_batch(kadd_model_handle_t *handle, const float *features,
  * @param handle 模型句柄
  */
 void kadd_model_free(kadd_model_handle_t *handle);
+
+/**
+ * @brief 获取模型特征维度
+ *
+ * @param handle 模型句柄
+ * @return 特征维度（>0 成功，<0 失败）
+ */
+int kadd_model_get_feature_dim(kadd_model_handle_t *handle);
 
 #ifdef __cplusplus
 }

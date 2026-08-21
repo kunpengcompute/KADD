@@ -6,6 +6,10 @@
 #include <stdint.h>
 #include "kadd_errors.h"
 
+/* ========== DFA 参数上限 ========== */
+#define KADD_DFA_MAX_INPUT_CHARS  300   /* 最大输入SQL字符数 */
+#define KADD_DFA_MAX_TOKENS       300   /* 最大token输出数量 */
+
 /* ========== DFA 批处理配置 ========== */
 #define KADD_DFA_MAX_SAMPLE_COUNT   10000000  /* 批处理最大样本数 */
 #define KADD_DFA_MAX_BATCH_SIZE     1024      /* 批次大小上限 */
@@ -46,14 +50,14 @@ typedef struct {
  *
  * @param engine 输出参数，返回创建的引擎指针
  * @param table_paths DFA 三张表路径
- * @param max_input_length 最大输入字符长度（必须 > 0）
- * @param max_output_dim 最大输出特征维度（必须 > 0）
+ * @param max_input_chars 最大输入SQL字符长度（必须 > 0）
+ * @param max_tokens 最大token输出数量（必须 > 0）
  * @return 0 成功，<0 失败（错误码）
  */
 int kadd_dfa_engine_create(kadd_dfa_engine_t **engine,
                            const kadd_dfa_table_paths_t *table_paths,
-                           size_t max_input_length,
-                           size_t max_output_dim);
+                           size_t max_input_chars,
+                           size_t max_tokens);
 
 /**
  * @brief 释放 DFA 引擎

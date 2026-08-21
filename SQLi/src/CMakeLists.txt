@@ -5,56 +5,72 @@
 # CJSON_FOUND, CJSON_INCLUDE_DIRS, CJSON_LIBRARIES, CJSON_IS_THIRD_PARTY
 
 # ============================================================================
-# 通用函数：创建动态库
+# 公共函数：为公开 .so 添加 linker version script（隐藏内部符号）
 # ============================================================================
+function(kadd_apply_version_script NAME EXPORT_PREFIXES)
+    get_target_property(_type ${NAME} TYPE)
+    if(NOT _type STREQUAL "SHARED_LIBRARY")
+        return()
+    endif()
+
+    set(_map "${CMAKE_CURRENT_BINARY_DIR}/${NAME}.map")
+    set(_content "KADD_1.0 {\n    global:\n")
+    foreach(_pfx IN LISTS EXPORT_PREFIXES)
+        set(_content "${_content}        ${_pfx}*;\n")
+    endforeach()
+    set(_content "${_content}    local: *;\n};\n")
+    file(WRITE "${_map}" "${_content}")
+
+    set_target_properties(${NAME} PROPERTIES
+        LINK_DEPENDS "${_map}"
+        LINK_FLAGS "-Wl,--version-script=${_map}"
+    )
+endfunction()
+
+# ============================================================================
+# 通用函数：创建库
+# ============================================================================
+# FORCE_STATIC: 内部实现库 → 静态库，代码直接编入上层 .so，不产生独立 .so
+#               外部消费者无法访问其符号（物理不存在）
 function(add_kadd_library NAME)
-    set(options NEED_CJSON NEED_ONNX)
+    set(options NEED_CJSON NEED_ONNX FORCE_STATIC)
     set(one_value_args VERSION)
     set(multi_value_args SOURCES LINK_LIBRARIES)
     cmake_parse_arguments(ARG "${options}" "${one_value_args}" "${multi_value_args}" ${ARGN})
 
-    # 库类型（根据 BUILD_SHARED_LIBS 决定）
-    if(BUILD_SHARED_LIBS)
-        add_library(${NAME} SHARED ${ARG_SOURCES})
-        # 显式应用安全编译选项（确保 SP 栈保护和 Ftrapv 整数溢出检查生效）
-        target_compile_options(${NAME} PRIVATE
-            -fPIC                    # 位置无关代码（PIC）
-            -fstack-protector-strong # 栈保护（Stack Protection）
-            -Wformat -Wformat-security # 格式化字符串检查（Format String）
-            -ftrapv                  # 整数溢出检查
-        )
-        # 链接选项继承自 CMAKE_SHARED_LINKER_FLAGS: -Wl,-z,relro,-z,now
+    # 库类型：FORCE_STATIC 强制静态；否则根据 BUILD_SHARED_LIBS
+    if(ARG_FORCE_STATIC)
+        set(LIB_TYPE STATIC)
+    elseif(BUILD_SHARED_LIBS)
+        set(LIB_TYPE SHARED)
+    else()
+        set(LIB_TYPE STATIC)
+    endif()
+
+    add_library(${NAME} ${LIB_TYPE} ${ARG_SOURCES})
+
+    # 编译选项（静态库也需要 -fPIC，因为会被链接进共享库）
+    target_compile_options(${NAME} PRIVATE
+        -fPIC                    # 位置无关代码（PIC，静态库被链入 .so 时必须）
+        -fstack-protector-strong # 栈保护
+        -Wformat -Wformat-security # 格式化字符串检查
+        -ftrapv                  # 整数溢出检查
+    )
+
+    if(LIB_TYPE STREQUAL "SHARED")
         set_target_properties(${NAME} PROPERTIES
             VERSION "${ARG_VERSION}"
             SOVERSION 1
         )
-    else()
-        add_library(${NAME} STATIC ${ARG_SOURCES})
-        # 静态库不需要 -fPIC 和版本属性
-        target_compile_options(${NAME} PRIVATE
-            -fstack-protector-strong
-            -Wformat -Wformat-security
-            -ftrapv
-        )
     endif()
 
-    # 显式应用安全编译选项（确保 SP 栈保护和 Ftrapv 整数溢出检查生效）
-    target_compile_options(${NAME} PRIVATE
-        -fPIC                    # 位置无关代码（PIC）
-        -fstack-protector-strong # 栈保护（Stack Protection）
-        -Wformat -Wformat-security # 格式化字符串检查（Format String）
-        -ftrapv                  # 整数溢出检查
-    )
-    # 链接选项继承自 CMAKE_SHARED_LINKER_FLAGS: -Wl,-z,relro,-z,now
-
-    set_target_properties(${NAME} PROPERTIES
-        VERSION "${ARG_VERSION}"
-        SOVERSION 1
-    )
-
+    # ── include 路径 ──
+    # PUBLIC: 对外公开的头文件
     target_include_directories(${NAME} PUBLIC ${CMAKE_SOURCE_DIR}/include)
+    # PRIVATE: 内部实现头文件（编译可见，不 install、不传播）
+    target_include_directories(${NAME} PRIVATE ${CMAKE_SOURCE_DIR}/include/internal)
 
-    # cJSON 依赖处理
+    # cJSON 依赖
     if(ARG_NEED_CJSON AND CJSON_FOUND)
         target_include_directories(${NAME} PUBLIC ${CJSON_INCLUDE_DIRS})
         if(CJSON_IS_THIRD_PARTY)
@@ -64,7 +80,7 @@ function(add_kadd_library NAME)
         endif()
     endif()
 
-    # ONNX Runtime 依赖处理
+    # ONNX Runtime 依赖
     if(ARG_NEED_ONNX)
         target_include_directories(${NAME} PUBLIC ${ONNXRUNTIME_INCLUDE_DIRS})
         target_link_libraries(${NAME} PUBLIC ${ONNXRUNTIME_LIBRARIES})
@@ -77,52 +93,78 @@ function(add_kadd_library NAME)
 endfunction()
 
 # ============================================================================
-# 基础引擎库
+# 基础引擎库（内部实现：FORCE_STATIC → 不产生独立 .so）
 # ============================================================================
 
 # DFA 引擎
-add_kadd_library(kadd_dfa_engine
+add_kadd_library(kadd_dfa_engine FORCE_STATIC
     VERSION 1.0.0
     SOURCES kadd_dfa_engine.c
 )
 
 # 特征引擎
-add_kadd_library(kadd_feature_engine
+add_kadd_library(kadd_feature_engine FORCE_STATIC
     VERSION 1.0.0
     SOURCES kadd_feature_engine.c
 )
 
-# ML 引擎
-add_kadd_library(kadd_ml_engine
+# 便携 TextCNN 推理引擎（SVE 通道分块 + 查表融合）
+add_kadd_library(kadd_cnn_engine FORCE_STATIC
     VERSION 1.0.0
-    SOURCES kadd_ml_engine.c
-    NEED_ONNX
+    SOURCES kadd_cnn_engine.c
+)
+
+# 便携 sklearn RandomForest 推理引擎（加载 .krf）
+add_kadd_library(kadd_rf_engine FORCE_STATIC
+    VERSION 1.0.0
+    SOURCES kadd_rf_engine.c
 )
 
 # ============================================================================
-# 高级引擎库 (需要 cJSON)
+# 高级引擎库（需要 cJSON）
 # ============================================================================
 
 if(CJSON_FOUND)
-    # DFA Pro 引擎（暂时注释掉，源文件不存在）
-    # add_kadd_library(kadd_dfa_engine_pro
-    #     VERSION 1.0.0
-    #     SOURCES kadd_dfa_engine_pro.c
-    #     NEED_CJSON
-    # )
-
-    # SQL 注入检测引擎
-    add_kadd_library(kadd_sqli_engine
-        VERSION 1.0.0
-        SOURCES kadd_sqli_engine.c
-        NEED_CJSON
-        LINK_LIBRARIES kadd_dfa_engine kadd_feature_engine kadd_ml_engine
-    )
-
-    # 配置加载器
-    add_kadd_library(kadd_config_loader
+    # 配置加载器（内部）
+    add_kadd_library(kadd_config_loader FORCE_STATIC
         VERSION 1.0.0
         SOURCES kadd_config_loader.c
         NEED_CJSON
     )
+
+    # 统一推理引擎（内部）
+    add_kadd_library(kadd_inference_engine FORCE_STATIC
+        VERSION 1.0.0
+        SOURCES kadd_inference_engine.c
+        NEED_CJSON
+        NEED_ONNX
+        LINK_LIBRARIES kadd_config_loader
+    )
+
+    # ── 对外公开的引擎库（SHARED + version script）──
+
+    # ML 引擎：静态链接内部实现，仅导出 kadd_model_* 符号
+    add_kadd_library(kadd_ml_engine
+        VERSION 1.0.0
+        SOURCES kadd_ml_engine.c
+        LINK_LIBRARIES kadd_rf_engine kadd_inference_engine
+    )
+    kadd_apply_version_script(kadd_ml_engine "kadd_model_")
+
+    # SQL 注入检测引擎：仅导出 kadd_sqli_* 符号
+    add_kadd_library(kadd_sqli_engine
+        VERSION 1.0.0
+        SOURCES kadd_sqli_engine.c
+        NEED_CJSON
+        LINK_LIBRARIES kadd_dfa_engine kadd_feature_engine kadd_ml_engine kadd_dl_engine
+    )
+    kadd_apply_version_script(kadd_sqli_engine "kadd_sqli_")
+
+    # DL/CNN 引擎：仅导出 kadd_dl_* 符号
+    add_kadd_library(kadd_dl_engine
+        VERSION 1.0.0
+        SOURCES kadd_dl_engine.c
+        LINK_LIBRARIES kadd_cnn_engine kadd_inference_engine
+    )
+    kadd_apply_version_script(kadd_dl_engine "kadd_dl_")
 endif()

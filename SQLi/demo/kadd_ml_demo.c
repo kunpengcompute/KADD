@@ -28,19 +28,24 @@ int main()
     // 2. 加载模型
     printf("[2] 加载模型...\n");
     kadd_model_handle_t *model = NULL;
-    if (kadd_model_load(&model, config.ml.model_path, config.ml.feature_dim) != KADD_SUCCESS) {
+    // feature_dim=0 表示从模型自动读取特征维度
+    if (kadd_model_load(&model, config.model_rf, 0) != KADD_SUCCESS) {
         printf("❌ 模型加载失败\n");
         kadd_config_free(&config);
         return 1;
     }
     printf("✅ 模型加载成功\n\n");
 
+    // 获取模型的特征维度
+    int feature_dim = kadd_model_get_feature_dim(model);
+    printf("模型特征维度: %d\n\n", feature_dim);
+
     // 3. 推理测试
     printf("[3] 推理测试...\n");
 
     // 创建模拟特征向量
-    float features[config.ml.feature_dim];
-    for (int i = 0; i < config.ml.feature_dim; i++) {
+    float features[feature_dim];
+    for (int i = 0; i < feature_dim; i++) {
         features[i] = 0;
     }
     // 设置模拟特征值
@@ -52,7 +57,7 @@ int main()
     float probability = 0.0f;
     if (kadd_model_predict(model, features, &probability) == KADD_SUCCESS) {
         printf("输入特征: [");
-        for (int i = 0; i < config.ml.feature_dim; i++) {
+        for (int i = 0; i < feature_dim; i++) {
             printf("%.2f ", features[i]);
         }
         printf("]\n");

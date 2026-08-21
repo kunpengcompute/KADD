@@ -59,6 +59,23 @@ extern "C" {
 /** @brief 模型推理失败 */
 #define KADD_ERROR_INFERENCE_FAILED      (-110)
 
+/* ========== Inference 引擎专用错误码 (-400 范围) ========== */
+
+/** @brief ONNX Runtime API 初始化失败 */
+#define KADD_INFERENCE_ERROR_ORT_API_INIT      (-400)
+
+/** @brief ONNX Runtime 环境创建失败 */
+#define KADD_INFERENCE_ERROR_ORT_ENV_CREATE    (-401)
+
+/** @brief ONNX Session 创建失败 */
+#define KADD_INFERENCE_ERROR_SESSION_CREATE    (-402)
+
+/** @brief ONNX IO 名称检测失败 */
+#define KADD_INFERENCE_ERROR_IO_DETECT         (-403)
+
+/** @brief ONNX 输入维度读取失败 */
+#define KADD_INFERENCE_ERROR_DIM_READ          (-404)
+
 /* ========== DFA 引擎专用错误码 (-10 范围) ========== */
 
 /** @brief DFA 文件未找到 */
@@ -91,6 +108,24 @@ extern "C" {
 
 /** @brief SQLi ML 子引擎错误 */
 #define KADD_SQLI_ERROR_ML               (-302)
+
+/** @brief SQLi DL 子引擎错误 */
+#define KADD_SQLI_ERROR_DL               (-303)
+
+/** @brief SQLi DFA tokenize 失败 */
+#define KADD_ERROR_DFA_TOKENIZE          (-304)
+
+/** @brief SQLi Feature 提取失败 */
+#define KADD_ERROR_FEATURE_EXTRACT       (-305)
+
+/** @brief SQLi ML 推理失败 */
+#define KADD_ERROR_ML_PREDICT            (-306)
+
+/** @brief SQLi DL 推理失败 */
+#define KADD_ERROR_DL_PREDICT            (-307)
+
+/** @brief DFA 引擎初始化失败 */
+#define KADD_ERROR_DFA_ENGINE_INIT       (-308)
 
 #ifdef __cplusplus
 }

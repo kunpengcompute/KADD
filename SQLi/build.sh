@@ -26,13 +26,13 @@ fi
 # ----------------------------------------------------------------------------
 # ONNX Runtime（ML 推理必需）
 # ----------------------------------------------------------------------------
-ONNXRT_DIR="${UTIL_DIR}/onnxruntime-linux-aarch64-1.16.0"
+ONNXRT_DIR="${UTIL_DIR}/onnxruntime-linux-aarch64-1.18.0"
 if [ ! -d "${ONNXRT_DIR}" ]; then
     echo "[2/3] 准备 ONNX Runtime..."
     cd "${UTIL_DIR}"
-    wget -q https://github.com/microsoft/onnxruntime/releases/download/v1.16.0/onnxruntime-linux-aarch64-1.16.0.tgz
-    tar xzf onnxruntime-linux-aarch64-1.16.0.tgz
-    rm -f onnxruntime-linux-aarch64-1.16.0.tgz
+    wget -q https://github.com/microsoft/onnxruntime/releases/download/v1.18.0/onnxruntime-linux-aarch64-1.18.0.tgz
+    tar xzf onnxruntime-linux-aarch64-1.18.0.tgz
+    rm -f onnxruntime-linux-aarch64-1.18.0.tgz
 fi
 export ONNXRUNTIME_HOME="${ONNXRT_DIR}"
 
@@ -57,7 +57,7 @@ export GTEST_HOME="${UTIL_DIR}/gtest"
 echo "开始 CMake 构建..."
 cd "${PROJECT_ROOT}"
 mkdir -p build && cd build
-cmake -DKADD_OPTIMIZE=ON -DCMAKE_BUILD_TYPE=Release ..
+cmake -DKADD_OPTIMIZE=ON -DCMAKE_BUILD_TYPE=Release -DENABLE_ARM_SVE=ON ..
 cmake --build .
 
 # 运行环境：kadd 动态库 + onnxruntime.so

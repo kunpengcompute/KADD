@@ -8,40 +8,21 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # ============================================================================
-# 安全编译选项（ BIND_NOW; NX; PIC; PIE; RELRO; SP; NO Rpath/Runpath; FS; Ftrapv; Strip）
+# 安全编译选项（BIND_NOW; NX; PIC; PIE; RELRO; SP; NO Rpath/Runpath; FS; Ftrapv; Strip）
 # ============================================================================
-set(SECURE_COMPILE_FLAGS "")
-
-# PIC/PIE（位置无关代码/可执行文件）
-set(SECURE_COMPILE_FLAGS "${SECURE_COMPILE_FLAGS} -fPIC -fPIE")
-
-# 栈保护（Stack Protection - SP）
-set(SECURE_COMPILE_FLAGS "${SECURE_COMPILE_FLAGS} -fstack-protector-strong")
-
-# 格式化字符串检查（Format String - FS）
-set(SECURE_COMPILE_FLAGS "${SECURE_COMPILE_FLAGS} -Wformat -Wformat-security")
-
-# 整数溢出检查（Ftrapv）
-set(SECURE_COMPILE_FLAGS "${SECURE_COMPILE_FLAGS} -ftrapv")
-
-# 注：_FORTIFY_SOURCE 需 -O2 及以上优化级别，已与 KADD_OPTIMIZE 选项绑定（见下文），避免无优化时告警
-
-# RELRO（Relocation Read-Only）和 BIND_NOW
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,relro,-z,now")
-set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,relro,-z,now")
-
-# NX（No-Execute，默认现代编译器已启用）
-set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,noexecstack")
-set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -Wl,-z,noexecstack")
-
-# 禁用 Rpath 和 Runpath（防止暴露构建路径信息）
+add_compile_options(
+    -fPIC -fPIE
+    -fstack-protector-strong
+    -Wformat -Wformat-security
+    -ftrapv
+)
+add_link_options(
+    -Wl,-z,relro,-z,now
+    -Wl,-z,noexecstack
+)
 set(CMAKE_SKIP_RPATH TRUE)
 set(CMAKE_SKIP_BUILD_RPATH TRUE)
 set(CMAKE_BUILD_WITH_INSTALL_RPATH FALSE)
-
-# 应用到全局编译选项
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${SECURE_COMPILE_FLAGS}")
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${SECURE_COMPILE_FLAGS}")
 
 # 版本信息
 string(TIMESTAMP BUILDDATE "%Y.%m.%d")
@@ -54,7 +35,16 @@ option(BUILD_SHARED_LIBS "Build shared libraries (dynamic libraries)" ON)
 option(BUILD_TESTS "Build test programs" ON)
 option(ENABLE_CODE_COVERAGE "Enable code coverage reporting" OFF)
 option(KADD_OPTIMIZE "Enable optimizations" OFF)
+
+# KADD_OPTIMIZE: 启用 -O2 + _FORTIFY_SOURCE
+if(KADD_OPTIMIZE)
+    add_compile_definitions(_FORTIFY_SOURCE=2)
+    add_compile_options(-O2)
+endif()
 option(ENABLE_ARM_SVE "Enable ARM SVE acceleration (auto-detects SVE2 support)" ON)
+# 可选：固定 SVE 向量位宽（默认 256 位；设为空字符串则自适应任意宽度）。
+# 固定 256 位时启用 SVE256 专用路径并排除不可用的 VLA 回退，使覆盖率报告不含其 0% 函数。
+set(KADD_SVE_VECTOR_BITS "256" CACHE STRING "Fixed SVE vector length in bits (empty=adaptive; e.g. 128, 256, 512)")
 
 # 自动检测 assets 目录（优先级：项目根目录 > 构建目录 > 默认 assets）
 if(EXISTS "${CMAKE_SOURCE_DIR}/assets")
@@ -65,100 +55,52 @@ else()
     set(KADD_ASSETS_PATH "assets")
 endif()
 
-# 自动检测 SVE2 支持（如果启用 SVE，尝试检测是否支持 SVE2）
-set(ENABLE_ARM_SVE2 FALSE)
-if(ENABLE_ARM_SVE)
-    include(CheckCSourceCompiles)
-    check_c_source_compiles("
-        #if defined(__ARM_FEATURE_SVE2) && __ARM_FEATURE_SVE2
-            int main(void) { return 0; }
-        #else
-            #error SVE2 not supported
-        #endif
-    " ARM_SVE2_SUPPORTED)
-
-    if(ARM_SVE2_SUPPORTED)
-        set(ENABLE_ARM_SVE2 TRUE)
-        message(STATUS "SVE2 supported, enabling SVE2 acceleration")
-    else()
-        message(STATUS "SVE2 not supported, falling back to SVE")
-    endif()
-endif()
-
-# 优化选项
-if(KADD_OPTIMIZE)
-    add_definitions(-DKADD_OPTIMIZE)
-    # _FORTIFY_SOURCE 需配合 -O2 及以上优化级别，故与优化选项绑定
-    set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O2 -DNDEBUG -D_FORTIFY_SOURCE=2")
-    set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O2 -DNDEBUG -D_FORTIFY_SOURCE=2")
-endif()
-
-# Strip - Release 构建时剥离符号信息
-if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -s")
-    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} -s")
-    message(STATUS "Strip symbols enabled for Release build")
-endif()
-
-# ARM SVE 加速选项
+# SVE 加速：强制启用（目标平台为 ARM64 + SVE 硬件）
 if(ENABLE_ARM_SVE AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|ARM64")
     message(WARNING "ENABLE_ARM_SVE is ON but system is not ARM64. SVE will be disabled.")
     set(ENABLE_ARM_SVE OFF)
-elseif(ENABLE_ARM_SVE)
-    # 检测编译器是否支持 SVE（尝试编译 SVE 代码）
-    include(CheckCSourceCompiles)
-    check_c_source_compiles("
-        #if defined(__aarch64__) || defined(__ARM64)
-            #if defined(__ARM_FEATURE_SVE)
-                int main(void) { return 0; }
-            #else
-                #error SVE not supported
-            #endif
-        #else
-            #error Not ARM64
-        #endif
-    " ARM_SVE_COMPILER_SUPPORTED)
-
-    if(NOT ARM_SVE_COMPILER_SUPPORTED)
-        message(WARNING "Compiler does not support ARM SVE. SVE acceleration will be disabled.")
-        set(ENABLE_ARM_SVE OFF)
-    endif()
 endif()
 
 if(ENABLE_ARM_SVE)
-    if(ENABLE_ARM_SVE2)
-        message(STATUS "Enabling ARM SVE2 acceleration (-march=armv9-a+sve2)")
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=armv9-a+sve2")
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=armv9-a+sve2")
-        set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -march=armv9-a+sve2")
-        set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -march=armv9-a+sve2")
-        add_definitions(-D__ARM_FEATURE_SVE)
-        add_definitions(-D__ARM_FEATURE_SVE2)
-    else()
-        message(STATUS "Enabling ARM SVE acceleration (-march=armv9-a+sve)")
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -march=armv9-a+sve")
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=armv9-a+sve")
-        set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -march=armv9-a+sve")
-        set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -march=armv9-a+sve")
-        add_definitions(-D__ARM_FEATURE_SVE)
+    # 统一到 armv8-a+sve（纯 SVE1）。armv9-a 隐含 SVE2，GCC 会生成 SVE2 指令
+    # （如 whilewr/whilerw），而部分鲲鹏 CPU 仅支持 SVE1，运行会 SIGILL。
+    # 当前实现只用 SVE1 intrinsic，无需 SVE2。
+    
+    message(STATUS "Enabling ARM SVE acceleration (-march=armv8-a+sve)")
+    add_compile_options(-march=armv8-a+sve)
+    add_definitions(-D__ARM_FEATURE_SVE)
+
+    # 可选：固定 SVE 向量位宽（空=自适应任意宽度，如 128/256/512 均兼容）。
+    # 固定后编译器将 VL 视为编译期常量（svcntw() 折叠），可让 256 位专用路径
+    # （如 KADD_CNN_SVE256_ONLY）在编译期确定，从而把用不到的回退分支排除，
+    # 避免其以 0% 覆盖出现在覆盖率报告中。固定宽度构建仅适用于硬件宽度固定
+    # 且与该值一致的部署。
+    if(NOT KADD_SVE_VECTOR_BITS STREQUAL "")
+        message(STATUS "  Fixing SVE vector length to ${KADD_SVE_VECTOR_BITS}-bit")
+        add_compile_options(-msve-vector-bits=${KADD_SVE_VECTOR_BITS})
+        add_definitions(-DKADD_SVE_VECTOR_BITS=${KADD_SVE_VECTOR_BITS})
+        # CNN 期望/校验的位宽与固定位宽一致
+        add_definitions(-DKADD_CNN_EXPECTED_SVE_BITS=${KADD_SVE_VECTOR_BITS})
+        # 恰好 256 位时启用 SVE256 专用快速路径，排除通用 VLA 回退
+        if(KADD_SVE_VECTOR_BITS STREQUAL "256")
+            add_definitions(-DKADD_CNN_SVE256_ONLY)
+        endif()
     endif()
 endif()
 
 # 代码覆盖率
 if(ENABLE_CODE_COVERAGE)
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-        # Clang 使用显式的 coverage 标志
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fprofile-instr-generate -fcoverage-mapping")
+        add_compile_options(-fprofile-instr-generate -fcoverage-mapping)
+        add_link_options(-fprofile-instr-generate -fcoverage-mapping)
     else()
-        # GCC 使用 --coverage
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} --coverage")
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --coverage")
+        add_compile_options(--coverage)
+        add_link_options(--coverage)
     endif()
-    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --coverage")
-    set(CMAKE_SHARED_LINKER_FLAGS "${CMAKE_SHARED_LINKER_FLAGS} --coverage")
     # Coverage 构建时强制使用静态库，避免 .so 分散 coverage 数据
     set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries" FORCE)
+    # 静态链接模式下需要显式链接 libm
+    add_link_options(-lm)
 endif()
 
 # 依赖查找策略: 优先使用系统库，如果找不到则使用 util/ 源码
@@ -168,9 +110,6 @@ message(STATUS "Enable coverage: ${ENABLE_CODE_COVERAGE}")
 message(STATUS "Enable optimize: ${KADD_OPTIMIZE}")
 message(STATUS "Enable ARM SVE: ${ENABLE_ARM_SVE}")
 message(STATUS "Assets path: ${KADD_ASSETS_PATH} (auto-detected)")
-if(ENABLE_ARM_SVE)
-    message(STATUS "  SVE2 enabled: ${ENABLE_ARM_SVE2}")
-endif()
 
 # ============================================================================
 # ONNX   依赖
@@ -230,10 +169,8 @@ if(EXISTS "${cjson_header}" AND EXISTS "${cjson_source}")
     set(CJSON_LIBRARIES "${cjson_source}")
     set(CJSON_IS_THIRD_PARTY TRUE)
     message(STATUS "Using util/ cJSON (source): ${cjson_path}")
-endif()
-
-# 2. 备选：系统 cJSON 库
-if(NOT CJSON_FOUND)
+else()
+    # 2. 备选：系统 cJSON 
     find_path(CJSON_INCLUDE_DIR
         NAMES cJSON.h
         PATHS
@@ -254,17 +191,16 @@ if(NOT CJSON_FOUND)
         set(CJSON_LIBRARIES "${CJSON_LIBRARY}")
         set(CJSON_IS_THIRD_PARTY FALSE)
         message(STATUS "Using system cJSON: ${CJSON_LIBRARY}")
+    else()
+        message(WARNING "cJSON not found! JSON-dependent features will be disabled.")
     endif()
 endif()
 
-if(NOT CJSON_FOUND)
-    message(WARNING "cJSON not found! JSON-dependent features will be disabled.")
-endif()
-
 # ============================================================================
-# Google Test 依赖 (仅在 BUILD_TESTS 时)
+# Google Test 依赖 (仅在 BUILD_TESTS 时）
 # ============================================================================
 set(GTest_FOUND FALSE)
+set(GMock_FOUND FALSE)
 if(BUILD_TESTS)
     # Google Test 查找：优先 util/gtest 源码（GTEST_HOME 可覆盖路径），其次系统库
     set(gtest_path "$ENV{GTEST_HOME}")
@@ -281,18 +217,42 @@ if(BUILD_TESTS)
         # 创建 gtest 静态库
         add_library(gtest STATIC "${gtest_source}")
         target_include_directories(gtest PUBLIC "${GTEST_INCLUDE_DIR}")
-        target_include_directories(gtest PRIVATE "${gtest_path}")  # 为 #include "src/xxx.cc" 提供路径
+        target_include_directories(gtest PRIVATE "${gtest_path}")  # 给 #include "src/xxx.cc" 提供路径
 
         add_library(gtest_main STATIC "${gtest_path}/src/gtest_main.cc")
         target_include_directories(gtest_main PUBLIC "${GTEST_INCLUDE_DIR}")
-        target_include_directories(gtest_main PRIVATE "${gtest_path}")  # 为 gtest_main.cc 的 include 提供
+        target_include_directories(gtest_main PRIVATE "${gtest_path}")  # 给 gtest_main.cc 为 include 提供
         target_link_libraries(gtest_main PUBLIC gtest)
-        # gtest / gtest_main 自动继承全局 CMAKE_CXX_FLAGS 中的安全编译选项
+
+        # gmock（如果存在）
+        set(gmock_source "${gtest_path}/src/gmock-all.cc")
+        if(EXISTS "${gmock_source}")
+            message(STATUS "Using util/ Google Mock: ${gtest_path}")
+            set(GMock_FOUND TRUE)
+
+            add_library(gmock STATIC "${gmock_source}")
+            target_include_directories(gmock PUBLIC "${GTEST_INCLUDE_DIR}")
+            target_include_directories(gmock PRIVATE "${gtest_path}")
+            target_link_libraries(gmock PUBLIC gtest)
+
+            add_library(gmock_main STATIC "${gtest_path}/src/gmock_main.cc")
+            target_include_directories(gmock_main PUBLIC "${GTEST_INCLUDE_DIR}")
+            target_include_directories(gmock_main PRIVATE "${gtest_path}")
+            target_link_libraries(gmock_main PUBLIC gmock)
+        endif()
+        # gtest / gtest_main / gmock / gmock_main 自动继承全局 CMAKE_CXX_FLAGS 中的安全编译选项
     else()
         # 备选：系统 Google Test
         find_package(GTest QUIET)
         if(GTest_FOUND)
             message(STATUS "Using system Google Test")
+
+            # 尝试查找系统 gmock
+            find_package(GMock QUIET)
+            if(GMock_FOUND)
+                message(STATUS "Using system Google Mock")
+                set(GMock_FOUND TRUE)
+            endif()
         else()
             message(WARNING "Google Test not found! Place gtest source in util/gtest (or set GTEST_HOME), or install system gtest. Tests will be disabled.")
             set(BUILD_TESTS OFF)
@@ -304,6 +264,7 @@ endif()
 # 全局包含目录
 # ============================================================================
 include_directories("${CMAKE_SOURCE_DIR}/include")
+include_directories("${CMAKE_SOURCE_DIR}/include/internal")
 if(CJSON_IS_THIRD_PARTY)
     include_directories("${CJSON_INCLUDE_DIRS}")
 endif()
@@ -315,10 +276,6 @@ endif()
 if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     set(FUZZ_TESTS_AVAILABLE TRUE CACHE BOOL "LibFuzzer tests available" FORCE)
     message(STATUS "Clang detected - FUZZ tests available (use Clang for best results)")
-elseif(ENABLE_ARM_FUZZ)
-    # ARM环境强制启用FUZZ测试
-    set(FUZZ_TESTS_AVAILABLE TRUE CACHE BOOL "LibFuzzer tests available (ARM)" FORCE)
-
 else()
     set(FUZZ_TESTS_AVAILABLE FALSE CACHE BOOL "LibFuzzer tests available" FORCE)
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU")
@@ -330,17 +287,49 @@ else()
 endif()
 
 # ============================================================================
-# 子目录 (不包含 tools 目录)
+# 子目录（不包含 tools 目录)
 # ============================================================================
+
 add_subdirectory(src)
 
 # 添加 demo 目录（CMake 一键编译示例程序）
-add_subdirectory(demo)
+if(EXISTS "${CMAKE_SOURCE_DIR}/demo/CMakeLists.txt")
+    add_subdirectory(demo)
+endif()
 
 # 仅在启用测试时添加 tests 目录
 if(BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+endif()
+
+# ============================================================================
+# 安装规则
+# ============================================================================
+include(GNUInstallDirs)
+
+# 公开头文件（不安装 internal/，仅对外暴露公共 API）
+install(DIRECTORY ${CMAKE_SOURCE_DIR}/include/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/kadd
+    FILES_MATCHING PATTERN "*.h"
+    PATTERN "internal" EXCLUDE
+)
+
+# 内部头文件（只有编译时可见，不安装）
+# internal/ 由 src/CMakeLists.txt target_include_directories PRIVATE 已处理
+
+# 库文件（由 src/CMakeLists.txt 的 add_kadd_library 创建）
+install(TARGETS kadd_ml_engine kadd_sqli_engine kadd_dl_engine
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+# DFA 模型资产（可选）
+if(EXISTS "${CMAKE_SOURCE_DIR}/assets")
+    install(DIRECTORY ${CMAKE_SOURCE_DIR}/assets/
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/kadd/assets
+    )
 endif()
 
 # ============================================================================
@@ -352,8 +341,8 @@ message(STATUS "  Version:         ${PROJECT_VERSION}")
 message(STATUS "  Build date:      ${KADD_VERSION_BUILDDATE}")
 message(STATUS "  Output path:     ${LIBRARY_OUTPUT_PATH}")
 message(STATUS "  Build type:      ${CMAKE_BUILD_TYPE}")
-message(STATUS "  C Standard:      ${C_STANDARD}")
-message(STATUS "  CXX Standard:    ${CXX_STANDARD}")
+message(STATUS "  C Standard:      ${CMAKE_C_STANDARD}")
+message(STATUS "  CXX Standard:    ${CMAKE_CXX_STANDARD}")
 message(STATUS "")
 message(STATUS "  Dependencies:")
 message(STATUS "    ONNX Runtime:  ${ONNXRUNTIME_LIBRARIES}")

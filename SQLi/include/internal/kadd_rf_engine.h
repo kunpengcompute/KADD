@@ -26,21 +26,12 @@ int kadd_rf_model_predict_batch(const kadd_rf_model_t *model,
                                 float *positive_probabilities,
                                 int batch_size);
 
-int kadd_rf_model_get_feature_dim(const kadd_rf_model_t *model);
-
-/** Return the batch implementation compiled into this library: "sve" or "scalar". */
-const char *kadd_rf_runtime_backend(void);
-
-/** Return the active SVE vector width in bits, or 0 for the scalar backend. */
-int kadd_rf_runtime_vector_bits(void);
-
-/** Return a stable name for the compiled inference kernel implementation. */
-const char *kadd_rf_runtime_kernel(void);
-
 void kadd_rf_model_free(kadd_rf_model_t *model);
 
-/** Return non-zero when the file starts with the KADD-RF magic. */
-int kadd_rf_model_is_file(const char *model_path);
+/**
+ * Return the feature dimension of a loaded RF model.
+ */
+int kadd_rf_model_get_feature_dim(const kadd_rf_model_t *model);
 
 #ifdef __cplusplus
 }

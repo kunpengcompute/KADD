@@ -23,21 +23,19 @@ typedef struct kadd_sqli_engine_t kadd_sqli_engine_t;
  *
  * @return 0 成功，<0 失败（错误码）
  *
- * @note 配置文件格式（所有字段均为必填）：
+ * @note 配置文件格式（平铺结构，所有路径均为绝对路径）：
  *       {
- *         "kadd_dfa_engine": {
- *           "transition_table_path": "path/to/transition_table.bin",
- *           "output_table_path": "path/to/output_table.bin",
- *           "eod_table_path": "path/to/eod_table.bin",
- *           "max_input_length": 8192,
- *           "max_output_dim": 8192
- *         },
- *         "kadd_ml_engine": {
- *           "model_path": "path/to/model.onnx",
- *           "feature_dim": 28,
- *           "window_size": 5
- *         }
+ *         "engine_mode": "ml",
+ *         "transition_table": "path/to/transition_table.bin",
+ *         "output_table": "path/to/output_table.bin",
+ *         "eod_table": "path/to/eod_table.bin",
+ *         "model_rf": "path/to/model_tokens_rf.krf",
+ *         "model_rf_onnx": "path/to/model_rf.onnx",
+ *         "model_cnn": "path/to/model_cnn.kcn",
+ *         "model_cnn_onnx": "path/to/model_cnn.onnx"
  *       }
+ *
+ * @note ML 模式需要 model_rf 或 model_rf_onnx；DL 模式需要 model_cnn 或 model_cnn_onnx
  *
  * @example
  * @code

@@ -4,7 +4,7 @@
  * @file test_dfa_engine_gtest.cpp
  * @brief DFA 引擎 Google Test 测试套件
  *
- * 包含功能测试、边界测试、异常测试
+ * 包含功能测试、边界测试、异常测试、静态函数测试
  */
 
 #include <gtest/gtest.h>
@@ -13,8 +13,11 @@
 #include <cstdio>
 #include <vector>
 #include <string>
-#include "../include/kadd_dfa_engine.h"
-#include "../include/kadd_config_loader.h"
+#include "kadd_dfa_engine.h"
+#include "kadd_config_loader.h"
+
+// ========== 包含源文件以测试 static 函数 ==========
+#include "kadd_dfa_engine.c"
 
 constexpr int kTokenBufferSize = 100;
 constexpr int kTestLongInputLen = 100;
@@ -28,6 +31,7 @@ class DFAEngineTest : public ::testing::Test {
 protected:
     kadd_dfa_engine_t *engine = nullptr;
     kadd_config_t config;
+    kadd_dfa_table_paths_t table_paths;  // 成员变量
 
     void SetUp() override
     {
@@ -36,14 +40,14 @@ protected:
             << "无法加载config.json配置文件";
 
         // 使用配置文件中的参数
-        kadd_dfa_table_paths_t table_paths = {
-            config.dfa.transition_table_path,
-            config.dfa.output_table_path,
-            config.dfa.eod_table_path
+        table_paths = {
+            config.transition_table,
+            config.output_table,
+            config.eod_table
         };
         ASSERT_EQ(kadd_dfa_engine_create(&engine, &table_paths,
-                                         config.dfa.max_input_length,
-                                         config.dfa.max_output_dim), 0);
+                                         KADD_DFA_MAX_INPUT_CHARS,
+                                         KADD_DFA_MAX_TOKENS), 0);
     }
 
     void TearDown() override
@@ -58,7 +62,7 @@ protected:
     // 辅助函数：执行分词并返回结果
     std::vector<int> tokenize(const std::string &input)
     {
-        std::vector<int> tokens(config.dfa.max_output_dim);
+        std::vector<int> tokens(KADD_DFA_MAX_TOKENS);
         int token_count = 0;
 
         int ret = kadd_dfa_engine_tokenize(engine, input.c_str(),
@@ -193,9 +197,9 @@ TEST_F(DFAEngineTest, VeryLongInput)
 TEST_F(DFAEngineTest, MaxInputBoundary)
 {
     // 测试最大输入长度边界
-    std::string max_input(config.dfa.max_input_length, 'a');
+    std::string max_input(KADD_DFA_MAX_INPUT_CHARS, 'a');
 
-    int tokens[config.dfa.max_output_dim];
+    int tokens[KADD_DFA_MAX_TOKENS];
     int token_count = 0;
 
     int ret = kadd_dfa_engine_tokenize(engine, max_input.c_str(),
@@ -277,13 +281,13 @@ TEST_F(DFAEngineTest, NullCountPointer)
 TEST_F(DFAEngineTest, CreateWithNullEnginePtr)
 {
     kadd_dfa_table_paths_t table_paths = {
-        config.dfa.transition_table_path,
-        config.dfa.output_table_path,
-        config.dfa.eod_table_path
+        config.transition_table,
+        config.output_table,
+        config.eod_table
     };
     int ret = kadd_dfa_engine_create(nullptr, &table_paths,
-                                     config.dfa.max_input_length,
-                                     config.dfa.max_output_dim);
+                                     KADD_DFA_MAX_INPUT_CHARS,
+                                     KADD_DFA_MAX_TOKENS);
     EXPECT_EQ(ret, KADD_ERROR_NULL_PTR) << "NULL engine 指针应该返回 KADD_ERROR_NULL_PTR";
 }
 
@@ -291,29 +295,29 @@ TEST_F(DFAEngineTest, CreateWithNullTablePaths)
 {
     kadd_dfa_engine_t *tmp = nullptr;
     int ret = kadd_dfa_engine_create(&tmp, nullptr,
-                                     config.dfa.max_input_length,
-                                     config.dfa.max_output_dim);
+                                     KADD_DFA_MAX_INPUT_CHARS,
+                                     KADD_DFA_MAX_TOKENS);
     EXPECT_EQ(ret, KADD_ERROR_NULL_PTR) << "NULL table_paths 应该返回 KADD_ERROR_NULL_PTR";
 }
 
 TEST_F(DFAEngineTest, CreateWithNullPathInTablePaths)
 {
     kadd_dfa_table_paths_t bad_paths = {
-        nullptr, config.dfa.output_table_path, config.dfa.eod_table_path
+        nullptr, config.output_table, config.eod_table
     };
     kadd_dfa_engine_t *tmp = nullptr;
     int ret = kadd_dfa_engine_create(&tmp, &bad_paths,
-                                     config.dfa.max_input_length,
-                                     config.dfa.max_output_dim);
+                                     KADD_DFA_MAX_INPUT_CHARS,
+                                     KADD_DFA_MAX_TOKENS);
     EXPECT_NE(ret, 0) << "NULL transition_table_path 应该返回错误";
 }
 
 TEST_F(DFAEngineTest, ExceedsMaxInput)
 {
     // 测试超过最大输入长度
-    std::string too_long(config.dfa.max_input_length + 1, 'a');
+    std::string too_long(KADD_DFA_MAX_INPUT_CHARS + 1, 'a');
 
-    int tokens[config.dfa.max_output_dim];
+    int tokens[KADD_DFA_MAX_TOKENS];
     int token_count = 0;
 
     int ret = kadd_dfa_engine_tokenize(engine, too_long.c_str(),
@@ -726,4 +730,478 @@ TEST_F(DFAEngineTest, BatchTokenizeWithNullInput)
             free(outputs[i]);  // 测试后清理
         }
     }
+}
+
+// ========== static 函数测试 ==========
+
+/**
+ * read_le32 函数测试 - 小端序读取
+ */
+TEST(DFAEngineStaticTest, ReadLE32_Basic)
+{
+    unsigned char bytes[4] = {0x78, 0x56, 0x34, 0x12};
+    uint32_t result = read_le32(bytes);
+    EXPECT_EQ(result, 0x12345678u);
+}
+
+TEST(DFAEngineStaticTest, ReadLE32_Zero)
+{
+    unsigned char bytes[4] = {0x00, 0x00, 0x00, 0x00};
+    uint32_t result = read_le32(bytes);
+    EXPECT_EQ(result, 0u);
+}
+
+TEST(DFAEngineStaticTest, ReadLE32_MaxValue)
+{
+    unsigned char bytes[4] = {0xFF, 0xFF, 0xFF, 0xFF};
+    uint32_t result = read_le32(bytes);
+    EXPECT_EQ(result, 0xFFFFFFFFu);
+}
+
+/**
+ * read_le16 函数测试 - 小端序读取
+ */
+TEST(DFAEngineStaticTest, ReadLE16_Basic)
+{
+    unsigned char bytes[2] = {0x34, 0x12};
+    uint16_t result = read_le16(bytes);
+    EXPECT_EQ(result, 0x1234u);
+}
+
+TEST(DFAEngineStaticTest, ReadLE16_Zero)
+{
+    unsigned char bytes[2] = {0x00, 0x00};
+    uint16_t result = read_le16(bytes);
+    EXPECT_EQ(result, 0u);
+}
+
+TEST(DFAEngineStaticTest, ReadLE16_MaxValue)
+{
+    unsigned char bytes[2] = {0xFF, 0xFF};
+    uint16_t result = read_le16(bytes);
+    EXPECT_EQ(result, 0xFFFFu);
+}
+
+/**
+ * cleanup_dfa_batch 函数测试 - NULL 参数
+ */
+TEST(DFAEngineStaticTest, CleanupDfaBatch_NullBatch)
+{
+    // NULL batch 应该不崩溃
+    cleanup_dfa_batch(nullptr, 0);
+    SUCCEED() << "cleanup_dfa_batch(NULL) 不应崩溃";
+}
+
+TEST(DFAEngineStaticTest, CleanupDfaBatch_NullOutputs)
+{
+    kadd_dfa_batch_t batch = {0};
+    batch.outputs = nullptr;
+    batch.count = 5;
+
+    // NULL outputs 应该不崩溃
+    cleanup_dfa_batch(&batch, 3);
+    SUCCEED() << "cleanup_dfa_batch with NULL outputs 不应崩溃";
+}
+
+/**
+ * validate_table_header 函数测试 - 文件不存在
+ */
+TEST(DFAEngineStaticTest, ValidateTableHeader_FileNotFound)
+{
+    FILE *fp = nullptr;
+    uint32_t states = 0;
+
+    int result = validate_table_header("nonexistent_file.bin", 0, &fp, &states);
+    EXPECT_EQ(result, KADD_DFA_ERROR_FILE_NOT_FOUND);
+    EXPECT_EQ(fp, nullptr);
+}
+
+/**
+ * load_u16_table 函数测试 - NULL 参数
+ */
+TEST(DFAEngineStaticTest, LoadU16Table_NullPath)
+{
+    uint16_t *table = nullptr;
+    uint32_t num_states = 0;
+
+    int result = load_u16_table(nullptr, 0, 256, &num_states, &table);
+    EXPECT_NE(result, KADD_SUCCESS);
+    EXPECT_EQ(table, nullptr);
+}
+
+TEST(DFAEngineStaticTest, LoadU16Table_NullOutputs)
+{
+    uint16_t *table = nullptr;
+    uint32_t num_states = 0;
+
+    int result = load_u16_table("test.bin", 0, 256, nullptr, &table);
+    EXPECT_NE(result, KADD_SUCCESS);
+}
+
+TEST(DFAEngineStaticTest, LoadU16Table_NullTable)
+{
+    uint32_t num_states = 0;
+
+    int result = load_u16_table("test.bin", 0, 256, &num_states, nullptr);
+    EXPECT_NE(result, KADD_SUCCESS);
+}
+
+TEST(DFAEngineStaticTest, LoadU16Table_ZeroCellsPerState)
+{
+    uint16_t *table = nullptr;
+    uint32_t num_states = 0;
+
+    int result = load_u16_table("test.bin", 0, 0, &num_states, &table);
+    EXPECT_NE(result, KADD_SUCCESS);
+}
+
+// ========== 批处理错误处理测试 ==========
+
+TEST_F(DFAEngineTest, BatchTokenize_NullEngine)
+{
+    const char *inputs[2] = {"test1", "test2"};
+    int *outputs[2] = {nullptr};
+    int dims[2];
+
+    kadd_dfa_batch_t batch = {
+        inputs,
+        nullptr,
+        2,
+        outputs,
+        dims,
+        10
+    };
+
+    int ret = kadd_dfa_engine_tokenize_batch(nullptr, &batch);
+    EXPECT_EQ(ret, KADD_ERROR_NULL_PTR);
+}
+
+TEST_F(DFAEngineTest, BatchTokenize_NullBatch)
+{
+    int ret = kadd_dfa_engine_tokenize_batch(engine, nullptr);
+    EXPECT_EQ(ret, KADD_ERROR_NULL_PTR);
+}
+
+TEST_F(DFAEngineTest, BatchTokenize_NullInputs)
+{
+    int *outputs[2] = {nullptr};
+    int dims[2];
+
+    kadd_dfa_batch_t batch = {
+        nullptr,  // inputs = NULL
+        nullptr,
+        2,
+        outputs,
+        dims,
+        10
+    };
+
+    int ret = kadd_dfa_engine_tokenize_batch(engine, &batch);
+    EXPECT_EQ(ret, KADD_ERROR_NULL_PTR);
+}
+
+TEST_F(DFAEngineTest, BatchTokenize_NullOutputs)
+{
+    const char *inputs[2] = {"test1", "test2"};
+    int dims[2];
+
+    kadd_dfa_batch_t batch = {
+        inputs,
+        nullptr,
+        2,
+        nullptr,  // outputs = NULL
+        dims,
+        10
+    };
+
+    int ret = kadd_dfa_engine_tokenize_batch(engine, &batch);
+    EXPECT_EQ(ret, KADD_ERROR_NULL_PTR);
+}
+
+TEST_F(DFAEngineTest, BatchTokenize_NullDims)
+{
+    const char *inputs[2] = {"test1", "test2"};
+    int *outputs[2] = {nullptr};
+
+    kadd_dfa_batch_t batch = {
+        inputs,
+        nullptr,
+        2,
+        outputs,
+        nullptr,  // dims = NULL
+        10
+    };
+
+    int ret = kadd_dfa_engine_tokenize_batch(engine, &batch);
+    EXPECT_EQ(ret, KADD_ERROR_NULL_PTR);
+}
+
+TEST_F(DFAEngineTest, BatchTokenize_ZeroCount)
+{
+    const char *inputs[1] = {"test"};
+    int *outputs[1] = {nullptr};
+    int dims[1];
+
+    kadd_dfa_batch_t batch = {
+        inputs,
+        nullptr,
+        0,  // count = 0
+        outputs,
+        dims,
+        10
+    };
+
+    int ret = kadd_dfa_engine_tokenize_batch(engine, &batch);
+    EXPECT_EQ(ret, KADD_ERROR_INVALID_INPUT);
+}
+
+TEST_F(DFAEngineTest, BatchTokenize_NegativeCount)
+{
+    const char *inputs[1] = {"test"};
+    int *outputs[1] = {nullptr};
+    int dims[1];
+
+    kadd_dfa_batch_t batch = {
+        inputs,
+        nullptr,
+        -1,  // count = -1
+        outputs,
+        dims,
+        10
+    };
+
+    int ret = kadd_dfa_engine_tokenize_batch(engine, &batch);
+    EXPECT_EQ(ret, KADD_ERROR_INVALID_INPUT);
+}
+
+TEST_F(DFAEngineTest, BatchTokenize_ExceedsMaxSampleCount)
+{
+    const char *inputs[1] = {"test"};
+    int *outputs[1] = {nullptr};
+    int dims[1];
+
+    kadd_dfa_batch_t batch = {
+        inputs,
+        nullptr,
+        KADD_DFA_MAX_SAMPLE_COUNT + 1,  // 超过限制
+        outputs,
+        dims,
+        10
+    };
+
+    int ret = kadd_dfa_engine_tokenize_batch(engine, &batch);
+    EXPECT_EQ(ret, KADD_ERROR_INVALID_PARAM);
+}
+
+// ========== cleanup_dfa_batch 测试 ==========
+
+TEST_F(DFAEngineTest, CleanupDfaBatch_UpToIdx)
+{
+    // 创建包含有效指针的 outputs
+    int *outputs[3] = {nullptr};
+    outputs[0] = (int *)malloc(10 * sizeof(int));
+    outputs[1] = (int *)malloc(10 * sizeof(int));
+
+    kadd_dfa_batch_t batch;
+    batch.outputs = outputs;
+    batch.count = 3;
+
+    // cleanup 应该只清理前 2 个
+    cleanup_dfa_batch(&batch, 2);
+
+    // 第三个应该保持不变（但我们无法直接验证，只是确保不崩溃）
+}
+
+// ========== kadd_dfa_engine_create 错误路径 ==========
+
+TEST_F(DFAEngineTest, Create_InvalidMaxInputChars)
+{
+    kadd_dfa_table_paths_t table_paths = {
+        config.transition_table,
+        config.output_table,
+        config.eod_table
+    };
+    kadd_dfa_engine_t *tmp = nullptr;
+
+    // max_input_chars = 0 应该失败
+    int ret = kadd_dfa_engine_create(&tmp, &table_paths, 0, 100);
+    EXPECT_NE(ret, KADD_SUCCESS);
+}
+
+TEST_F(DFAEngineTest, Create_InvalidMaxTokens)
+{
+    kadd_dfa_table_paths_t table_paths = {
+        config.transition_table,
+        config.output_table,
+        config.eod_table
+    };
+    kadd_dfa_engine_t *tmp = nullptr;
+
+    // max_tokens = 0 应该失败
+    int ret = kadd_dfa_engine_create(&tmp, &table_paths, 300, 0);
+    EXPECT_NE(ret, KADD_SUCCESS);
+}
+
+TEST_F(DFAEngineTest, Create_EmptyPath)
+{
+    kadd_dfa_table_paths_t empty_paths = {
+        "",  // 空路径
+        config.output_table,
+        config.eod_table
+    };
+    kadd_dfa_engine_t *tmp = nullptr;
+
+    int ret = kadd_dfa_engine_create(&tmp, &empty_paths, 300, 300);
+    EXPECT_NE(ret, KADD_SUCCESS);
+}
+
+TEST_F(DFAEngineTest, Free_Engine)
+{
+    // 1. 释放 NULL 指针应该安全
+    EXPECT_NO_THROW(kadd_dfa_engine_free(nullptr));
+
+    // 2. 释放 SetUp 中创建的有效引擎
+    EXPECT_NO_THROW(kadd_dfa_engine_free(engine));
+    engine = nullptr;  // 避免 TearDown 再次释放
+
+    // 3. 再次释放 NULL 指针仍然安全
+    EXPECT_NO_THROW(kadd_dfa_engine_free(nullptr));
+}
+
+// ========== kadd_dfa_emit_token 边界测试 ==========
+
+TEST_F(DFAEngineTest, EmitToken_BoundaryConditions)
+{
+    int output[10];
+    size_t count, pos, token_start;
+    uint16_t accept_info;
+    const uint16_t *trans_row = engine->transition_table;
+    const uint16_t *out_row = engine->output_table;
+
+    // 场景1: BufferOverflow - count >= max_output_dim
+    count = 1; pos = 0; token_start = 0; accept_info = 0;
+    EXPECT_EQ(kadd_dfa_emit_token(1, 10, &pos, &token_start, &accept_info, output, &count,
+                                  1, 0x0020, &trans_row, &out_row,
+                                  engine->transition_table, engine->output_table),
+              KADD_DFA_ERROR_BUFFER_OVERFLOW);
+
+    // 场景2: ScanPosOverflow - pos + scan_delta(3) > input_length
+    count = 0; pos = 8; token_start = 0; accept_info = 0;
+    EXPECT_EQ(kadd_dfa_emit_token(10, 10, &pos, &token_start, &accept_info, output, &count,
+                                  1, 0x0C20, &trans_row, &out_row,
+                                  engine->transition_table, engine->output_table),
+              KADD_DFA_ERROR_PARSE);
+
+    // 场景3: StartDeltaUnderflow - start_delta=-1, pos=0
+    count = 0; pos = 0; token_start = 0; accept_info = 0;
+    EXPECT_EQ(kadd_dfa_emit_token(10, 10, &pos, &token_start, &accept_info, output, &count,
+                                  1, 0x0020, &trans_row, &out_row,
+                                  engine->transition_table, engine->output_table),
+              KADD_DFA_ERROR_PARSE);
+
+    // 场景4: TokenStartOverflow - token_start_pos > input_length
+    count = 0; pos = 9; token_start = 0; accept_info = 0;
+    EXPECT_EQ(kadd_dfa_emit_token(10, 10, &pos, &token_start, &accept_info, output, &count,
+                                  1, 0x3020, &trans_row, &out_row,
+                                  engine->transition_table, engine->output_table),
+              KADD_DFA_ERROR_PARSE);
+}
+
+// ========== 覆盖批处理错误分支和 batch_size 边界 ==========
+
+TEST_F(DFAEngineTest, BatchTokenize_ErrorBranches)
+{
+    // 1. 超长输入 -> result != SUCCESS
+    std::string too_long(KADD_DFA_MAX_INPUT_CHARS + 100, 'a');
+    const char *inputs1[2] = {"valid", too_long.c_str()};
+    size_t lens1[2] = {5, too_long.length()};
+    int *outs1[2] = {nullptr};
+    int dims1[2];
+    kadd_dfa_batch_t b1 = {inputs1, lens1, 2, outs1, dims1, 10};
+    EXPECT_EQ(kadd_dfa_engine_tokenize_batch(engine, &b1), KADD_DFA_ERROR_PARSE);
+    EXPECT_EQ(outs1[0], nullptr);  // cleanup 清空
+
+    // 2. 全空白输入 -> token_count == 0
+    const char *inputs2[2] = {"SELECT", "   \t\n   "};
+    int *outs2[2] = {nullptr};
+    int dims2[2];
+    kadd_dfa_batch_t b2 = {inputs2, nullptr, 2, outs2, dims2, 10};
+    EXPECT_EQ(kadd_dfa_engine_tokenize_batch(engine, &b2), KADD_DFA_ERROR_PARSE);
+    EXPECT_EQ(outs2[0], nullptr);  // cleanup 清空
+}
+
+TEST_F(DFAEngineTest, BatchTokenize_BatchSizeBoundary)
+{
+    // 测试 batch_size 边界: 0/负数用默认值, 超限用最大值
+    int batch_sizes[] = {0, -1, KADD_DFA_MAX_BATCH_SIZE + 100, KADD_DFA_MAX_BATCH_SIZE};
+
+    for (int i = 0; i < 4; i++) {
+        const char *inputs[2] = {"SELECT", "FROM"};
+        int *outputs[2] = {nullptr};
+        int dims[2];
+        kadd_dfa_batch_t batch = {inputs, nullptr, 2, outputs, dims, batch_sizes[i]};
+
+        EXPECT_EQ(kadd_dfa_engine_tokenize_batch(engine, &batch), KADD_SUCCESS)
+            << "batch_size=" << batch_sizes[i] << " 应成功";
+        EXPECT_NE(outputs[0], nullptr);
+        EXPECT_NE(outputs[1], nullptr);
+
+        for (int j = 0; j < 2; j++) free(outputs[j]);
+    }
+}
+
+
+TEST(DFAEngineStaticTest, CleanupDfaBatch_WithActualOutputs)
+{
+    // 创建带有实际输出的 batch
+    kadd_dfa_batch_t batch;
+    batch.count = 3;
+    batch.outputs = (int **)calloc(3, sizeof(int *));
+    ASSERT_NE(batch.outputs, nullptr);
+
+    for (int i = 0; i < 3; i++) {
+        batch.outputs[i] = (int *)calloc(10, sizeof(int));
+        ASSERT_NE(batch.outputs[i], nullptr);
+        batch.outputs[i][0] = i * 100;
+    }
+
+    // 清理所有输出
+    cleanup_dfa_batch(&batch, KADD_DFA_BATCH_CLEANUP_ALL);
+
+    // 验证输出已被释放（置为 NULL）
+    for (int i = 0; i < 3; i++) {
+        EXPECT_EQ(batch.outputs[i], nullptr);
+    }
+
+    // 释放 outputs 数组本身
+    free(batch.outputs);
+}
+
+TEST(DFAEngineStaticTest, CleanupDfaBatch_UpToIdxPartial)
+{
+    // 创建带有实际输出的 batch，只清理部分
+    kadd_dfa_batch_t batch;
+    batch.count = 5;
+    batch.outputs = (int **)calloc(5, sizeof(int *));
+    ASSERT_NE(batch.outputs, nullptr);
+
+    for (int i = 0; i < 5; i++) {
+        batch.outputs[i] = (int *)calloc(10, sizeof(int));
+        ASSERT_NE(batch.outputs[i], nullptr);
+    }
+
+    // 只清理前 3 个
+    cleanup_dfa_batch(&batch, 3);
+
+    // 验证前 3 个已释放
+    for (int i = 0; i < 3; i++) {
+        EXPECT_EQ(batch.outputs[i], nullptr);
+    }
+    // 验证后 2 个未被释放
+    for (int i = 3; i < 5; i++) {
+        EXPECT_NE(batch.outputs[i], nullptr);
+        free(batch.outputs[i]);
+    }
+
+    free(batch.outputs);
 }
