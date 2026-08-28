@@ -448,7 +448,7 @@ static int kadd_dfa_tokenize_batch_item(const kadd_dfa_engine_t *engine, kadd_df
     if (input == NULL) {
         fprintf(stderr, "[kadd_dfa] ERROR: NULL input at batch index %d\n", idx);
         cleanup_dfa_batch(batch, KADD_DFA_BATCH_CLEANUP_ALL);
-        return KADD_ERROR_INVALID_INPUT;
+        return KADD_ERROR_NULL_PTR;
     }
     size_t input_len = (batch->lengths != NULL) ? batch->lengths[idx] : strlen(input);
     // 分配输出缓冲区
@@ -492,11 +492,8 @@ int kadd_dfa_engine_tokenize_batch(const kadd_dfa_engine_t *engine, kadd_dfa_bat
     }
 
     int actual_batch_size = batch->batch_size;
-    if (actual_batch_size <= 0) {
+    if (actual_batch_size <= 0 || actual_batch_size > KADD_DFA_MAX_BATCH_SIZE) {
         actual_batch_size = KADD_DFA_DEFAULT_BATCH_SIZE;
-    }
-    if (actual_batch_size > KADD_DFA_MAX_BATCH_SIZE) {
-        actual_batch_size = KADD_DFA_MAX_BATCH_SIZE;
     }
 
     for (int i = 0; i < batch->count; i++) {

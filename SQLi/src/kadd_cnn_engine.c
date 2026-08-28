@@ -1034,14 +1034,11 @@ int kadd_cnn_model_predict_batch(const kadd_cnn_model_t *model,
         return KADD_ERROR_NULL_PTR;
     }
     if (sample_count <= 0 ||
-        sample_count > KADD_CNN_MAX_SAMPLE_COUNT ||
-        batch_size <= 0) {
+        sample_count > KADD_CNN_MAX_SAMPLE_COUNT) {
         return KADD_ERROR_INVALID_PARAM;
     }
-    int effective_batch = batch_size;
-    if (effective_batch > KADD_CNN_MAX_BATCH_SIZE) {
-        effective_batch = KADD_CNN_DEFAULT_BATCH_SIZE;
-    }
+    int effective_batch = (batch_size <= 0 || batch_size > KADD_CNN_MAX_BATCH_SIZE)
+                          ? KADD_CNN_DEFAULT_BATCH_SIZE : batch_size;
 
     for (int begin = 0;
          begin < sample_count;
@@ -1064,6 +1061,14 @@ int kadd_cnn_model_predict_batch(const kadd_cnn_model_t *model,
         }
     }
     return KADD_SUCCESS;
+}
+
+int kadd_cnn_model_get_feature_dim(const kadd_cnn_model_t *model)
+{
+    if (!model) {
+        return KADD_ERROR_NULL_PTR;
+    }
+    return KADD_CNN_SEQUENCE_LENGTH;
 }
 
 void kadd_cnn_model_free(kadd_cnn_model_t *model)

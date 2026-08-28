@@ -1,9 +1,8 @@
-"""SQLi 检测模型统一训练脚本 — 支持 RF/DL_MLP/DL_CNN 三种模型
+"""SQLi 检测模型统一训练脚本 — 支持 RF/DL_CNN 两种模型
 
 【模型类型】
 - RF:     随机森林，输入 28 维特征向量（seq_to_feature），同时输出
           model_tokens_rf.onnx 和跨平台 model_tokens_rf.krf
-- DL_MLP: 深度 MLP，输入 28 维特征向量（seq_to_feature），BatchNorm 内置归一化，输出 model_tokens_dl.onnx
 - DL_CNN: TextCNN，输入 token 序列（300 维 pad），同时输出 ONNX、
           跨平台 KADD-CNN 模型和独立测试集
 
@@ -12,7 +11,7 @@ Raw CSV (Query, Label)
     ↓ ctypes 调用 C 动态库
 DFA tokenize (libkadd_dfa_engine.dll/so) → token 序列
     ↓
-┌─ RF/DL_MLP: seq_to_feature (libkadd_feature_engine.dll/so) → 28 维特征向量
+┌─ RF: seq_to_feature (libkadd_feature_engine.dll/so) → 28 维特征向量
 │   滑动窗口算法 (window_size=5)，特征值范围 0~9789
 │
 └─ DL_CNN: token pad → 300 维 token 序列 (float)
@@ -22,7 +21,6 @@ pip install torch onnx onnxruntime pandas numpy scikit-learn skl2onnx
 
 【使用】
 python model_train.py --model-type rf        # 随机森林
-python model_train.py --model-type dl_mlp    # 深度 MLP
 python model_train.py --model-type dl_cnn    # TextCNN
 """
 import os
@@ -65,9 +63,10 @@ class Config:
     # 配置文件（包含 DFA 三表路径）
     CONFIG_JSON = os.path.join(SCRIPT_DIR, "../../config.json")
     # 原始训练数据 CSV（必须包含 Query 和 Label 列）
-    RAW_CSV = os.path.join(SCRIPT_DIR, "train_data", "total_training_dataset_v4_pinnacle_corrected.cleaned.csv")
+    # 整体训练集：pinnacle CSV + parsed_results_fixed.json 合并（见 merge_datasets.py）
+    RAW_CSV = os.path.join(SCRIPT_DIR, "train_data", "total_training_dataset_v5_merged.csv")
 
-    # --- RF/DL_MLP 共用参数 ---
+    # --- RF 共用参数 ---
     # seq_to_feature 输出维度（固定 28 种 token 类型）
     FEATURE_DIM = 28
     # 滑动窗口大小（计算加权距离）
@@ -83,11 +82,6 @@ class Config:
         'random_state': 42,        # 随机种子
         'class_weight': 'balanced', # 类别权重（自动平衡）
     }
-
-    # --- DL_MLP 参数 ---
-    MLP_HIDDEN1 = 64       # 第一隐藏层维度
-    MLP_HIDDEN2 = 32       # 第二隐藏层维度
-    MLP_DROPOUT = 0.3      # Dropout 比例
 
     # --- DL_CNN 参数 ---
     SEQ_DIM = 300          # token 序列最大长度（pad 到此长度）
@@ -259,14 +253,14 @@ def load_raw_csv(csv_path, engine, model_type, cfg):
     流程：
     1. 读取 CSV 文件（自动检测编码）
     2. 遍历每条 Query，根据模型类型转换为特征
-       - RF/DL_MLP: 调用 seq_to_feature，输出 28 维向量
+       - RF: 调用 seq_to_feature，输出 28 维向量
        - DL_CNN: token pad 到固定长度 (300 维)
     3. 返回特征矩阵 X 和标签向量 y
 
     参数：
         csv_path: CSV 文件路径（需包含 Query, Label 列）
         engine: KaddEngine 实例
-        model_type: 模型类型 ('rf', 'dl_mlp', 'dl_cnn')
+        model_type: 模型类型 ('rf', 'dl_cnn')
         cfg: Config 配置对象
 
     返回：
@@ -295,8 +289,8 @@ def load_raw_csv(csv_path, engine, model_type, cfg):
     feats, labs = [], []
     skipped = 0
     for i, q in enumerate(queries):
-        if model_type in ('rf', 'dl_mlp'):
-            # RF/MLP: SQL → 28 维特征向量
+        if model_type == 'rf':
+            # RF: SQL → 28 维特征向量
             f = engine.query_to_feature(q)
             if f is None or len(f) == 0:
                 skipped += 1
@@ -326,7 +320,7 @@ def load_raw_csv(csv_path, engine, model_type, cfg):
 
     # --- 打印统计信息 ---
     print(f"samples {len(X)} (skip {skipped}), dim {X.shape[1]}, label 0={sum(y==0)} 1={sum(y==1)}")
-    if model_type in ('rf', 'dl_mlp'):
+    if model_type == 'rf':
         print(f"feature range: min={X.min():.0f} max={X.max():.0f} mean={X.mean():.1f} std={X.std():.1f}")
     return X, y
 
@@ -350,7 +344,7 @@ def load_json_data(json_path, engine, model_type, cfg):
     参数：
         json_path: JSON 文件路径
         engine: KaddEngine 实例（仅用于 to_feature）
-        model_type: 模型类型 ('rf', 'dl_mlp', 'dl_cnn')
+        model_type: 模型类型 ('rf', 'dl_cnn')
         cfg: Config 配置对象
 
     返回：
@@ -379,8 +373,8 @@ def load_json_data(json_path, engine, model_type, cfg):
 
         tokens_arr = np.array(tokens, dtype=np.int32)
 
-        if model_type in ('rf', 'dl_mlp'):
-            # RF/MLP: tokens → 28 维特征向量
+        if model_type == 'rf':
+            # RF: tokens → 28 维特征向量
             f = engine.to_feature(tokens_arr)
             if f is None or len(f) == 0:
                 skipped += 1
@@ -405,52 +399,12 @@ def load_json_data(json_path, engine, model_type, cfg):
     y = np.asarray(labs, dtype=np.int64)
 
     print(f"samples {len(X)} (skip {skipped}), dim {X.shape[1]}, label 0={sum(y==0)} 1={sum(y==1)}")
-    if model_type in ('rf', 'dl_mlp'):
+    if model_type == 'rf':
         print(f"feature range: min={X.min():.0f} max={X.max():.0f} mean={X.mean():.1f} std={X.std():.1f}")
     return X, y
 
 
 # ==================== 模型定义 ====================
-class MLP(nn.Module):
-    """DL_MLP: 28 维特征输入 → BatchNorm → MLP → 2 类输出
-
-    网络结构：
-        Input(28) → BN → FC(64) → BN → ReLU → Dropout
-                 → FC(32) → BN → ReLU → Dropout
-                 → FC(2) → Softmax
-
-    特点：
-    - 输入 BatchNorm 自动归一化特征（范围 0~9789）
-    - 所有隐藏层使用 BatchNorm 加速训练
-    - Dropout 防止过拟合
-    """
-
-    def __init__(self, cfg: Config):
-        super().__init__()
-        # 输入层 BatchNorm（归一化 28 维特征）
-        self.bn_in = nn.BatchNorm1d(cfg.FEATURE_DIM)
-        # 第一隐藏层: 28 → 64
-        self.fc1 = nn.Linear(cfg.FEATURE_DIM, cfg.MLP_HIDDEN1)
-        self.bn1 = nn.BatchNorm1d(cfg.MLP_HIDDEN1)
-        # 第二隐藏层: 64 → 32
-        self.fc2 = nn.Linear(cfg.MLP_HIDDEN1, cfg.MLP_HIDDEN2)
-        self.bn2 = nn.BatchNorm1d(cfg.MLP_HIDDEN2)
-        # 输出层: 32 → 2 (负类/正类)
-        self.fc3 = nn.Linear(cfg.MLP_HIDDEN2, 2)
-        self.drop = nn.Dropout(cfg.MLP_DROPOUT)
-
-    def forward(self, x):
-        """前向传播
-
-        参数：x - (batch, 28) 特征向量
-        返回：(batch, 2) logits（未经 softmax）
-        """
-        x = self.bn_in(x)                           # 输入归一化
-        x = self.drop(torch.relu(self.bn1(self.fc1(x))))  # 第一隐藏层
-        x = self.drop(torch.relu(self.bn2(self.fc2(x))))  # 第二隐藏层
-        return self.fc3(x)                          # 输出 logits
-
-
 class TextCNN(nn.Module):
     """DL_CNN: token 序列输入 → Embedding → 多尺度 Conv → MaxPool → FC
 
@@ -569,11 +523,11 @@ def train_rf(X, y, cfg, output_dir, model_path):
 
 # ==================== DL 训练 ====================
 def train_dl(X, y, model_type, cfg, output_dir, model_path):
-    """PyTorch 深度学习训练（MLP 或 CNN）
+    """PyTorch 深度学习训练（TextCNN）
 
     流程：
     1. 划分训练集/测试集
-    2. 创建模型（MLP 或 TextCNN）
+    2. 创建模型（TextCNN）
     3. 训练：使用类别权重平衡、学习率调度、早停
     4. 评估：AUC、F1、准确率、混淆矩阵
     5. 导出 ONNX（包含 Softmax 层）
@@ -582,7 +536,7 @@ def train_dl(X, y, model_type, cfg, output_dir, model_path):
     参数：
         X: 特征矩阵 (n_samples, feature_dim)
         y: 标签向量 (n_samples,)
-        model_type: 'dl_mlp' 或 'dl_cnn'
+        model_type: 'dl_cnn'
         cfg: Config 配置对象
         output_dir: 输出目录
         model_path: 完整模型输出路径
@@ -607,7 +561,7 @@ def train_dl(X, y, model_type, cfg, output_dir, model_path):
 
     # --- 创建模型 ---
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = MLP(cfg) if model_type == 'dl_mlp' else TextCNN(cfg)
+    model = TextCNN(cfg)
     model = model.to(device)
 
     # --- 优化器和调度器 ---
@@ -736,8 +690,8 @@ def train_dl(X, y, model_type, cfg, output_dir, model_path):
 def main():
     cfg = Config()
     p = argparse.ArgumentParser(description='SQLi Detection Model Training')
-    p.add_argument('--model-type', choices=['rf', 'dl_mlp', 'dl_cnn'], default='rf',
-                   help='Model type: rf (Random Forest), dl_mlp (MLP), dl_cnn (TextCNN)')
+    p.add_argument('--model-type', choices=['rf', 'dl_cnn'], default='rf',
+                   help='Model type: rf (Random Forest), dl_cnn (TextCNN)')
     p.add_argument('--data-format', choices=['csv', 'json'], default='csv',
                    help='Data format: csv (Query, Label) or json (pre-tokenized)')
     p.add_argument('--data', default=cfg.RAW_CSV,
@@ -769,12 +723,10 @@ def main():
     else:
         flat_model_keys = {
             'rf': 'model_rf',
-            'dl_mlp': 'model_mlp',
             'dl_cnn': 'model_cnn',
         }
         nested_engine_keys = {
             'rf': 'ml_engine',
-            'dl_mlp': 'mlp_engine',
             'dl_cnn': 'cnn_engine',
         }
         flat_key = flat_model_keys[args.model_type]
@@ -845,7 +797,7 @@ def main():
         print(f"EOD: {eod_tbl}")
 
     # --- 创建引擎 ---
-    # JSON 格式如果只用于 CNN，可以不需要 DFA 引擎（但 RF/MLP 仍需 feature 引擎）
+    # JSON 格式如果只用于 CNN，可以不需要 DFA 引擎（但 RF 仍需 feature 引擎）
     engine = KaddEngine(args.dfa_so, args.feature_so,
                         transition_path=trans,
                         output_path=out_tbl,

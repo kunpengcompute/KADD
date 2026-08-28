@@ -775,7 +775,7 @@ static void FuzzNullPointers(const uint8_t* data, size_t size)
                 kadd_dl_model_predict(nullptr, feats, &prob);
                 kadd_dl_model_predict_batch(nullptr, feats, 1, &prob, 2);
                 kadd_dl_model_get_feature_dim(nullptr);
-                kadd_dl_model_load(nullptr, "x.kcn");
+                kadd_dl_model_load(nullptr, "x.kcn", 0);
             }
             break;
 
@@ -811,16 +811,16 @@ static void FuzzDLEngine(const std::string& input) {
     kadd_dl_model_t *dl_model = nullptr;
     int ret = 1;
     if (g_fuzz_context.config.model_cnn[0] != '\0') {
-        ret = kadd_dl_model_load(&dl_model, g_fuzz_context.config.model_cnn);
+        ret = kadd_dl_model_load(&dl_model, g_fuzz_context.config.model_cnn, 0);
     }
     if (ret != 0) {
-        ret = kadd_dl_model_load(&dl_model, kCnnKcnPath);
+        ret = kadd_dl_model_load(&dl_model, kCnnKcnPath, 0);
     }
     if (ret != 0) {
-        ret = kadd_dl_model_load(&dl_model, kCnnKcnRel);
+        ret = kadd_dl_model_load(&dl_model, kCnnKcnRel, 0);
     }
     if (ret != 0) {
-        ret = kadd_dl_model_load(&dl_model, g_fuzz_context.config.model_cnn_onnx);
+        ret = kadd_dl_model_load(&dl_model, g_fuzz_context.config.model_cnn_onnx, 0);
     }
     if (ret != 0 || !dl_model) return;
 
@@ -1200,6 +1200,61 @@ static void FuzzConfigLoader(const uint8_t* data, size_t size) {
         kadd_config_free(&cfg);
     }
 
+    // 坏 transition_table 路径 → DFA table 加载失败（覆盖 dfa_engine.c 的
+    // 文件不存在/坏 header/坏 state count/size overflow 等错误路径）
+    {
+        std::string bad_tr = "{" +
+            jstr("engine_mode", "ml") + "," +
+            jstr("transition_table", "/nonexistent/tran.bin") + "," +
+            jstr("output_table", kOutPath) + "," +
+            jstr("eod_table", kEodPath) + "," +
+            jstr("model_rf_onnx", kRfOnnxPath) +
+            "}";
+        WriteConfigFile("/tmp/kadd_fuzz_badtran.json", bad_tr);
+        kadd_sqli_engine_t *eng = nullptr;
+        kadd_sqli_engine_create_from_file(&eng, "/tmp/kadd_fuzz_badtran.json");
+        kadd_sqli_engine_free(eng);
+
+        // 用真实 output_table 内容写到坏路径 → 覆盖 DFA 读取但 state count 不匹配
+        // （transition_table 和 output_table 格式不同，读 output_table 当 transition 会 header 不匹配）
+        std::string bad_out = "{" +
+            jstr("engine_mode", "ml") + "," +
+            jstr("transition_table", kOutPath) + "," +
+            jstr("output_table", kEodPath) + "," +
+            jstr("eod_table", kOutPath) + "," +
+            jstr("model_rf_onnx", kRfOnnxPath) +
+            "}";
+        WriteConfigFile("/tmp/kadd_fuzz_badout.json", bad_out);
+        eng = nullptr;
+        kadd_sqli_engine_create_from_file(&eng, "/tmp/kadd_fuzz_badout.json");
+        kadd_sqli_engine_free(eng);
+    }
+
+    // 空 config 文件（覆盖 config_loader.c 的 file_size==0 校验）
+    {
+        const char *empty_path = "/tmp/kadd_fuzz_empty.json";
+        WriteConfigFile(empty_path, std::string(""));
+        kadd_config_t cfg;
+        kadd_config_load(empty_path, &cfg);
+        kadd_config_free(&cfg);
+    }
+
+    // 超长字符串值（覆盖 config_loader.c 的 strlen 截断路径）
+    {
+        std::string long_val(300, 'x');
+        std::string cfg_s = "{" +
+            jstr("engine_mode", "ml") + "," +
+            jstr("transition_table", long_val) + "," +
+            jstr("output_table", kOutPath) + "," +
+            jstr("eod_table", kEodPath) + "," +
+            jstr("model_rf_onnx", kRfOnnxPath) +
+            "}";
+        WriteConfigFile("/tmp/kadd_fuzz_longval.json", cfg_s);
+        kadd_config_t cfg;
+        kadd_config_load("/tmp/kadd_fuzz_longval.json", &cfg);
+        kadd_config_free(&cfg);
+    }
+
     // 错误路径（文件不存在 / NULL）
     {
         kadd_config_t cfg;
@@ -1347,13 +1402,13 @@ static void FuzzDLEngineNative(const uint8_t* data, size_t size) {
     int ret = -1;
     if (g_fuzz_context.config.model_cnn[0] != '\0' &&
         strstr(g_fuzz_context.config.model_cnn, ".kcn") != nullptr) {
-        ret = kadd_dl_model_load(&m, g_fuzz_context.config.model_cnn);
+        ret = kadd_dl_model_load(&m, g_fuzz_context.config.model_cnn, 0);
     }
     if (ret != 0) {
-        ret = kadd_dl_model_load(&m, kCnnKcnPath);
+        ret = kadd_dl_model_load(&m, kCnnKcnPath, 0);
     }
     if (ret != 0) {
-        ret = kadd_dl_model_load(&m, kCnnKcnRel);
+        ret = kadd_dl_model_load(&m, kCnnKcnRel, 0);
     }
     if (ret != 0 || !m) return;
 
@@ -1765,11 +1820,12 @@ static void FuzzRFEngineDirect(const uint8_t *data, size_t size) {
         kadd_rf_model_predict_batch(nullptr, f, 1, &prob, 1);
         kadd_rf_model_predict_batch((kadd_rf_model_t *)1, nullptr, 1, &prob, 1);
         kadd_rf_model_predict_batch((kadd_rf_model_t *)1, f, 1, nullptr, 1);
-        // 非法 sample_count / batch_size（行 585-589）
-        kadd_rf_model_predict_batch((kadd_rf_model_t *)1, f, 0, &prob, 1);
-        kadd_rf_model_predict_batch((kadd_rf_model_t *)1, f, -1, &prob, 1);
-        kadd_rf_model_predict_batch((kadd_rf_model_t *)1, f, 1, &prob, 0);
-        kadd_rf_model_predict_batch((kadd_rf_model_t *)1, f, 10000001, &prob, 1);
+        // 非法 batch_size（行 613-615：batch_size<=0 回退默认，需配合 NULL inputs 拦截）
+        kadd_rf_model_predict_batch((kadd_rf_model_t *)1, nullptr, 1, &prob, 0);
+        // 非法 sample_count（行 608-610）
+        kadd_rf_model_predict_batch(nullptr, f, 0, &prob, 1);
+        kadd_rf_model_predict_batch(nullptr, f, -1, &prob, 1);
+        kadd_rf_model_predict_batch(nullptr, f, 10000001, &prob, 1);
     }
 
     // 不存在的文件（read_entire_file 行 122-126）
@@ -1847,6 +1903,7 @@ static void FuzzCNNEngineDirect(const uint8_t *data, size_t size) {
         kadd_cnn_model_load(nullptr, nullptr);
     }
     kadd_cnn_model_free(nullptr);
+    kadd_cnn_model_get_feature_dim(nullptr);  // NULL 测试
 
     // 直接 predict / predict_batch NULL 校验（行 975-977、1020-1022）
     {
@@ -1858,11 +1915,12 @@ static void FuzzCNNEngineDirect(const uint8_t *data, size_t size) {
         kadd_cnn_model_predict_batch(nullptr, f, 1, &prob, 1);
         kadd_cnn_model_predict_batch((kadd_cnn_model_t *)1, nullptr, 1, &prob, 1);
         kadd_cnn_model_predict_batch((kadd_cnn_model_t *)1, f, 1, nullptr, 1);
-        // 非法 sample_count / batch_size（行 1023-1026）
-        kadd_cnn_model_predict_batch((kadd_cnn_model_t *)1, f, 0, &prob, 1);
-        kadd_cnn_model_predict_batch((kadd_cnn_model_t *)1, f, -1, &prob, 1);
-        kadd_cnn_model_predict_batch((kadd_cnn_model_t *)1, f, 1, &prob, 0);
-        kadd_cnn_model_predict_batch((kadd_cnn_model_t *)1, f, 10000001, &prob, 1);
+        // 非法 batch_size（batch_size<=0 回退默认，需配合 NULL inputs 拦截）
+        kadd_cnn_model_predict_batch((kadd_cnn_model_t *)1, nullptr, 1, &prob, 0);
+        // 非法 sample_count
+        kadd_cnn_model_predict_batch(nullptr, f, 0, &prob, 1);
+        kadd_cnn_model_predict_batch(nullptr, f, -1, &prob, 1);
+        kadd_cnn_model_predict_batch(nullptr, f, 10000001, &prob, 1);
     }
 
     // 不存在的文件（read_entire_file 行 181-186）
@@ -1941,9 +1999,9 @@ static void FuzzDLLoadOnnxBackend(const uint8_t *data, size_t size) {
     (void)data; (void)size;
 
     kadd_dl_model_t *m = nullptr;
-    int ret = kadd_dl_model_load(&m, kCnnOnnxPath);
+    int ret = kadd_dl_model_load(&m, kCnnOnnxPath, 0);
     if (ret != 0 || m == nullptr) {
-        ret = kadd_dl_model_load(&m, "assets/model/model_tokens_dl_cnn.onnx");
+        ret = kadd_dl_model_load(&m, "assets/model/model_tokens_dl_cnn.onnx", 0);
     }
     // 无论 onnx 还是空路径都补测 NULL / 失败路径
     if (ret == 0 && m) {
@@ -1966,8 +2024,8 @@ static void FuzzDLLoadOnnxBackend(const uint8_t *data, size_t size) {
     }
 
     // NULL 参数（load 行 37-39）
-    kadd_dl_model_load(nullptr, kCnnOnnxPath);
-    kadd_dl_model_load(nullptr, nullptr);
+    kadd_dl_model_load(nullptr, kCnnOnnxPath, 0);
+    kadd_dl_model_load(nullptr, nullptr, 0);
     float prob = 0.0f;
     float in2[8] = {0.0f};
     // 注：DL wrapper 在 NULL 校验后会解引用 model->backend，
@@ -1988,6 +2046,23 @@ static void FuzzDLLoadOnnxBackend(const uint8_t *data, size_t size) {
  * @param size 数据大小
  * @return 0 表示成功
  */
+#if defined(__clang__) && defined(__llvm_profile__)
+/* clang -fprofile-instr-generate: libFuzzer 用 syscall 退出跳过 atexit，
+ * profraw 恒为 0 字节。在每次迭代末尾定期 flush profile 数据。
+ * 仅在启用 profile instrumentation 时链接 __llvm_profile_write_file，
+ * 否则（纯 -fsanitize=fuzzer 构建）该符号不存在，会 undefined reference。 */
+extern "C" void __llvm_profile_write_file(void);
+static int g_fuzz_iter_count = 0;
+#define FUZZ_PROFILE_FLUSH_INTERVAL 500
+static inline void LLVMFuzzerTestOneInput_flush_helper() {
+    if (++g_fuzz_iter_count % FUZZ_PROFILE_FLUSH_INTERVAL == 0) {
+        __llvm_profile_write_file();
+    }
+}
+#else
+static inline void LLVMFuzzerTestOneInput_flush_helper() {}
+#endif
+
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     if (size == 0 || size > 4096) {
         return 0;
@@ -2061,6 +2136,9 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
         FuzzDLLoadOnnxBackend(payload, payload_size);
     }
 
+#if defined(__clang__)
+    LLVMFuzzerTestOneInput_flush_helper();
+#endif
     return 0;
 }
 

@@ -392,9 +392,9 @@ TEST_F(SQLiModeTest, DLMode_ONNXFallback) {
 
 TEST_F(SQLiModeTest, DLModel_GetFeatureDim) {
     kadd_dl_model_t* model = nullptr;
-    int ret = kadd_dl_model_load(&model, model_cnn_.c_str());
+    int ret = kadd_dl_model_load(&model, model_cnn_.c_str(), 0);
     if (ret != KADD_SUCCESS) {
-        ret = kadd_dl_model_load(&model, model_cnn_onnx_.c_str());
+        ret = kadd_dl_model_load(&model, model_cnn_onnx_.c_str(), 0);
     }
     if (ret == KADD_SUCCESS && model != nullptr) {
         int dim = kadd_dl_model_get_feature_dim(model);

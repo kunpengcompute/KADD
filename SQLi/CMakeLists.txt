@@ -34,12 +34,18 @@ set(KADD_VERSION_BUILDDATE "${BUILDDATE}")
 option(BUILD_SHARED_LIBS "Build shared libraries (dynamic libraries)" ON)
 option(BUILD_TESTS "Build test programs" ON)
 option(ENABLE_CODE_COVERAGE "Enable code coverage reporting" OFF)
-option(KADD_OPTIMIZE "Enable optimizations" OFF)
+option(KADD_OPTIMIZE "Enable optimizations" ON)
 
 # KADD_OPTIMIZE: 启用 -O2 + _FORTIFY_SOURCE
 if(KADD_OPTIMIZE)
     add_compile_definitions(_FORTIFY_SOURCE=2)
     add_compile_options(-O2)
+endif()
+option(KADD_STRIP "Strip symbols from built binaries and libraries (-s)" ON)
+
+# KADD_STRIP: 链接时剥离符号表（-s），减小产物体积（仅保留动态链接所需符号）
+if(KADD_STRIP)
+    add_link_options(-s)
 endif()
 option(ENABLE_ARM_SVE "Enable ARM SVE acceleration (auto-detects SVE2 support)" ON)
 # 可选：固定 SVE 向量位宽（默认 256 位；设为空字符串则自适应任意宽度）。
@@ -108,6 +114,7 @@ message(STATUS "Build tests: ${BUILD_TESTS}")
 message(STATUS "Build shared libs: ${BUILD_SHARED_LIBS}")
 message(STATUS "Enable coverage: ${ENABLE_CODE_COVERAGE}")
 message(STATUS "Enable optimize: ${KADD_OPTIMIZE}")
+    message(STATUS "Enable strip:    ${KADD_STRIP}")
 message(STATUS "Enable ARM SVE: ${ENABLE_ARM_SVE}")
 message(STATUS "Assets path: ${KADD_ASSETS_PATH} (auto-detected)")
 
@@ -170,19 +177,27 @@ if(EXISTS "${cjson_header}" AND EXISTS "${cjson_source}")
     set(CJSON_IS_THIRD_PARTY TRUE)
     message(STATUS "Using util/ cJSON (source): ${cjson_path}")
 else()
-    # 2. 备选：系统 cJSON 
+    # 2. 备选：系统 cJSON 库
+    #    可通过环境变量 CJSON_ROOT_DIR 手动指定安装路径
     find_path(CJSON_INCLUDE_DIR
         NAMES cJSON.h
         PATHS
-            /usr/include /usr/local/include
             $ENV{CJSON_ROOT_DIR}
+            /usr/include
+            /usr/local/include
         PATH_SUFFIXES cjson
     )
 
     find_library(CJSON_LIBRARY
         NAMES cjson
         PATHS
-            /usr/lib /usr/local/lib /usr/lib64
+            $ENV{CJSON_ROOT_DIR}
+            /usr/lib
+            /usr/local/lib
+            /usr/lib64
+            /usr/lib/aarch64-linux-gnu
+            /usr/lib/x86_64-linux-gnu
+        PATH_SUFFIXES lib lib64
     )
 
     if(CJSON_INCLUDE_DIR AND CJSON_LIBRARY)
@@ -192,7 +207,19 @@ else()
         set(CJSON_IS_THIRD_PARTY FALSE)
         message(STATUS "Using system cJSON: ${CJSON_LIBRARY}")
     else()
-        message(WARNING "cJSON not found! JSON-dependent features will be disabled.")
+        message(FATAL_ERROR
+            "cJSON not found!\n"
+            "  cJSON 是 KADD 的必选依赖，请选择以下任一方式安装：\n"
+            "  方式1（推荐）: 将 cJSON 源码放入 util/cJSON/ 目录（源码内嵌，无外部 .so 依赖）\n"
+            "    mkdir -p util/cJSON && cd util/\n"
+            "    wget -q https://github.com/DaveGamble/cJSON/archive/refs/tags/v1.7.19.zip -O cJSON-1.7.19.zip\n"
+            "    unzip -q cJSON-1.7.19.zip && cp cJSON-1.7.19/cJSON.h cJSON-1.7.19/cJSON.c cJSON/\n"
+            "  方式2: 安装系统 cJSON 开发包\n"
+            "    openEuler/CentOS: dnf install cJSON-devel\n"
+            "    Ubuntu/Debian:  apt install libcjson-dev\n"
+            "  方式3: 手动指定路径\n"
+            "    export CJSON_ROOT_DIR=/path/to/cjson\n"
+        )
     endif()
 endif()
 
@@ -319,7 +346,9 @@ install(DIRECTORY ${CMAKE_SOURCE_DIR}/include/
 # internal/ 由 src/CMakeLists.txt target_include_directories PRIVATE 已处理
 
 # 库文件（由 src/CMakeLists.txt 的 add_kadd_library 创建）
-install(TARGETS kadd_ml_engine kadd_sqli_engine kadd_dl_engine
+install(TARGETS
+        kadd_ml_engine kadd_sqli_engine kadd_dl_engine
+        kadd_dfa_engine kadd_feature_engine kadd_config_loader
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}

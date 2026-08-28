@@ -1,9 +1,12 @@
 // Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
 /**
  * @file test_cnn_engine_gtest.cpp
- * @brief kadd_cnn_engine 鐪熷疄妯″瀷鎬ц兘 + 鍑嗙‘锟?gtest锟? *
- * 鍔犺浇 assets/model/model_tokens_dl_cnn.kcn锛岀敤鐪熷疄璁粌 CSV锛堢粡 DFA 鍒嗚瘝锟? * 娴嬪噯纭巼/绮剧‘锟?鍙洖锟?F1锛屽苟娴嬪崟鏍锋湰鎺ㄧ悊鍚炲悙閲忋€傛ā鍨嬭矾寰勫啓姝伙紝
- * 锟?copy_test_resources 澶嶅埗锟?build/tests/assets/锟? */
+ * @brief kadd_cnn_engine 真实模型性能 + 准确率 gtest。
+ *
+ * 加载 assets/model/model_tokens_dl_cnn.kcn，用真实训练 CSV（经 DFA 分词）
+ * 测准确率/精确率/召回率/F1，并测单样本推理吞吐量。模型路径写死，
+ * 由 copy_test_resources 复制到 build/tests/assets/。
+ */
 
 #include "kadd_cnn_engine.h"
 #include "kadd_dfa_engine.h"
@@ -24,7 +27,7 @@ constexpr int kPad   = 28;
 
 constexpr const char* kModelPath = "assets/model/model_tokens_dl_cnn.kcn";
 constexpr const char* kCsvPath =
-    "../../tools/model_train/train_data/total_training_dataset_v4_pinnacle_corrected.cleaned.csv";
+    "../../tools/model_train/train_data/train_data.csv";
 
 kadd_dfa_engine_t* make_dfa() {
     kadd_dfa_table_paths_t paths = {
@@ -39,7 +42,7 @@ kadd_dfa_engine_t* make_dfa() {
     return dfa;
 }
 
-/* tokens -> float[300]锛宲ad 锟?28锛岃秺锟?clamp 锟?28 */
+/* tokens -> float[300]，pad 补 28，越界 clamp 到 28 */
 std::vector<float> to_seq(const std::vector<int>& tokens) {
     std::vector<float> seq(kSeq, static_cast<float>(kPad));
     size_t n = std::min(tokens.size(), (size_t)kSeq);
@@ -71,9 +74,9 @@ protected:
 
     void SetUp() override {
         ASSERT_EQ(kadd_cnn_model_load(&model, kModelPath), KADD_SUCCESS)
-            << "璇讳笉鍒版ā锟?" << kModelPath;
+            << "读不到模型 " << kModelPath;
         dfa = make_dfa();
-        ASSERT_NE(dfa, nullptr) << "DFA 鍒涘缓澶辫触锛坅ssets/data 缂鸿〃锛燂級";
+        ASSERT_NE(dfa, nullptr) << "DFA 创建失败（assets/data 缺表？）";
     }
     void TearDown() override {
         kadd_cnn_model_free(model);
@@ -82,7 +85,7 @@ protected:
 };
 
 TEST_F(CnnEngineTest, LoadModel) {
-    /* SetUp 宸叉垚鍔熷姞杞芥ā鍨嬶紝姝ゅ浠呯‘璁ゅ彞鏌勯潪锟?+ 涓€娆℃帹鐞嗗湪 [0,1] */
+    /* SetUp 已成功加载模型，此处仅确认句柄非空 + 一次推理在 [0,1] */
     std::vector<float> seq(kSeq, (float)kPad);
     float prob = -1.0f;
     ASSERT_EQ(kadd_cnn_model_predict(model, seq.data(), &prob), KADD_SUCCESS);
@@ -93,7 +96,7 @@ TEST_F(CnnEngineTest, LoadModel) {
 TEST_F(CnnEngineTest, AccuracyOnRealData) {
     std::vector<Sample> samples;
     ASSERT_TRUE(load_csv_samples(kCsvPath, dfa, samples))
-        << "璇讳笉鍒拌锟?CSV " << kCsvPath;
+        << "读不到训练 CSV " << kCsvPath;
 
     Metrics m;
     for (const auto& s : samples) {
@@ -105,30 +108,42 @@ TEST_F(CnnEngineTest, AccuracyOnRealData) {
         else if (!pred && !s.label) ++m.tn; else ++m.fn;
     }
     print_metrics("cnn accuracy", m, (int)samples.size());
-    /* 妯″瀷搴旀槑鏄句紭浜庨殢鏈虹寽娴嬶紙>0.9锛夛紝鍏峰疄鐢ㄤ环锟?*/
+    /* 模型应明显优于随机猜测（>0.9），具实用价值 */
     EXPECT_GT((float)(m.tp + m.tn) / (float)samples.size(), 0.9f);
 }
 
 TEST_F(CnnEngineTest, Performance) {
     const int kIterations = 2000;
     const int kWarmup = 50;
-    /* 鐢ㄧ湡瀹炵煭搴忓垪锛堥潪锟?pad锛夋祴锛岄伩锟?kadd_cnn 鐭簭鍒楄鍓湪 active=0 锟?     * 鍙畻 1 涓獥鍙ｈ€岃櫄浣庘€斺€斾笌 demo 鐨勭湡瀹炴牱鏈熀鍑嗗榻愶拷?*/
+    const int kSampleCount = 10;  /* 使用多条样本取平均，避免单条样本长度影响 */
+    /* 用真实短序列（非全 pad）测，避免 kadd_cnn 短序列裁剪在 active=0 时
+     * 只算 1 个窗口而虚低——与 demo 的真实样本基准对齐。 */
     std::vector<Sample> samples;
     ASSERT_TRUE(load_csv_samples(kCsvPath, dfa, samples));
-    auto seq = to_seq(samples[0].tokens);
+    ASSERT_GE((int)samples.size(), kSampleCount);
 
-    for (int i = 0; i < kWarmup; ++i) { float p = 0; kadd_cnn_model_predict(model, seq.data(), &p); }
+    /* 准备多条样本 */
+    std::vector<std::vector<float>> seqs;
+    for (int i = 0; i < kSampleCount; ++i) {
+        seqs.push_back(to_seq(samples[i].tokens));
+    }
+
+    /* warmup */
+    for (int i = 0; i < kWarmup; ++i) {
+        float p = 0;
+        kadd_cnn_model_predict(model, seqs[i % kSampleCount].data(), &p);
+    }
 
     auto t0 = std::chrono::steady_clock::now();
     for (int i = 0; i < kIterations; ++i) {
         float p = 0;
-        ASSERT_EQ(kadd_cnn_model_predict(model, seq.data(), &p), KADD_SUCCESS);
+        ASSERT_EQ(kadd_cnn_model_predict(model, seqs[i % kSampleCount].data(), &p), KADD_SUCCESS);
     }
     auto t1 = std::chrono::steady_clock::now();
     double us = std::chrono::duration<double, std::micro>(t1 - t0).count() / kIterations;
     double ops = 1e6 / us;
-    std::printf("[cnn perf] 鍗曟牱鏈钩锟?%.2f us, 鍚炲悙 %.0f ops/sec (%d iter, real sample)\n",
-                us, ops, kIterations);
+    std::printf("[cnn perf] %d 样本平均 %.2f us, 吞吐 %.0f ops/sec (%d iter)\n",
+                kSampleCount, us, ops, kIterations);
     EXPECT_GT(ops, 0.0);
 }
 
@@ -149,4 +164,14 @@ TEST_F(CnnEngineTest, PredictBatch) {
         EXPECT_GE(probs[i], 0.0f);
         EXPECT_LE(probs[i], 1.0f);
     }
+}
+
+// 覆盖 kadd_cnn_model_get_feature_dim
+TEST_F(CnnEngineTest, GetFeatureDim) {
+    int dim = kadd_cnn_model_get_feature_dim(model);
+    EXPECT_EQ(dim, 300);  /* KADD_CNN_SEQUENCE_LENGTH */
+}
+
+TEST_F(CnnEngineTest, GetFeatureDimNullModel) {
+    EXPECT_EQ(kadd_cnn_model_get_feature_dim(nullptr), KADD_ERROR_NULL_PTR);
 }

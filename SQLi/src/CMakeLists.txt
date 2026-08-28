@@ -93,20 +93,24 @@ function(add_kadd_library NAME)
 endfunction()
 
 # ============================================================================
-# 基础引擎库（内部实现：FORCE_STATIC → 不产生独立 .so）
+# 基础引擎库
+#   DFA/特征引擎：公开 API → 动态库，仅导出 kadd_dfa_*/kadd_seq_*
+#   CNN/RF 引擎：内部实现 FORCE_STATIC → 折叠进上层 .so，不产生独立 .so
 # ============================================================================
 
-# DFA 引擎
-add_kadd_library(kadd_dfa_engine FORCE_STATIC
+# DFA 引擎（对外公开 API → 动态库，仅导出 kadd_dfa_*）
+add_kadd_library(kadd_dfa_engine
     VERSION 1.0.0
     SOURCES kadd_dfa_engine.c
 )
+kadd_apply_version_script(kadd_dfa_engine "kadd_dfa_")
 
-# 特征引擎
-add_kadd_library(kadd_feature_engine FORCE_STATIC
+# 特征引擎（对外公开 API → 动态库，仅导出 kadd_seq_*）
+add_kadd_library(kadd_feature_engine
     VERSION 1.0.0
     SOURCES kadd_feature_engine.c
 )
+kadd_apply_version_script(kadd_feature_engine "kadd_seq_")
 
 # 便携 TextCNN 推理引擎（SVE 通道分块 + 查表融合）
 add_kadd_library(kadd_cnn_engine FORCE_STATIC
@@ -125,12 +129,13 @@ add_kadd_library(kadd_rf_engine FORCE_STATIC
 # ============================================================================
 
 if(CJSON_FOUND)
-    # 配置加载器（内部）
-    add_kadd_library(kadd_config_loader FORCE_STATIC
+    # 配置加载器（对外公开 API → 动态库，仅导出 kadd_config_*）
+    add_kadd_library(kadd_config_loader
         VERSION 1.0.0
         SOURCES kadd_config_loader.c
         NEED_CJSON
     )
+    kadd_apply_version_script(kadd_config_loader "kadd_config_")
 
     # 统一推理引擎（内部）
     add_kadd_library(kadd_inference_engine FORCE_STATIC
