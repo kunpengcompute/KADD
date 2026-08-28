@@ -12,16 +12,16 @@
 
 **解决方案**：
 
-- 临时解决方案
+使用临时解决方案：
 
 ```bash
-export LD_LIBRARY_PATH=/opt/KADD/SQLi/build/src:/opt/KADD/SQLi/util/onnxruntime-linux-aarch64-1.16.0/lib:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=/opt/KADD/SQLi/build/src:$LD_LIBRARY_PATH
 ```
 
-- 永久解决方案（添加到 ~/.bashrc）- 不推荐
+使用永久解决方案，将环境变量添加到 `~/.bashrc`。此方式不推荐：
 
 ```bash
-echo 'export LD_LIBRARY_PATH=/opt/KADD/SQLi/build/src:/opt/KADD/SQLi/util/onnxruntime-linux-aarch64-1.16.0/lib:$LD_LIBRARY_PATH' >> ~/.bashrc
+echo 'export LD_LIBRARY_PATH=/opt/KADD/SQLi/build/src:$LD_LIBRARY_PATH' >> ~/.bashrc
 source ~/.bashrc
 ```
 
@@ -35,19 +35,25 @@ source ~/.bashrc
 
 **解决方案**：
 
+阈值含义如下：
+
+1. 概率大于等于 `0.5f` 时，按标准阈值判定为SQL注入。
+2. 概率大于等于 `0.3f` 且小于 `0.5f` 时，在严格模式下判定为可能是SQL注入。
+3. 其他输入判定为安全输入。
+
 ```c
 float probability = 0.0f;
 kadd_sqli_detect(engine, input, &probability);
 
-// 根据场景选择阈值
-if (probability >= 0.5f) {      // 标准阈值
-    // 检测到注入
-} else if (probability >= 0.3f) {  // 严格模式
-    // 可能是注入
-} else {
-    // 安全输入
-}
+int alert_level = 0;
 
+if (probability >= 0.5f) {
+    alert_level = 2;
+} else if (probability >= 0.3f) {
+    alert_level = 1;
+} else {
+    alert_level = 0;
+}
 ```
 
 ### Q3：引擎实例可以跨线程使用吗？
@@ -58,57 +64,59 @@ if (probability >= 0.5f) {      // 标准阈值
 
 不可以。引擎实例**不是线程安全的**。每个线程应创建独立的引擎实例：
 
+每个线程按以下顺序使用引擎：
+
+1. 创建独立的引擎实例。
+2. 使用引擎执行检测。
+3. 线程结束时清理资源。
+
 ```c
-// 每个线程创建独立实例
 kadd_sqli_engine_t *engine = NULL;
 kadd_sqli_engine_create_from_file(&engine, "config.json");
 
-// 使用引擎...
+const char *input = "id=1";
+float probability = 0.0f;
+kadd_sqli_detect(engine, input, &probability);
 
-// 线程结束时清理
 kadd_sqli_engine_free(engine);
 ```
 
----
+### Q4：ML模式和DL模式有什么区别？如何选择？
 
-## 工具相关
-
-### Q4：tools 目录是什么？可以用于生产吗？
-
-**问题**：`tools/` 目录下的工具可以用于生产环境吗？
+**问题**：`config.json` 中 `engine_mode` 设为 `ml` 和 `dl` 有什么区别？
 
 **解决方案**：
 
-**⚠️ 重要声明**
+| 对比项 | ML模式 | DL模式 |
+|--------|--------|--------|
+| 模型类型 | 随机森林（Random Forest） | 卷积神经网络（TextCNN） |
+| 输入特征 | 28维手工特征（滑窗统计） | 300维Token ID序列 |
+| 适用场景 | 低延迟、资源受限环境 | 追求更高检测准确率 |
 
-`tools/` 目录包含**模型和数据生成工具**，用于：
+**配置切换**：修改 `config.json` 中的 `engine_mode` 字段即可：
+将该字段设置为 `ml` 或 `dl`。
 
-- 训练和生成检测模型（`tools/model_train/`）
-- 生成 DFA 状态转移表（`tools/dfa_compile/`）
-
-**这些工具不保证**：
-- 代码质量符合生产标准
-- 无安全漏洞
-- 与主项目代码规范一致
-
-它们是**开发过程中的临时脚本**，可能未经过充分测试和审查。如需用于生产环境，请自行评估安全性并进行必要的加固。
-
-**示例：重新训练模型**
-
-```bash
-# 1. 准备训练数据
-cp your_custom_dataset.csv assets/data/
-
-# 2. 运行训练脚本（⚠️ 谨慎执行）
-python tools/model_train/train_tokens.py \
-    --input assets/data/your_custom_dataset.csv \
-    --output assets/model/model_tokens_rf.onnx
-
-# 3. 验证新模型
-./build/kadd_sqli_demo
+```json
+{
+  "engine_mode": "ml"
+}
 ```
 
-**推荐做法**：
-- 仅在开发/测试环境使用这些工具
-- 生产环境使用预编译的模型和数据文件
-- 如需自定义模型，请在隔离环境中进行训练和验证
+无需重新编译，下次创建引擎时生效。
+
+**模型加载策略**：两种模式均采用相同策略。SVE可用时优先加载原生二进制格式（`.krf` / `.kcn`），失败则自动回退ONNX Runtime加载`.onnx`格式。
+
+### Q5：SVE加速如何工作？不支持SVE时怎么办？
+
+**问题**：编译时启用了 `-DENABLE_ARM_SVE=ON`，但运行时提示SVE不可用。
+
+**解决方案**：
+
+KADD的ML和DL引擎均采用**自动回退**策略：
+
+1. 编译时通过 `-DENABLE_ARM_SVE=ON`（默认开启）启用SVE编译路径
+2. 运行时检测SVE可用性（通过 `kadd_sve.h` 中的宏判断）
+3. SVE可用时，加载原生二进制模型（`.krf` / `.kcn`），利用SVE指令加速
+4. SVE不可用时，自动回退ONNX Runtime加载`.onnx`模型
+
+---
