@@ -4,6 +4,7 @@
 
 | 版本  | 发布日期   | 修改说明                                                     |
 | ----- | ---------- | ------------------------------------------------------------ |
+| 1.1.0 | 2026-09-30 | 新增DL（CNN）推理模式，SQLi引擎支持ML/DL双模式切换；ML/DL引擎统一采用SVE原生优先+ONNX回退策略；新增统一ONNX推理引擎；配置文件结构优化为扁平格式。 |
 | 1.0.0 | 2026-06-30 | 第一次正式发布KADD-SQLi。基于DFA状态机+机器学习的混合检测方案，提供高性能SQL注入攻击检测能力。 |
 
 ## 版本配套说明
@@ -13,7 +14,7 @@
 <a name="table62675726"></a>
 <table><tbody><tr id="row41561572"><th class="firstcol" valign="top" width="42.17%" id="mcps1.1.3.1.1"><p id="p11044137"><a name="p11044137"></a><a name="p11044137"></a>产品名称</p>
 </th>
-<td class="cellrowborder" valign="top" width="57.830000000000005%" headers="mcps1.1.3.1.1 "><p id="p1597721693713"><a name="p1597721693713"></a><a name="p1597721693713"></a>Kunpeng BoostKit</p>
+<td class="cellrowborder" valign="top" width="57.830000000000005%" headers="mcps1.1.3.1.1 "><p id="p1524311893713"><a name="p1524311893713"></a><a name="p1524311893713"></a>Kunpeng BoostKit</p>
 </td>
 </tr>
 <tr id="row24726251"><th class="firstcol" valign="top" width="42.17%" id="mcps1.1.3.2.1"><p id="p56669300"><a name="p56669300"></a><a name="p56669300"></a>产品版本</p>
@@ -28,7 +29,7 @@
 </tr>
 <tr id="row5497143514612"><th class="firstcol" valign="top" width="42.17%" id="mcps1.1.3.4.1"><p id="p162251517551"><a name="p162251517551"></a><a name="p162251517551"></a>软件版本</p>
 </th>
-<td class="cellrowborder" valign="top" width="57.830000000000005%" headers="mcps1.1.3.4.1 "><p id="p6225131165519"><a name="p6225131165519"></a><a name="p6225131165519"></a>1.0.0</p>
+<td class="cellrowborder" valign="top" width="57.830000000000005%" headers="mcps1.1.3.4.1 "><p id="p6225131165519"><a name="p6225131165519"></a><a name="p6225131165519"></a>1.1.0</p>
 </td>
 </tr>
 </tbody>
@@ -39,6 +40,19 @@
 |操作系统|CPU类型|编译器|
 |--|--|--|
 |openEuler 24.03 LTS SP2|鲲鹏920新型号处理器|GCC 10.3.1|
+
+## v1.1.0
+
+### 更新说明
+
+**新增特性**
+
+|特性名称| 更新说明                                     |
+|--|------------------------------------------|
+|DL推理模式| 新增CNN深度学习推理模式，SQLi引擎支持ML/DL双模式切换，通过`engine_mode`配置选择。 |
+|SVE原生+ONNX回退| ML/DL引擎统一采用SVE原生二进制优先、ONNX Runtime自动回退的加载策略，无需手动切换。 |
+|统一ONNX推理引擎| 新增`kadd_inference_engine`模块，封装ONNX Runtime API，供ML/DL引擎共用。 |
+|配置文件优化| `config.json`改为扁平结构，简化配置项，支持原生模型和ONNX模型双路径配置。 |
 
 ## v1.0.0
 
@@ -64,7 +78,7 @@
   </thead>
   <tbody>
     <tr>
-      <td style="text-align: left;">1.0.0 版本说明书</td>
+      <td style="text-align: left;">1.1.0 版本说明书</td>
       <td style="text-align: left;">提供KADD的版本更新说明。</td>
       <td style="text-align: left;">开源仓</td>
     </tr>
@@ -91,6 +105,6 @@
       <td style="text-align: left;">常见问题</td>
       <td style="text-align: left;">列举KADD的一些常见问题。</td>
       <td style="text-align: left;">开源仓</td>
-    </tr>       
+    </tr>
   </tbody>
 </table>
