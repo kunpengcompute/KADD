@@ -11,8 +11,10 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
-#include <vector>
 #include <string>
+#include <vector>
+#include <cinttypes>
+#include <unistd.h>
 #include "kadd_dfa_engine.h"
 #include "kadd_config_loader.h"
 
@@ -1132,7 +1134,7 @@ TEST_F(DFAEngineTest, BatchTokenize_ErrorBranches)
 
 TEST_F(DFAEngineTest, BatchTokenize_BatchSizeBoundary)
 {
-    // 测试 batch_size 边界: 0/负数用默认值, 超限用最大值
+    // 测试 batch_size 边界: 0/负数/>MAX 均回退默认值 64
     int batch_sizes[] = {0, -1, KADD_DFA_MAX_BATCH_SIZE + 100, KADD_DFA_MAX_BATCH_SIZE};
 
     for (int i = 0; i < 4; i++) {
@@ -1205,3 +1207,266 @@ TEST(DFAEngineStaticTest, CleanupDfaBatch_UpToIdxPartial)
 
     free(batch.outputs);
 }
+
+// ========== 覆盖率补充：未覆盖错误分支 / 静态函数分支 ==========
+
+/**
+ * 辅助：定位可用的 DFA 表文件（兼容 Linux 绝对路径 config 与 Windows 本地 assets）
+ */
+static bool find_dfa_tables(std::string &trans, std::string &out, std::string &eod)
+{
+    kadd_config_t config;
+    if (kadd_config_load("config.json", &config) == KADD_SUCCESS) {
+        structstat_check:
+        if (access(config.transition_table, R_OK) == 0) {
+            trans = config.transition_table;
+            out = config.output_table;
+            eod = config.eod_table;
+            return true;
+        }
+    }
+    trans = "assets/data/transition_table.bin";
+    out = "assets/data/output_table.bin";
+    eod = "assets/data/eod_table.bin";
+    return access(trans.c_str(), R_OK) == 0;
+}
+
+/**
+ * 辅助：创建真实表的引擎（兼容本地 assets 路径）
+ */
+static kadd_dfa_engine_t *create_real_engine()
+{
+    std::string trans, out, eod;
+    if (!find_dfa_tables(trans, out, eod)) {
+        return nullptr;
+    }
+    kadd_dfa_table_paths_t paths = {trans.c_str(), out.c_str(), eod.c_str()};
+    kadd_dfa_engine_t *engine = nullptr;
+    if (kadd_dfa_engine_create(&engine, &paths,
+                               KADD_DFA_MAX_INPUT_CHARS, KADD_DFA_MAX_TOKENS) != KADD_SUCCESS) {
+        return nullptr;
+    }
+    return engine;
+}
+
+/* ---------- cleanup_dfa_batch ---------- */
+
+TEST(DFAEngineStaticTest, CleanupDfaBatch_MixedNulls)
+{
+    // 覆盖 cleanup_dfa_batch 的 if(batch->outputs[i]) false 分支
+    kadd_dfa_batch_t batch;
+    int **outputs = (int **)calloc(3, sizeof(int *));
+    ASSERT_NE(outputs, nullptr);
+    outputs[0] = (int *)calloc(10, sizeof(int));  // 有效指针
+    outputs[1] = nullptr;                          // NULL
+    outputs[2] = (int *)calloc(10, sizeof(int));  // 有效指针
+    batch.outputs = outputs;
+    batch.count = 3;
+
+    cleanup_dfa_batch(&batch, KADD_DFA_BATCH_CLEANUP_ALL);
+    EXPECT_EQ(outputs[0], nullptr);
+    EXPECT_EQ(outputs[1], nullptr);
+    EXPECT_EQ(outputs[2], nullptr);
+    free(outputs);
+}
+
+/* ---------- validate_table_header 错误分支 ---------- */
+
+TEST(DFAEngineStaticTest, ValidateTableHeader_ReadFail)
+{
+    // 文件小于 4 字节头 → 头读取失败
+    const char *path = "dfa_test_bad_header_2b.bin";
+    FILE *f = fopen(path, "wb");
+    ASSERT_NE(f, nullptr);
+    unsigned char buf[2] = {0x01, 0x02};
+    ASSERT_EQ(fwrite(buf, 1, 2, f), 2u);
+    fclose(f);
+
+    FILE *fp = nullptr;
+    uint32_t states = 0;
+    int ret = validate_table_header(path, 0, &fp, &states);
+    EXPECT_EQ(ret, KADD_DFA_ERROR_PARSE);
+    EXPECT_EQ(fp, nullptr);
+    unlink(path);
+}
+
+TEST(DFAEngineStaticTest, ValidateTableHeader_ZeroStates)
+{
+    // states = 0 → 非法状态数
+    const char *path = "dfa_test_zero_states.bin";
+    FILE *f = fopen(path, "wb");
+    ASSERT_NE(f, nullptr);
+    unsigned char buf[4] = {0, 0, 0, 0};  // LE32: states = 0
+    ASSERT_EQ(fwrite(buf, 1, 4, f), 4u);
+    fclose(f);
+
+    FILE *fp = nullptr;
+    uint32_t states = 0;
+    int ret = validate_table_header(path, 0, &fp, &states);
+    EXPECT_EQ(ret, KADD_DFA_ERROR_PARSE);
+    EXPECT_EQ(fp, nullptr);
+    unlink(path);
+}
+
+TEST(DFAEngineStaticTest, ValidateTableHeader_StatesMismatch)
+{
+    // states = 3 但期望 5 → 不匹配
+    const char *path = "dfa_test_mismatch_states.bin";
+    FILE *f = fopen(path, "wb");
+    ASSERT_NE(f, nullptr);
+    unsigned char buf[4] = {0x03, 0x00, 0x00, 0x00};  // LE32: states = 3
+    ASSERT_EQ(fwrite(buf, 1, 4, f), 4u);
+    fclose(f);
+
+    FILE *fp = nullptr;
+    uint32_t states = 0;
+    int ret = validate_table_header(path, 5, &fp, &states);
+    EXPECT_EQ(ret, KADD_DFA_ERROR_PARSE);
+    EXPECT_EQ(fp, nullptr);
+    unlink(path);
+}
+
+/* ---------- load_u16_table 错误分支 ---------- */
+
+TEST(DFAEngineStaticTest, LoadU16Table_InvalidParams)
+{
+    // 参数无效：cells_per_state = 0
+    uint16_t *table = nullptr;
+    uint32_t num_states = 0;
+    int ret = load_u16_table("test.bin", 0, 0, &num_states, &table);
+    EXPECT_EQ(ret, KADD_ERROR_INVALID_INPUT);
+    EXPECT_EQ(table, nullptr);
+}
+
+TEST(DFAEngineStaticTest, LoadU16Table_IncompleteData)
+{
+    // 合法头 states=1（需 256 单元 = 512 字节数据），但文件只有 4+100 字节
+    const char *path = "dfa_test_incomplete.bin";
+    FILE *f = fopen(path, "wb");
+    ASSERT_NE(f, nullptr);
+    unsigned char hdr[4] = {0x01, 0x00, 0x00, 0x00};  // LE32: states = 1
+    ASSERT_EQ(fwrite(hdr, 1, 4, f), 4u);
+    unsigned char data[100] = {0};
+    ASSERT_EQ(fwrite(data, 1, sizeof(data), f), sizeof(data));
+    fclose(f);
+
+    uint16_t *table = nullptr;
+    uint32_t num_states = 0;
+    int ret = load_u16_table(path, 0, 256, &num_states, &table);
+    EXPECT_EQ(ret, KADD_DFA_ERROR_PARSE);
+    EXPECT_EQ(table, nullptr);
+    unlink(path);
+}
+
+TEST(DFAEngineStaticTest, LoadTables_OutputTableFail)
+{
+    // transition 表用真实文件，output/eod 表用不存在的文件
+    // → 覆盖 kadd_dfa_engine_load_tables 的 output/eod 加载失败分支
+    std::string trans, out, eod;
+    ASSERT_TRUE(find_dfa_tables(trans, out, eod));
+
+    kadd_dfa_engine_t *engine = nullptr;
+    kadd_dfa_table_paths_t bad_paths = {trans.c_str(), "no_such_output_table.bin", eod.c_str()};
+    int ret = kadd_dfa_engine_create(&engine, &bad_paths,
+                                     KADD_DFA_MAX_INPUT_CHARS, KADD_DFA_MAX_TOKENS);
+    EXPECT_EQ(ret, KADD_DFA_ERROR_FILE_NOT_FOUND);
+    EXPECT_EQ(engine, nullptr);
+}
+
+/* ---------- kadd_dfa_validate_input ---------- */
+
+TEST(DFAEngineStaticTest, ValidateInput_NotInit)
+{
+    // 构造未初始化的引擎（三表 NULL）→ NOT_INIT
+    kadd_dfa_engine_t e;
+    memset(&e, 0, sizeof(e));
+    e.max_input_chars = KADD_DFA_MAX_INPUT_CHARS;
+    e.max_tokens = KADD_DFA_MAX_TOKENS;
+
+    int *out = (int *)calloc(10, sizeof(int));
+    ASSERT_NE(out, nullptr);
+    int cnt = 0;
+    int ret = kadd_dfa_validate_input(&e, "x", 1, out, &cnt);
+    EXPECT_EQ(ret, KADD_ERROR_NOT_INIT);
+    free(out);
+}
+
+/* ---------- kadd_dfa_handle_eod ---------- */
+
+TEST(DFAEngineStaticTest, HandleEod_EmitTwo)
+{
+    // eod_code = action | (token1 << 2) | (token2 << 8)
+    // EMIT_TWO(3) + first_token=1 + second_token=2
+    uint16_t eod_table[1];
+    eod_table[0] = 3 | (1u << 2) | (2u << 8);
+
+    int *out = (int *)calloc(10, sizeof(int));
+    ASSERT_NE(out, nullptr);
+    out[0] = -1;
+    out[1] = -1;
+    size_t count = 0;
+    size_t token_start = 0;
+    uint16_t accept_info = 0;
+
+    // 成功路径：空间足够
+    int ret = kadd_dfa_handle_eod(eod_table, 0, 10, 5, &token_start, &accept_info, out, &count);
+    EXPECT_EQ(ret, KADD_SUCCESS);
+    EXPECT_EQ(count, 2u);
+    EXPECT_EQ(out[0], 1);
+    EXPECT_EQ(out[1], 2);
+    EXPECT_EQ(accept_info, 0u);
+    EXPECT_EQ(token_start, 5u);
+
+    // BUFFER_OVERFLOW：count + 2 > max_output_dim
+    count = 9;
+    ret = kadd_dfa_handle_eod(eod_table, 0, 2, 5, &token_start, &accept_info, out, &count);
+    EXPECT_EQ(ret, KADD_DFA_ERROR_BUFFER_OVERFLOW);
+    EXPECT_EQ(count, 9u);
+    free(out);
+}
+
+/* ---------- kadd_dfa_engine_tokenize 末尾 count >= max_tokens ---------- */
+
+TEST_F(DFAEngineTest, Tokenize_BufferOverflow)
+{
+    // 将 max_tokens 压缩到 1：
+    // 1) emit_token 内 count(1) >= max_output_dim(1) → BUFFER_OVERFLOW 分支
+    // 2) 末尾 count >= engine->max_tokens 分支（若引擎表恰好提前结束）
+    engine->max_tokens = 1;
+
+    int tokens[KADD_DFA_MAX_TOKENS];
+    int token_count = 0;
+    int ret = kadd_dfa_engine_tokenize(engine, "SELECT FROM", 11, tokens, &token_count);
+    EXPECT_EQ(ret, KADD_DFA_ERROR_BUFFER_OVERFLOW);
+}
+
+/* ---------- kadd_dfa_tokenize_batch_item 错误路径 ---------- */
+
+TEST_F(DFAEngineTest, TokenizeBatchItem_NullInput)
+{
+    const char *inputs[1] = {nullptr};
+    int *outputs[1] = {nullptr};
+    int dims[1] = {0};
+    kadd_dfa_batch_t batch = {inputs, nullptr, 1, outputs, dims, 10};
+
+    int ret = kadd_dfa_tokenize_batch_item(engine, &batch, 0);
+    EXPECT_EQ(ret, KADD_ERROR_NULL_PTR);
+    EXPECT_EQ(outputs[0], nullptr);  // cleanup 后保持 NULL
+}
+
+TEST_F(DFAEngineTest, TokenizeBatchItem_TokenizeFail)
+{
+    // 超长输入（> max_input_chars）→ tokenize 返回 INVALID_LENGTH
+    // → batch item 走 tokenize 失败分支，释放 output 并清理 batch
+    std::string too_long(KADD_DFA_MAX_INPUT_CHARS + 1, 'a');
+    const char *inputs[1] = {too_long.c_str()};
+    int *outputs[1] = {nullptr};
+    int dims[1] = {0};
+    kadd_dfa_batch_t batch = {inputs, nullptr, 1, outputs, dims, 10};
+
+    int ret = kadd_dfa_tokenize_batch_item(engine, &batch, 0);
+    EXPECT_EQ(ret, KADD_DFA_ERROR_PARSE);
+    EXPECT_EQ(outputs[0], nullptr);
+}
+
+/* ---------- 末尾 count >= max_tokens（真实表引擎，max_tokens=1） ---------- */

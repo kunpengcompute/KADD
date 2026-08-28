@@ -260,9 +260,13 @@ int kadd_seq_to_feature_batch(kadd_feature_batch_t *batch)
             const int *seq = batch->seqs[idx];
             int seq_len = batch->seq_lens[idx];
 
-            if (seq == NULL || seq_len <= 0) {
-                fprintf(stderr, "[kadd_feature] ERROR: Invalid sequence at index %d (seq=%s, seq_len=%d)\n",
-                        idx, (seq ? "valid" : "NULL"), seq_len);
+            if (seq == NULL) {
+                fprintf(stderr, "[kadd_feature] ERROR: NULL sequence at index %d\n", idx);
+                return KADD_ERROR_NULL_PTR;
+            }
+            if (seq_len <= 0) {
+                fprintf(stderr, "[kadd_feature] ERROR: Invalid sequence length at index %d (seq_len=%d)\n",
+                        idx, seq_len);
                 return KADD_ERROR_INVALID_INPUT;
             }
 

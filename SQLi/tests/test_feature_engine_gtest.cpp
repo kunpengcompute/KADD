@@ -1180,8 +1180,8 @@ TEST_F(FeatureEngineTest, BatchWithNullSeqs)
         null_seqs, lens, 1, features.data(), KADD_FEATURE_DIM, kWinSize5, 64
     };
 
-    EXPECT_EQ(kadd_seq_to_feature_batch(&batch), KADD_ERROR_INVALID_INPUT)
-        << "NULL seqs 应该返回 KADD_ERROR_INVALID_INPUT 错误";
+    EXPECT_EQ(kadd_seq_to_feature_batch(&batch), KADD_ERROR_NULL_PTR)
+        << "NULL seq 元素应该返回 KADD_ERROR_NULL_PTR 错误";
 }
 
 TEST_F(FeatureEngineTest, BatchWithNullSeqLens)

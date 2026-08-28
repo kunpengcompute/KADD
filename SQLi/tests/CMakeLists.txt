@@ -164,7 +164,7 @@ if(FUZZ_TESTS_AVAILABLE)
 
     target_compile_features(kadd_fuzzer PRIVATE cxx_std_17)
 
-    # 覆盖率构建时不使用 ASan（与 fprofile-instr-generate 冲突）
+    # 覆盖率构建：clang -fprofile-instr-generate + libFuzzer
     if(ENABLE_CODE_COVERAGE)
         target_compile_options(kadd_fuzzer PRIVATE
             -fsanitize=fuzzer
@@ -172,7 +172,7 @@ if(FUZZ_TESTS_AVAILABLE)
             -fcoverage-mapping
             -g
         )
-        target_link_options(kadd_fuzzer PRIVATE -fsanitize=fuzzer -fprofile-instr-generate)
+        target_link_options(kadd_fuzzer PRIVATE -fsanitize=fuzzer -fprofile-instr-generate -fcoverage-mapping)
     else()
         target_compile_options(kadd_fuzzer PRIVATE
             -fsanitize=fuzzer,address
@@ -221,102 +221,126 @@ if(FUZZ_TESTS_AVAILABLE)
 
     message(STATUS "FUZZ tests configured: kadd_fuzzer")
     message(STATUS "  Run: cd tests && ./kadd_fuzzer assets/fuzz_corpus -runs=10000")
-else()
-    # ----------------------------------------------------------------------------
-    # GTest 单元测试 (GCC 编译器时自动启用)
-    # ----------------------------------------------------------------------------
+endif()
 
-    # DFA 引擎测试（包含源文件以测试 static 函数）
-    add_kadd_gtest(dfa_engine_test test_dfa_engine_gtest.cpp kadd_dfa_engine)
+# ----------------------------------------------------------------------------
+# GTest 单元测试（与 fuzzer 同时构建，不互斥）
+# ----------------------------------------------------------------------------
 
-    # ML 引擎测试（包含源文件以测试 static 函数）
-    add_kadd_gtest(ml_engine_test test_ml_engine_gtest.cpp kadd_ml_engine)
+# DFA 引擎测试（包含源文件以测试 static 函数）
+add_kadd_gtest(dfa_engine_test test_dfa_engine_gtest.cpp kadd_dfa_engine)
 
-    # Feature 引擎测试
-    add_kadd_gtest(feature_engine_test test_feature_engine_gtest.cpp)
+# ML 引擎测试（包含源文件以测试 static 函数）
+add_kadd_gtest(ml_engine_test test_ml_engine_gtest.cpp kadd_ml_engine)
 
-    # SQLi 引擎测试（包含源文件以测试 static 函数）
-    add_kadd_gtest(sqli_engine_test test_sqli_engine_gtest.cpp kadd_sqli_engine)
-    # sqli_engine_test includes kadd_sqli_engine.c directly, needs kadd_dl_engine for DL functions
-    target_link_libraries(sqli_engine_test PRIVATE kadd_dl_engine kadd_cnn_engine)
-    # SQLi ML/DL mode test
-    add_executable(sqli_ml_dl_mode_test test_sqli_ml_dl_mode_gtest.cpp)
-    target_compile_features(sqli_ml_dl_mode_test PRIVATE cxx_std_17)
-    target_include_directories(sqli_ml_dl_mode_test PRIVATE
-        ${CMAKE_SOURCE_DIR}/include
-        ${CMAKE_SOURCE_DIR}/include/internal
-    )
-    target_link_libraries(sqli_ml_dl_mode_test PRIVATE
-        kadd_sqli_engine kadd_dl_engine kadd_ml_engine kadd_dfa_engine kadd_config_loader
-    )
-    if(TARGET gtest_main)
-        target_link_libraries(sqli_ml_dl_mode_test PRIVATE gtest_main)
-    elseif(GTest_FOUND)
-        target_link_libraries(sqli_ml_dl_mode_test PRIVATE GTest::gtest_main)
-    endif()
-    target_link_libraries(sqli_ml_dl_mode_test PRIVATE pthread)
-    add_dependencies(sqli_ml_dl_mode_test copy_test_resources)
-    add_test(NAME sqli_ml_dl_mode_test COMMAND sqli_ml_dl_mode_test)
-    set_tests_properties(sqli_ml_dl_mode_test PROPERTIES
-        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/tests
-        ENVIRONMENT "LD_LIBRARY_PATH=${CMAKE_BINARY_DIR}/src:${ONNXRUNTIME_LIB_DIR}:$ENV{LD_LIBRARY_PATH}"
-    )
-    message(STATUS "SQLi ML/DL mode test enabled")
+# Feature 引擎测试
+add_kadd_gtest(feature_engine_test test_feature_engine_gtest.cpp)
 
-
-    # Config Loader 测试（包含源文件以测试 static 函数）
-    add_kadd_gtest(config_loader_test test_config_loader_gtest.cpp kadd_config_loader)
-
-    # RF 引擎测试（不依赖 ONNX，不使用 add_kadd_gtest 以避免引入 ONNX 链接）
+# SQLi 引擎测试（包含源文件以测试 static 函数）
+add_kadd_gtest(sqli_engine_test test_sqli_engine_gtest.cpp kadd_sqli_engine)
+# sqli_engine_test includes kadd_sqli_engine.c directly, needs kadd_dl_engine for DL functions
+target_link_libraries(sqli_engine_test PRIVATE kadd_dl_engine kadd_cnn_engine)
+# SQLi ML/DL mode test
+add_executable(sqli_ml_dl_mode_test test_sqli_ml_dl_mode_gtest.cpp)
+target_compile_features(sqli_ml_dl_mode_test PRIVATE cxx_std_17)
+target_include_directories(sqli_ml_dl_mode_test PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include/internal
+)
+target_link_libraries(sqli_ml_dl_mode_test PRIVATE
+    kadd_sqli_engine kadd_dl_engine kadd_ml_engine kadd_dfa_engine kadd_config_loader
+)
+if(TARGET gtest_main)
+    target_link_libraries(sqli_ml_dl_mode_test PRIVATE gtest_main)
+elseif(GTest_FOUND)
+    target_link_libraries(sqli_ml_dl_mode_test PRIVATE GTest::gtest_main)
+endif()
+target_link_libraries(sqli_ml_dl_mode_test PRIVATE pthread)
+add_dependencies(sqli_ml_dl_mode_test copy_test_resources)
+add_test(NAME sqli_ml_dl_mode_test COMMAND sqli_ml_dl_mode_test)
+set_tests_properties(sqli_ml_dl_mode_test PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+    ENVIRONMENT "LD_LIBRARY_PATH=${CMAKE_BINARY_DIR}/src:${ONNXRUNTIME_LIB_DIR}:$ENV{LD_LIBRARY_PATH}"
+)
+message(STATUS "SQLi ML/DL mode test enabled")
 
 
-    # CNN 引擎测试（kadd_cnn_engine + 共享数据加载）
-    add_executable(cnn_engine_gtest test_cnn_engine_gtest.cpp test_model_data.cpp)
-    target_compile_features(cnn_engine_gtest PRIVATE cxx_std_17)
-    target_include_directories(cnn_engine_gtest PRIVATE ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/include/internal ${CMAKE_SOURCE_DIR}/src)
-    target_link_libraries(cnn_engine_gtest PRIVATE kadd_cnn_engine kadd_dfa_engine)
-    if(TARGET gtest_main)
-        target_link_libraries(cnn_engine_gtest PRIVATE gtest_main)
-    elseif(GTest_FOUND)
-        target_link_libraries(cnn_engine_gtest PRIVATE GTest::gtest_main)
-    endif()
-    target_link_libraries(cnn_engine_gtest PRIVATE pthread)
-    add_dependencies(cnn_engine_gtest copy_test_resources)
-    add_test(NAME cnn_engine_gtest COMMAND cnn_engine_gtest)
-    set_tests_properties(cnn_engine_gtest PROPERTIES
-        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/tests
-        ENVIRONMENT "LD_LIBRARY_PATH=${CMAKE_BINARY_DIR}/src:$ENV{LD_LIBRARY_PATH}"
-    )
+# Config Loader 测试（包含源文件以测试 static 函数）
+add_kadd_gtest(config_loader_test test_config_loader_gtest.cpp kadd_config_loader)
 
-    # RF 引擎测试（kadd_rf_engine + 共享数据加载）
-    add_executable(rf_engine_gtest test_rf_engine_gtest.cpp test_model_data.cpp)
-    target_compile_features(rf_engine_gtest PRIVATE cxx_std_17)
-    target_include_directories(rf_engine_gtest PRIVATE ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/include/internal ${CMAKE_SOURCE_DIR}/src)
-    target_link_libraries(rf_engine_gtest PRIVATE
-        kadd_rf_engine kadd_dfa_engine kadd_feature_engine)
-    if(TARGET gtest_main)
-        target_link_libraries(rf_engine_gtest PRIVATE gtest_main)
-    elseif(GTest_FOUND)
-        target_link_libraries(rf_engine_gtest PRIVATE GTest::gtest_main)
-    endif()
-    target_link_libraries(rf_engine_gtest PRIVATE pthread)
-    add_dependencies(rf_engine_gtest copy_test_resources)
-    add_test(NAME rf_engine_gtest COMMAND rf_engine_gtest)
-    set_tests_properties(rf_engine_gtest PROPERTIES
-        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/tests
-        ENVIRONMENT "LD_LIBRARY_PATH=${CMAKE_BINARY_DIR}/src:$ENV{LD_LIBRARY_PATH}"
-    )
+# RF 引擎测试（不依赖 ONNX，不使用 add_kadd_gtest 以避免引入 ONNX 链接）
 
-    # 统一推理引擎测试（包含源文件以测试 static 函数）
-    add_kadd_gtest(inference_engine_test test_inference_engine_gtest.cpp kadd_inference_engine)
-    # 链接 gmock（如果可用）
-    if(TARGET gmock_main)
-        target_link_libraries(inference_engine_test PRIVATE gmock_main)
-    endif()
 
-    message(STATUS "Tests configured: dfa_engine_test, ml_engine_test, feature_engine_test, sqli_engine_test, config_loader_test, inference_engine_test, cnn_engine_gtest, rf_engine_gtest")
-    message(STATUS "  To run tests: cd tests && ctest --output-on-failure")
-    if(ENABLE_CODE_COVERAGE)
-        message(STATUS "  Run 'make coverage' after tests to generate report")
-    endif()
+# CNN 引擎测试（kadd_cnn_engine + 共享数据加载）
+add_executable(cnn_engine_gtest test_cnn_engine_gtest.cpp test_model_data.cpp)
+target_compile_features(cnn_engine_gtest PRIVATE cxx_std_17)
+target_include_directories(cnn_engine_gtest PRIVATE ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/include/internal ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(cnn_engine_gtest PRIVATE kadd_cnn_engine kadd_dfa_engine)
+if(TARGET gtest_main)
+    target_link_libraries(cnn_engine_gtest PRIVATE gtest_main)
+elseif(GTest_FOUND)
+    target_link_libraries(cnn_engine_gtest PRIVATE GTest::gtest_main)
+endif()
+target_link_libraries(cnn_engine_gtest PRIVATE pthread)
+add_dependencies(cnn_engine_gtest copy_test_resources)
+add_test(NAME cnn_engine_gtest COMMAND cnn_engine_gtest)
+set_tests_properties(cnn_engine_gtest PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+    ENVIRONMENT "LD_LIBRARY_PATH=${CMAKE_BINARY_DIR}/src:$ENV{LD_LIBRARY_PATH}"
+)
+
+# DL 引擎综合测试（CNN/RF/ONNX 多后端，含模型校验链、CRC 防篡改等）
+add_executable(dl_engine_gtest test_dl_engine_gtest.cpp)
+target_compile_features(dl_engine_gtest PRIVATE cxx_std_17)
+target_include_directories(dl_engine_gtest PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/include/internal
+)
+target_link_libraries(dl_engine_gtest PRIVATE
+    kadd_sqli_engine kadd_dl_engine kadd_cnn_engine kadd_ml_engine
+    kadd_dfa_engine kadd_config_loader
+)
+if(TARGET gtest_main)
+    target_link_libraries(dl_engine_gtest PRIVATE gtest_main)
+elseif(GTest_FOUND)
+    target_link_libraries(dl_engine_gtest PRIVATE GTest::gtest_main)
+endif()
+target_link_libraries(dl_engine_gtest PRIVATE pthread)
+add_dependencies(dl_engine_gtest copy_test_resources)
+add_test(NAME dl_engine_gtest COMMAND dl_engine_gtest)
+set_tests_properties(dl_engine_gtest PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+    ENVIRONMENT "LD_LIBRARY_PATH=${CMAKE_BINARY_DIR}/src:${ONNXRUNTIME_LIB_DIR}")
+message(STATUS "DL engine comprehensive test enabled")
+
+# RF 引擎测试（kadd_rf_engine + 共享数据加载）
+add_executable(rf_engine_gtest test_rf_engine_gtest.cpp test_model_data.cpp)
+target_compile_features(rf_engine_gtest PRIVATE cxx_std_17)
+target_include_directories(rf_engine_gtest PRIVATE ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/include/internal ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(rf_engine_gtest PRIVATE
+    kadd_rf_engine kadd_dfa_engine kadd_feature_engine)
+if(TARGET gtest_main)
+    target_link_libraries(rf_engine_gtest PRIVATE gtest_main)
+elseif(GTest_FOUND)
+    target_link_libraries(rf_engine_gtest PRIVATE GTest::gtest_main)
+endif()
+target_link_libraries(rf_engine_gtest PRIVATE pthread)
+add_dependencies(rf_engine_gtest copy_test_resources)
+add_test(NAME rf_engine_gtest COMMAND rf_engine_gtest)
+set_tests_properties(rf_engine_gtest PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+    ENVIRONMENT "LD_LIBRARY_PATH=${CMAKE_BINARY_DIR}/src:$ENV{LD_LIBRARY_PATH}"
+)
+
+# 统一推理引擎测试（包含源文件以测试 static 函数）
+add_kadd_gtest(inference_engine_test test_inference_engine_gtest.cpp kadd_inference_engine)
+# 链接 gmock（如果可用）
+if(TARGET gmock_main)
+    target_link_libraries(inference_engine_test PRIVATE gmock_main)
+endif()
+
+message(STATUS "Tests configured: dfa_engine_test, ml_engine_test, feature_engine_test, sqli_engine_test, config_loader_test, inference_engine_test, cnn_engine_gtest, rf_engine_gtest")
+message(STATUS "  To run tests: cd tests && ctest --output-on-failure")
+if(ENABLE_CODE_COVERAGE)
+    message(STATUS "  Run 'make coverage' after tests to generate report")
 endif()

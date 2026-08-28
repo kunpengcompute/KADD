@@ -8,10 +8,12 @@
  * - <0 : 失败（错误码）
  *
  * 编号规则：
- * - 通用错误码 : -100 范围
+ * - 通用错误码 : -100 范围（含 空指针/内存/参数/模型加载/推理失败 等公共错误）
  * - DFA 专用   : -10 范围
  * - Feature 专用: -200 范围
- * - SQLi 专用   : -300 范围
+ *
+ * 说明：SQLi 作为顶层模块不再单独定义错误码，出错时直接透传底层
+ *       子引擎（DFA/Feature/ML/DL）或公共错误码。
  */
 
 #ifndef KADD_ERRORS_H
@@ -25,9 +27,6 @@ extern "C" {
 
 /** @brief 成功 */
 #define KADD_SUCCESS                     (0)
-
-/** @brief 通用错误 */
-#define KADD_ERROR                       (-100)
 
 /** @brief 无效输入 */
 #define KADD_ERROR_INVALID_INPUT         (-101)
@@ -44,9 +43,6 @@ extern "C" {
 /** @brief 无效参数 */
 #define KADD_ERROR_INVALID_PARAM         (-105)
 
-/** @brief 缓冲区太小 */
-#define KADD_ERROR_BUFFER_TOO_SMALL      (-106)
-
 /** @brief 模型加载失败 */
 #define KADD_ERROR_MODEL_LOAD_FAILED     (-107)
 
@@ -58,23 +54,6 @@ extern "C" {
 
 /** @brief 模型推理失败 */
 #define KADD_ERROR_INFERENCE_FAILED      (-110)
-
-/* ========== Inference 引擎专用错误码 (-400 范围) ========== */
-
-/** @brief ONNX Runtime API 初始化失败 */
-#define KADD_INFERENCE_ERROR_ORT_API_INIT      (-400)
-
-/** @brief ONNX Runtime 环境创建失败 */
-#define KADD_INFERENCE_ERROR_ORT_ENV_CREATE    (-401)
-
-/** @brief ONNX Session 创建失败 */
-#define KADD_INFERENCE_ERROR_SESSION_CREATE    (-402)
-
-/** @brief ONNX IO 名称检测失败 */
-#define KADD_INFERENCE_ERROR_IO_DETECT         (-403)
-
-/** @brief ONNX 输入维度读取失败 */
-#define KADD_INFERENCE_ERROR_DIM_READ          (-404)
 
 /* ========== DFA 引擎专用错误码 (-10 范围) ========== */
 
@@ -94,38 +73,6 @@ extern "C" {
 
 /** @brief Feature 序列元素超出范围 */
 #define KADD_FEATURE_ERROR_VALUE_OUT_OF_RANGE  (-200)
-
-/** @brief Feature 滑窗计算失败 */
-#define KADD_FEATURE_ERROR_WINDOW_FAILED       (-201)
-
-/* ========== SQLi 引擎专用错误码 (-300 范围) ========== */
-
-/** @brief SQLi DFA 子引擎错误 */
-#define KADD_SQLI_ERROR_DFA              (-300)
-
-/** @brief SQLi Feature 子引擎错误 */
-#define KADD_SQLI_ERROR_FEATURE          (-301)
-
-/** @brief SQLi ML 子引擎错误 */
-#define KADD_SQLI_ERROR_ML               (-302)
-
-/** @brief SQLi DL 子引擎错误 */
-#define KADD_SQLI_ERROR_DL               (-303)
-
-/** @brief SQLi DFA tokenize 失败 */
-#define KADD_ERROR_DFA_TOKENIZE          (-304)
-
-/** @brief SQLi Feature 提取失败 */
-#define KADD_ERROR_FEATURE_EXTRACT       (-305)
-
-/** @brief SQLi ML 推理失败 */
-#define KADD_ERROR_ML_PREDICT            (-306)
-
-/** @brief SQLi DL 推理失败 */
-#define KADD_ERROR_DL_PREDICT            (-307)
-
-/** @brief DFA 引擎初始化失败 */
-#define KADD_ERROR_DFA_ENGINE_INIT       (-308)
 
 #ifdef __cplusplus
 }

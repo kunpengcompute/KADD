@@ -515,26 +515,26 @@ TEST_P(SQLiEngineTest, NullEngine)
 {
     float prob = 0.0f;
     int ret = kadd_sqli_detect(nullptr, "test", &prob);
-    EXPECT_EQ(ret, KADD_ERROR_INVALID_INPUT) << "空引擎应该返回 KADD_ERROR_INVALID_INPUT";
+    EXPECT_EQ(ret, KADD_ERROR_NULL_PTR) << "空引擎应该返回 KADD_ERROR_NULL_PTR";
 }
 
 TEST_P(SQLiEngineTest, NullInput)
 {
     float prob = 0.0f;
     int ret = kadd_sqli_detect(engine, nullptr, &prob);
-    EXPECT_EQ(ret, KADD_ERROR_INVALID_INPUT) << "空输入应该返回 KADD_ERROR_INVALID_INPUT";
+    EXPECT_EQ(ret, KADD_ERROR_NULL_PTR) << "空输入应该返回 KADD_ERROR_NULL_PTR";
 }
 
 TEST_P(SQLiEngineTest, NullProbability)
 {
     int ret = kadd_sqli_detect(engine, "test", nullptr);
-    EXPECT_EQ(ret, KADD_ERROR_INVALID_INPUT) << "空概率指针应该返回 KADD_ERROR_INVALID_INPUT";
+    EXPECT_EQ(ret, KADD_ERROR_NULL_PTR) << "空概率指针应该返回 KADD_ERROR_NULL_PTR";
 }
 
 TEST_P(SQLiEngineTest, NullEngineWithAllOtherNull)
 {
     int ret = kadd_sqli_detect(nullptr, nullptr, nullptr);
-    EXPECT_EQ(ret, KADD_ERROR_INVALID_INPUT) << "全部空指针应该返回 KADD_ERROR_INVALID_INPUT";
+    EXPECT_EQ(ret, KADD_ERROR_NULL_PTR) << "全部空指针应该返回 KADD_ERROR_NULL_PTR";
 }
 
 TEST_P(SQLiEngineTest, CreateWithNullEnginePtr)
@@ -547,7 +547,7 @@ TEST_P(SQLiEngineTest, CreateWithNullConfigFile)
 {
     kadd_sqli_engine_t* tmp = nullptr;
     int ret = kadd_sqli_engine_create_from_file(&tmp, nullptr);
-    EXPECT_EQ(ret, KADD_ERROR_INVALID_INPUT) << "NULL 配置文件应该返回 KADD_ERROR_INVALID_INPUT";
+    EXPECT_EQ(ret, KADD_ERROR_NULL_PTR) << "NULL 配置文件应该返回 KADD_ERROR_NULL_PTR";
 }
 
 TEST_P(SQLiEngineTest, CreateWithEmptyConfigFile)
@@ -657,10 +657,10 @@ TEST_P(SQLiEngineTest, CreateWithInvalidMLModelPath)
 
         // 期望返回 ML 错误（如果 DFA 表存在）或者 DFA 错误（如果 DFA 表不存在）
         // 主要是验证模型加载失败时的错误处理
-        if (ret == KADD_SQLI_ERROR_ML) {
+        if (ret == KADD_ERROR_MODEL_LOAD_FAILED) {
             // 完美：覆盖了 ML 模型加载失败的 release_engine_buffers 路径
             SUCCEED() << "成功覆盖 ML 模型加载失败的 release_engine_buffers 路径";
-        } else if (ret == KADD_SQLI_ERROR_DFA) {
+        } else if (ret == KADD_DFA_ERROR_FILE_NOT_FOUND) {
             // DFA 表也不存在，至少测试了 DFA 失败路径
             SUCCEED() << "DFA 表不存在，测试了 DFA 失败路径";
         } else {
@@ -785,7 +785,7 @@ TEST_P(SQLiEngineTest, BatchSize_EdgeCases)
     // 测试超长输入 (超过默认 max_input_length = 300)
     std::string long_input(400, 'A');
     float prob;
-    EXPECT_EQ(kadd_sqli_detect(engine, long_input.c_str(), &prob), KADD_SQLI_ERROR_DFA)
+    EXPECT_EQ(kadd_sqli_detect(engine, long_input.c_str(), &prob), KADD_DFA_ERROR_INVALID_LENGTH)
         << "超长输入应该返回错误（超过max_input_length）";
 }
 
@@ -797,8 +797,8 @@ TEST_P(SQLiEngineTest, BatchWithZeroCount)
     float probs[1];
 
     // 测试 count = -1
-    EXPECT_EQ(kadd_sqli_detect_batch(engine, inputs, -1, probs, 64), KADD_ERROR_INVALID_INPUT)
-        << "count=-1 应该返回 INVALID_INPUT 错误";
+    EXPECT_EQ(kadd_sqli_detect_batch(engine, inputs, -1, probs, 64), KADD_ERROR_INVALID_PARAM)
+        << "count=-1 应该返回 INVALID_PARAM 错误";
 }
 
 TEST_P(SQLiEngineTest, BatchWithExceedsMaxSampleCount)
@@ -807,8 +807,8 @@ TEST_P(SQLiEngineTest, BatchWithExceedsMaxSampleCount)
     const char *inputs[1] = {"test"};
 
     // 测试 probabilities = NULL
-    EXPECT_EQ(kadd_sqli_detect_batch(engine, inputs, 1, nullptr, 64), KADD_ERROR_INVALID_INPUT)
-        << "NULL probabilities 应该返回 INVALID_INPUT 错误";
+    EXPECT_EQ(kadd_sqli_detect_batch(engine, inputs, 1, nullptr, 64), KADD_ERROR_NULL_PTR)
+        << "NULL probabilities 应该返回 NULL_PTR 错误";
 }
 
 TEST_P(SQLiEngineTest, BatchWithNullInputElement)
@@ -817,8 +817,8 @@ TEST_P(SQLiEngineTest, BatchWithNullInputElement)
     float probs[1];
 
     // 测试整个 inputs 数组为 NULL
-    EXPECT_EQ(kadd_sqli_detect_batch(engine, nullptr, 1, probs, 64), KADD_ERROR_INVALID_INPUT)
-        << "NULL inputs 数组应该返回 INVALID_INPUT 错误";
+    EXPECT_EQ(kadd_sqli_detect_batch(engine, nullptr, 1, probs, 64), KADD_ERROR_NULL_PTR)
+        << "NULL inputs 数组应该返回 NULL_PTR 错误";
 }
 
 TEST_P(SQLiEngineTest, BatchWithNullEngine)
@@ -827,8 +827,8 @@ TEST_P(SQLiEngineTest, BatchWithNullEngine)
     const char *inputs[1] = {"test"};
 
     // 测试 engine = NULL
-    EXPECT_EQ(kadd_sqli_detect_batch(nullptr, inputs, 1, probs, 64), KADD_ERROR_INVALID_INPUT)
-        << "NULL engine 应该返回 INVALID_INPUT 错误";
+    EXPECT_EQ(kadd_sqli_detect_batch(nullptr, inputs, 1, probs, 64), KADD_ERROR_NULL_PTR)
+        << "NULL engine 应该返回 NULL_PTR 错误";
 }
 
 TEST_P(SQLiEngineTest, BatchWithExceedsMaxCount)
@@ -848,8 +848,8 @@ TEST_P(SQLiEngineTest, SingleInputWithNullProbability)
     float prob = 0.0f;
 
     // 测试单次检测时 input = NULL
-    EXPECT_EQ(kadd_sqli_detect(engine, nullptr, &prob), KADD_ERROR_INVALID_INPUT)
-        << "NULL input 字符串应该返回 INVALID_INPUT 错误";
+    EXPECT_EQ(kadd_sqli_detect(engine, nullptr, &prob), KADD_ERROR_NULL_PTR)
+        << "NULL input 字符串应该返回 NULL_PTR 错误";
 }
 
 TEST_P(SQLiEngineTest, SingleInputWithNullEngine)
@@ -857,8 +857,8 @@ TEST_P(SQLiEngineTest, SingleInputWithNullEngine)
     float prob = 0.0f;
 
     // 测试单次检测时 engine = NULL
-    EXPECT_EQ(kadd_sqli_detect(nullptr, "test", &prob), KADD_ERROR_INVALID_INPUT)
-        << "NULL engine 应该返回 INVALID_INPUT 错误";
+    EXPECT_EQ(kadd_sqli_detect(nullptr, "test", &prob), KADD_ERROR_NULL_PTR)
+        << "NULL engine 应该返回 NULL_PTR 错误";
 }
 
 // ========== 7. 边缘情况和特殊情况测试 ==========
@@ -985,7 +985,7 @@ TEST(SQLiEngineStaticTest, AllocateBatchBuffers_NullEngine)
     kadd_batch_buffers_t buffers = {0};
 
     int result = allocate_batch_buffers(nullptr, 10, &buffers);
-    EXPECT_EQ(result, KADD_ERROR_INVALID_INPUT);
+    EXPECT_EQ(result, KADD_ERROR_NULL_PTR);
 }
 
 TEST(SQLiEngineStaticTest, AllocateBatchBuffers_NullBuffers)
@@ -994,7 +994,7 @@ TEST(SQLiEngineStaticTest, AllocateBatchBuffers_NullBuffers)
     engine.feature_dim = 28;
 
     int result = allocate_batch_buffers(&engine, 10, nullptr);
-    EXPECT_EQ(result, KADD_ERROR_INVALID_INPUT);
+    EXPECT_EQ(result, KADD_ERROR_NULL_PTR);
 }
 
 /**
@@ -1027,7 +1027,7 @@ TEST(SQLiEngineStaticTest, InitBatchDetectParams_ExceedsMaxBatchSize)
 
     int result = init_batch_detect_params(KADD_ML_MAX_BATCH_SIZE + 1, &actual_batch_size, probs, 1);
     EXPECT_EQ(result, KADD_SUCCESS);
-    EXPECT_EQ(actual_batch_size, KADD_ML_MAX_BATCH_SIZE);  // 应该截断为最大值
+    EXPECT_EQ(actual_batch_size, KADD_ML_DEFAULT_BATCH_SIZE);  // >MAX 现在回退默认值64（不再截断为最大值）
 }
 
 TEST(SQLiEngineStaticTest, CreateEngineInternal_NullEngine)
@@ -1042,7 +1042,7 @@ TEST(SQLiEngineStaticTest, CreateEngineInternal_NullEngine)
         cfg.model_rf[sizeof(cfg.model_rf) - 1] = '\0';
     }
     int result = create_engine_internal(nullptr, &table_paths, &cfg);
-    EXPECT_EQ(result, KADD_ERROR_INVALID_INPUT);
+    EXPECT_EQ(result, KADD_ERROR_NULL_PTR);
 }
 
 TEST(SQLiEngineStaticTest, CreateEngineInternal_NullTablePaths)
@@ -1057,7 +1057,7 @@ TEST(SQLiEngineStaticTest, CreateEngineInternal_NullTablePaths)
         cfg2.model_rf[sizeof(cfg2.model_rf) - 1] = '\0';
     }
     int result = create_engine_internal(&engine, nullptr, &cfg2);
-    EXPECT_EQ(result, KADD_ERROR_INVALID_INPUT);
+    EXPECT_EQ(result, KADD_ERROR_NULL_PTR);
 }
 
 TEST(SQLiEngineStaticTest, CreateEngineInternal_NullModelPath)
@@ -1065,7 +1065,148 @@ TEST(SQLiEngineStaticTest, CreateEngineInternal_NullModelPath)
     kadd_sqli_engine_t *engine = nullptr;
     kadd_dfa_table_paths_t table_paths = {};
     int result = create_engine_internal(&engine, &table_paths, nullptr);
-    EXPECT_EQ(result, KADD_ERROR_INVALID_INPUT);
+    EXPECT_EQ(result, KADD_ERROR_NULL_PTR);
+}
+
+// ========== 覆盖率优化：批量检测空输入/长输入/零批次大小/混合NULL ==========
+
+TEST_P(SQLiEngineTest, BatchWithEmptyInputInList)
+{
+    // 批量中包含空字符串：空输入应成功返回，概率保持 0.0
+    std::vector<std::string> inputs_str = { "", "SELECT * FROM users", "" };
+    std::vector<const char*> inputs;
+    for (const auto& s : inputs_str) {
+        inputs.push_back(s.c_str());
+    }
+
+    float probs[3] = { 1.0f, 1.0f, 1.0f };
+    int ret = kadd_sqli_detect_batch(engine, inputs.data(), 3, probs, 1);
+    // ML 模式：空字符串 DFA tokenize 产生 0 token，批处理项返回 KADD_DFA_ERROR_PARSE
+    // DL 模式：逐条推理，空字符串返回 0 概率，批量检测成功
+    if (GetParam() == "ml") {
+        EXPECT_EQ(ret, KADD_DFA_ERROR_PARSE) << "ML 模式空字符串批量 DFA tokenize 应失败";
+    } else {
+        EXPECT_EQ(ret, KADD_SUCCESS) << "DL 模式空字符串批量检测应该成功";
+        EXPECT_FLOAT_EQ(probs[0], 0.0f) << "空输入概率应该为 0";
+        EXPECT_FLOAT_EQ(probs[2], 0.0f) << "空输入概率应该为 0";
+        EXPECT_GE(probs[1], 0.0f);
+        EXPECT_LE(probs[1], 1.0f);
+    }
+}
+
+TEST_P(SQLiEngineTest, BatchWithLongInput)
+{
+    // 超长输入（> max_input_length = 300），应被截断或返回错误
+    std::vector<std::string> inputs_str(1, std::string(500, 'a'));
+    std::vector<const char*> inputs = { inputs_str[0].c_str() };
+
+    float probs[1] = { 0.0f };
+    int ret = kadd_sqli_detect_batch(engine, inputs.data(), 1, probs, 1);
+    EXPECT_TRUE(ret != KADD_SUCCESS)
+        << "超长输入应成功（截断）或返回 DFA 错误，实际 ret=" << ret;
+
+    // 成功时概率应在有效范围内
+    if (ret == KADD_SUCCESS) {
+        EXPECT_GE(probs[0], 0.0f);
+        EXPECT_LE(probs[0], 1.0f);
+    }
+}
+
+// DL 模式批量检测：前几条成功、中途某条失败（超长），接口应立即返回错误
+// 覆盖 issue: kadd_sqli_detect_batch DL 模式中途失败返回成功 → 修复为逐条返回错误
+TEST_P(SQLiEngineTest, BatchDL_MidFailure_ReturnsError)
+{
+    // count=3：前 2 条正常 SQL，第 3 条超长（>300 字符）
+    std::vector<std::string> inputs_str = {
+        "id=1' OR '1'='1",
+        "SELECT * FROM users WHERE id=1",
+        std::string(500, 'a')  // 超长输入，DL 模式 tokenize 返回 KADD_DFA_ERROR_INVALID_LENGTH
+    };
+    std::vector<const char*> inputs;
+    for (const auto& s : inputs_str) {
+        inputs.push_back(s.c_str());
+    }
+
+    float probs[3] = { 0.0f, 0.0f, 0.0f };
+    int ret = kadd_sqli_detect_batch(engine, inputs.data(), 3, probs, 10);
+
+    if (GetParam() == "dl") {
+        // DL 模式：逐条推理，第 3 条超长 → kadd_sqli_detect 返回 DFA 错误
+        // 批量接口应立即返回该错误，而不是 KADD_SUCCESS
+        EXPECT_TRUE(ret != KADD_SUCCESS)
+            << "DL 批量检测中途失败（超长输入）应立即返回错误，实际 ret=" << ret;
+        EXPECT_EQ(ret, KADD_DFA_ERROR_INVALID_LENGTH)
+            << "应返回 DFA 长度错误，实际 ret=" << ret;
+        // 前 2 条已成功处理，概率应已写入
+        EXPECT_GE(probs[0], 0.0f);
+        EXPECT_LE(probs[0], 1.0f);
+        EXPECT_GE(probs[1], 0.0f);
+        EXPECT_LE(probs[1], 1.0f);
+    } else {
+        // ML 模式：批量路径，超长输入在 DFA 批量 tokenize 阶段失败
+        EXPECT_TRUE(ret != KADD_SUCCESS)
+            << "ML 批量检测超长输入应返回错误，实际 ret=" << ret;
+    }
+}
+
+TEST_P(SQLiEngineTest, DetectBatchWithZeroBatchSize)
+{
+    // batch_size = 0 应该回退到默认批次大小
+    std::vector<std::string> inputs_str = {
+        "id=1' OR '1'='1",
+        "SELECT * FROM users",
+        "user@example.com"
+    };
+    std::vector<const char*> inputs;
+    for (const auto& s : inputs_str) {
+        inputs.push_back(s.c_str());
+    }
+
+    float probs[3] = { 0.0f, 0.0f, 0.0f };
+    int ret = kadd_sqli_detect_batch(engine, inputs.data(), 3, probs, 0);
+    EXPECT_EQ(ret, KADD_SUCCESS) << "batch_size=0 应该回退到默认批次大小并成功";
+
+    for (int i = 0; i < 3; i++) {
+        EXPECT_GE(probs[i], 0.0f);
+        EXPECT_LE(probs[i], 1.0f);
+    }
+}
+
+TEST(SQLiEngineStaticTest, ProcessBatchLoop_MixedNullAndValid)
+{
+    // 不依赖引擎/配置，直接测试批处理管线中 DFA 批量分词
+    // 对混合 NULL 和有效输入的错误处理路径
+    kadd_dfa_table_paths_t paths = {
+        "assets/data/transition_table.bin",
+        "assets/data/output_table.bin",
+        "assets/data/eod_table.bin"
+    };
+    kadd_dfa_engine_t* dfa = nullptr;
+    int ret = kadd_dfa_engine_create(&dfa, &paths, 300, 300);
+    ASSERT_EQ(ret, KADD_SUCCESS) << "DFA 引擎创建失败（assets/data 缺表？）";
+
+    // 混合 NULL 和有效输入
+    std::vector<std::string> valid_strs = { "id=1' OR '1'='1", "SELECT * FROM users" };
+    const char* inputs[3] = { nullptr, valid_strs[0].c_str(), valid_strs[1].c_str() };
+
+    int* outputs[3] = { nullptr, nullptr, nullptr };
+    int dims[3] = { 0, 0, 0 };
+
+    kadd_dfa_batch_t batch = {
+        .inputs = inputs,
+        .lengths = nullptr,
+        .count = 3,
+        .outputs = outputs,
+        .dims = dims,
+        .batch_size = 3
+    };
+
+    // NULL 输入应触发错误路径（KADD_ERROR_INVALID_INPUT），且不崩溃
+    int result = kadd_dfa_engine_tokenize_batch(dfa, &batch);
+    EXPECT_NE(result, KADD_SUCCESS) << "混合 NULL 输入应该返回错误";
+
+    // 按 API 约定，失败时已处理的 outputs 会被自动释放，调用者无需手动释放
+    kadd_dfa_engine_free(dfa);
 }
 
 // ========== Instantiate for both ML and DL modes ==========
@@ -1077,3 +1218,89 @@ INSTANTIATE_TEST_SUITE_P(
         return info.param == "ml" ? "ML" : "DL";
     }
 );
+
+// ========== 覆盖率优化：native→ONNX fallback 路径 ==========
+
+TEST(SQLiEngineStaticTest, CreateWithNativeFallingBackToOnnx)
+{
+    // 读 config.json，把 model_rf 改成不存在的路径，保留 model_rf_onnx
+    // 这样 SVE 构建下 native 加载失败 → fallback 到 ONNX 成功
+    kadd_config_t config;
+    ASSERT_EQ(kadd_config_load("config.json", &config), 0) << "config.json 加载失败";
+
+    // 保存原始值
+    std::string orig_model_rf(config.model_rf);
+
+    // 改成不存在的路径，触发 native 加载失败
+    snprintf(config.model_rf, sizeof(config.model_rf), "/nonexistent_native_rf.krf");
+
+    kadd_dfa_table_paths_t table_paths = {
+        .transition_table_path = config.transition_table,
+        .output_table_path = config.output_table,
+        .eod_table_path = config.eod_table
+    };
+
+    kadd_sqli_engine_t *eng = nullptr;
+    int ret = create_engine_internal(&eng, &table_paths, &config);
+    EXPECT_EQ(ret, KADD_SUCCESS) << "native 失败后应 fallback 到 ONNX 成功";
+    if (ret == KADD_SUCCESS) {
+        ASSERT_NE(eng, nullptr);
+        // 验证可以正常检测
+        float prob = 0.0f;
+        int dret = kadd_sqli_detect(eng, "SELECT * FROM users WHERE id=1", &prob);
+        EXPECT_EQ(dret, KADD_SUCCESS) << "fallback 到 ONNX 后应能正常检测";
+        EXPECT_GE(prob, 0.0f);
+        EXPECT_LE(prob, 1.0f);
+        kadd_sqli_engine_free(eng);
+    }
+
+    kadd_config_free(&config);
+}
+
+TEST(SQLiEngineStaticTest, CreateWithBothNativeAndOnnxFailing)
+{
+    // 读 config.json，把 model_rf 和 model_rf_onnx 都改成不存在的路径
+    // native 失败 → ONNX 也失败 → KADD_ERROR_MODEL_LOAD_FAILED
+    kadd_config_t config;
+    ASSERT_EQ(kadd_config_load("config.json", &config), 0) << "config.json 加载失败";
+
+    snprintf(config.model_rf, sizeof(config.model_rf), "/nonexistent_native_rf.krf");
+    snprintf(config.model_rf_onnx, sizeof(config.model_rf_onnx), "/nonexistent_onnx_rf.onnx");
+
+    kadd_dfa_table_paths_t table_paths = {
+        .transition_table_path = config.transition_table,
+        .output_table_path = config.output_table,
+        .eod_table_path = config.eod_table
+    };
+
+    kadd_sqli_engine_t *eng = nullptr;
+    int ret = create_engine_internal(&eng, &table_paths, &config);
+    EXPECT_EQ(ret, KADD_ERROR_MODEL_LOAD_FAILED) << "native 和 ONNX 都失败应返回 KADD_ERROR_MODEL_LOAD_FAILED";
+    EXPECT_EQ(eng, nullptr);
+
+    kadd_config_free(&config);
+}
+
+// 覆盖 sqli_engine.c DL 模式加载失败的 else 分支（model_cnn 和 model_cnn_onnx 都不存在）
+TEST(SQLiEngineStaticTest, CreateWithDLMissingCnn)
+{
+    kadd_config_t config;
+    ASSERT_EQ(kadd_config_load("config.json", &config), 0) << "config.json 加载失败";
+
+    config.engine_mode = KADD_ENGINE_MODE_DL;
+    snprintf(config.model_cnn, sizeof(config.model_cnn), "/nonexistent_cnn.kcn");
+    snprintf(config.model_cnn_onnx, sizeof(config.model_cnn_onnx), "/nonexistent_cnn.onnx");
+
+    kadd_dfa_table_paths_t table_paths = {
+        .transition_table_path = config.transition_table,
+        .output_table_path = config.output_table,
+        .eod_table_path = config.eod_table
+    };
+
+    kadd_sqli_engine_t *eng = nullptr;
+    int ret = create_engine_internal(&eng, &table_paths, &config);
+    EXPECT_EQ(ret, KADD_ERROR_MODEL_LOAD_FAILED) << "DL 模式 model_cnn 不存在应返回 KADD_ERROR_MODEL_LOAD_FAILED";
+    EXPECT_EQ(eng, nullptr);
+
+    kadd_config_free(&config);
+}

@@ -822,10 +822,10 @@ TEST_F(MLEngineTest, BatchSizeBoundary_Zero)
     std::vector<float> features(feature_dim * n, 0.0f);
     std::vector<float> probabilities(n);
 
-    // batch_size = 0 应返回错误码
+    // batch_size = 0 应自动回退为默认值 64 并成功
     int ret = kadd_model_predict_batch(model, features.data(), n, probabilities.data(), 0);
 
-    EXPECT_EQ(ret, KADD_ERROR_INVALID_PARAM) << "batch_size=0 应返回 INVALID_PARAM 错误";
+    EXPECT_EQ(ret, KADD_SUCCESS) << "batch_size=0 应自动回退默认值并成功";
 }
 
 TEST_F(MLEngineTest, BatchSizeBoundary_Negative)
@@ -836,10 +836,10 @@ TEST_F(MLEngineTest, BatchSizeBoundary_Negative)
     std::vector<float> features(feature_dim * n, 0.0f);
     std::vector<float> probabilities(n);
 
-    // batch_size = -1 应返回错误码
+    // batch_size = -1 应自动回退为默认值 64 并成功
     int ret = kadd_model_predict_batch(model, features.data(), n, probabilities.data(), -1);
 
-    EXPECT_EQ(ret, KADD_ERROR_INVALID_PARAM) << "batch_size=-1 应返回 INVALID_PARAM 错误";
+    EXPECT_EQ(ret, KADD_SUCCESS) << "batch_size=-1 应自动回退默认值并成功";
 }
 
 TEST_F(MLEngineTest, SampleCountBoundary_Zero)
@@ -1207,4 +1207,38 @@ TEST_F(MLEngineTest, FeatureDimBoundary_ExceedsMax)
     // 作为替代，我们验证常量定义是否正确
     EXPECT_GT(KADD_ML_DEFAULT_MAX_OUTPUT_DIM, 0);
     SUCCEED() << "Feature dim 边界检查存在（源码 Line 784-789）";
+}
+
+// ========== 覆盖率优化：ONNX 后端路径测试 ==========
+
+TEST_F(MLEngineTest, LoadOnnxModel_Success)
+{
+    // SVE 构建下 config.model_rf 为原生 .krf，config.model_rf_onnx 为 .onnx。
+    // 用 .onnx 路径加载：原生 RF 加载失败后回退 ONNX 路径。
+    kadd_model_handle_t *onnx_handle = nullptr;
+    int ret = kadd_model_load(&onnx_handle, config.model_rf_onnx, 0);
+    ASSERT_EQ(ret, KADD_SUCCESS) << "ONNX 模型加载失败: " << config.model_rf_onnx;
+    ASSERT_NE(onnx_handle, nullptr) << "ONNX 模型句柄不应为空";
+
+    int onnx_dim = kadd_model_get_feature_dim(onnx_handle);
+    ASSERT_GT(onnx_dim, 0) << "无效的特征维度: " << onnx_dim;
+
+    // 单样本推理（覆盖 ONNX predict 分发路径）
+    std::vector<float> features(onnx_dim, 0.5f);
+    float probability = 0.0f;
+    ret = kadd_model_predict(onnx_handle, features.data(), &probability);
+    EXPECT_EQ(ret, KADD_SUCCESS) << "ONNX 推理应该成功";
+    EXPECT_TRUE(IsValidProbability(probability)) << "概率值应在 [0, 1] 范围内，实际: " << probability;
+
+    kadd_model_free(onnx_handle);
+    SUCCEED() << "ONNX 模型加载、推理、释放成功";
+}
+
+TEST_F(MLEngineTest, LoadOnnxModel_FeatureDimMismatch)
+{
+    // 传入与 ONNX 模型不匹配的 feature_dim，应该返回 INVALID_PARAM
+    kadd_model_handle_t *onnx_handle = nullptr;
+    int ret = kadd_model_load(&onnx_handle, config.model_rf_onnx, 9999);
+    EXPECT_EQ(ret, KADD_ERROR_INVALID_PARAM) << "feature_dim 不匹配应该返回 INVALID_PARAM";
+    EXPECT_EQ(onnx_handle, nullptr) << "失败时句柄应为 NULL";
 }

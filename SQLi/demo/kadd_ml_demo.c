@@ -2,76 +2,88 @@
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  *
  * @file kadd_ml_demo.c
- * @brief KADD ML 推理引擎 - 简单示例
+ * @brief KADD ML/RF 推理引擎 - 最小示例
  *
- * 构建：由顶层 CMake 一并编译（cmake .. && make，详见 docs/zh/SQLi/installation_guide.md）
- * 运行：cd build/demo && ./kadd_ml_demo
+ * ===== config.json 配置说明（ML 模式）=====
+ *
+ *   "engine_mode": "ml"
+ *
+ *   模型路径（二选一或同时配置）：
+ *     "model_rf":      "model.krf"     <- 原生 RF 二进制（SVE 加速，ARM Kunpeng）
+ *     "model_rf_onnx": "model.onnx"    <- ONNX Runtime（通用回退，x86/ARM 均可）
+ *
+ *   SVE <-> ONNX 切换：
+ *     ONNX -> SVE : model_rf 填写 .krf 路径，编译加 -DENABLE_ARM_SVE=ON
+ *     SVE -> ONNX : model_rf 改 .onnx 路径（或用 model_rf_onnx），默认编译即可
+ *     ML -> DL    : engine_mode 改为 "dl"，配置 model_cnn / model_cnn_onnx
+ *
+ *   完整示例：
+ *   {
+ *       "engine_mode": "ml",
+ *       "transition_table": "/opt/KADD/SQLi/assets/data/transition_table.bin",
+ *       "output_table":     "/opt/KADD/SQLi/assets/data/output_table.bin",
+ *       "eod_table":        "/opt/KADD/SQLi/assets/data/eod_table.bin",
+ *       "model_rf":         "/opt/KADD/SQLi/assets/model/model_tokens_rf.krf",
+ *       "model_rf_onnx":    "/opt/KADD/SQLi/assets/model/model_tokens_rf.onnx"
+ *   }
+ *
+ * 构建：cmake .. && make
+ * 运行：cd build/demo && ./kadd_ml_demo [config.json路径]
  */
 
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include "kadd_ml_engine.h"
 #include "kadd_config_loader.h"
 
-int main()
+int main(int argc, char *argv[])
 {
-    printf("=== KADD ML 推理引擎示例 ===\n\n");
+    const char *config_path = (argc >= 2) ? argv[1] : "../config.json";
+    printf("=== KADD ML 推理示例 ===\n\n");
 
-    // 1. 加载配置
-    printf("[1] 加载配置...\n");
+    /* 1. 加载配置 */
     kadd_config_t config;
-    if (kadd_config_load("../config.json", &config) != KADD_SUCCESS) {
-        printf("❌ 配置加载失败\n");
+    if (kadd_config_load(config_path, &config) != KADD_SUCCESS) {
+        printf("配置加载失败\n");
         return 1;
     }
-    printf("✅ 配置加载成功\n\n");
 
-    // 2. 加载模型
-    printf("[2] 加载模型...\n");
+    /* 2. 加载模型（优先原生 RF，失败回退 ONNX） */
     kadd_model_handle_t *model = NULL;
-    // feature_dim=0 表示从模型自动读取特征维度
-    if (kadd_model_load(&model, config.model_rf, 0) != KADD_SUCCESS) {
-        printf("❌ 模型加载失败\n");
+    const char *primary  = config.model_rf[0]      ? config.model_rf      : NULL;
+    const char *fallback = config.model_rf_onnx[0]  ? config.model_rf_onnx : NULL;
+
+    if ((primary  && kadd_model_load(&model, primary, 0) == KADD_SUCCESS) ||
+        (fallback && kadd_model_load(&model, fallback, 0) == KADD_SUCCESS)) {
+        printf("模型加载成功\n");
+    } else {
+        printf("模型加载失败\n");
         kadd_config_free(&config);
         return 1;
     }
-    printf("✅ 模型加载成功\n\n");
 
-    // 获取模型的特征维度
     int feature_dim = kadd_model_get_feature_dim(model);
-    printf("模型特征维度: %d\n\n", feature_dim);
+    printf("特征维度: %d\n\n", feature_dim);
 
-    // 3. 推理测试
-    printf("[3] 推理测试...\n");
-
-    // 创建模拟特征向量
-    float features[feature_dim];
-    for (int i = 0; i < feature_dim; i++) {
-        features[i] = 0;
-    }
-    // 设置模拟特征值
-    features[7] = 100;
-    features[8] = 436;
-    features[11] = 250;
-    features[12] = 160;
-
-    float probability = 0.0f;
-    if (kadd_model_predict(model, features, &probability) == KADD_SUCCESS) {
-        printf("输入特征: [");
-        for (int i = 0; i < feature_dim; i++) {
-            printf("%.2f ", features[i]);
-        }
-        printf("]\n");
-        printf("注入概率: %.2f%%\n", probability * 100);
-        printf("✅ 推理成功\n\n");
-    } else {
-        printf("❌ 推理失败\n\n");
+    /* 3. 单样本推理 */
+    float *features = (float *)calloc(feature_dim, sizeof(float));
+    if (feature_dim > 12) {
+        features[7]  = 100.0f;
+        features[8]  = 436.0f;
+        features[11] = 250.0f;
+        features[12] = 160.0f;
     }
 
-    // 4. 清理
-    printf("[4] 清理资源...\n");
+    float prob = 0.0f;
+    if (kadd_model_predict(model, features, &prob) == KADD_SUCCESS) {
+        printf("注入概率: %.2f%%\n", prob * 100);
+        printf("判定结果: %s\n\n", prob >= 0.5f ? "SQL 注入" : "正常查询");
+    }
+
+    /* 4. 清理 */
+    free(features);
     kadd_model_free(model);
     kadd_config_free(&config);
-    printf("✅ 完成\n");
-
     return 0;
 }

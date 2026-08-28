@@ -25,9 +25,10 @@ typedef struct kadd_dl_model_t kadd_dl_model_t;
  *
  * @param model 句柄指针的指针
  * @param model_path 模型文件路径（.kcn 原生格式或 .onnx）
+ * @param feature_dim 特征维度（0=从模型自动读取；>0=校验与模型维度是否一致）
  * @return 0 成功，<0 失败
  */
-int kadd_dl_model_load(kadd_dl_model_t **model, const char *model_path);
+int kadd_dl_model_load(kadd_dl_model_t **model, const char *model_path, int feature_dim);
 
 /**
  * @brief 单样本推理

@@ -12,6 +12,7 @@
 #include "onnxruntime_c_api.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 #include <string.h>
 
 /* ========== 内部结构体 ========== */
@@ -23,6 +24,7 @@ struct kadd_inference_engine_t {
     char *input_name;
     char *output_name;
     int feature_dim;
+    int output_dim;
 };
 
 static OrtEnv *g_ort_env = NULL;
@@ -137,21 +139,20 @@ static int get_model_input_dim(kadd_inference_engine_t *e)
         return -1;
     }
 
-    /* 使用 CastTypeInfoToTensorInfo（ONNX Runtime 1.17+，API v17+） */
     status = e->api->CastTypeInfoToTensorInfo(type_info, &tensor_info);
     if (status) {
-            goto cleanup;
-        }
+        goto cleanup;
+    }
 
     status = e->api->GetDimensionsCount(tensor_info, &dim_count);
     if (status || dim_count < 2) {
-            goto cleanup;
-        }
+        goto cleanup;
+    }
 
     status = e->api->GetDimensions(tensor_info, dims, dim_count);
     if (status) {
-            goto cleanup;
-        }
+        goto cleanup;
+    }
 
     e->feature_dim = (int)dims[1];
     (void)e->api->ReleaseTypeInfo(type_info);
@@ -159,12 +160,48 @@ static int get_model_input_dim(kadd_inference_engine_t *e)
 
 cleanup:
     if (status) {
-            (void)e->api->ReleaseStatus(status);
-        }
+        (void)e->api->ReleaseStatus(status);
+    }
     fprintf(stderr, "[kadd_inference] ERROR: Failed to cast type info to tensor info\n");
     (void)e->api->ReleaseTypeInfo(type_info);
     return -1;
 }
+
+/* ========== 获取模型输出维度 ========== */
+static void get_model_output_dim(kadd_inference_engine_t *e)
+{
+    OrtTypeInfo *out_type_info = NULL;
+    const OrtTensorTypeAndShapeInfo *out_tensor_info = NULL;
+    OrtStatus *out_status = NULL;
+    size_t out_dim_count = 0;
+    int64_t out_dims[MAX_TENSOR_DIMS] = {0};
+
+    e->output_dim = 2;  /* 默认 fallback */
+
+    out_status = e->api->SessionGetOutputTypeInfo(e->session, 0, &out_type_info);
+    if (out_status) {
+        (void)e->api->ReleaseStatus(out_status);
+        return;
+    }
+
+    out_status = e->api->CastTypeInfoToTensorInfo(out_type_info, &out_tensor_info);
+    if (out_status) {
+        (void)e->api->ReleaseStatus(out_status);
+        (void)e->api->ReleaseTypeInfo(out_type_info);
+        return;
+    }
+
+    out_status = e->api->GetDimensionsCount(out_tensor_info, &out_dim_count);
+    if (!out_status && out_dim_count >= 2) {
+        out_status = e->api->GetDimensions(out_tensor_info, out_dims, out_dim_count);
+        if (!out_status && out_dims[1] > 0) {
+            e->output_dim = (int)out_dims[1];
+        }
+    }
+    if (out_status) { (void)e->api->ReleaseStatus(out_status); }
+    (void)e->api->ReleaseTypeInfo(out_type_info);
+}
+
 
 /* ========== 创建 ONNX Runtime Session ========== */
 static int create_ort_session(kadd_inference_engine_t *e, const char *model_path)
@@ -243,16 +280,17 @@ static int load_engine_internal(kadd_inference_engine_t **engine,
         return KADD_ERROR_OUT_OF_MEMORY;
     }
 
-    if (init_ort_api(e) != 0 || init_ort_env(e) != 0 || create_ort_session(e, model_path) != 0) {
+    /* 分步初始化：init_ort_api 不涉及全局引用计数，失败可直接释放 */
+    if (init_ort_api(e) != 0 || init_ort_env(e) != 0) {
         free(e);
         return KADD_ERROR_MODEL_LOAD_FAILED;
     }
 
-    if (detect_io_names(e) != 0 || get_model_input_dim(e) != 0) {
-        release_engine_resources(e);
-        free(e);
+    if (create_ort_session(e, model_path) != 0 || detect_io_names(e) != 0 || get_model_input_dim(e) != 0) {
+        kadd_inference_engine_free(e);
         return KADD_ERROR_MODEL_LOAD_FAILED;
     }
+    get_model_output_dim(e);  /* 非致命，失败则使用默认值 */
 
     /* warmup */
     float *warmup_features = (float *)calloc(e->feature_dim, sizeof(float));
@@ -263,8 +301,7 @@ static int load_engine_internal(kadd_inference_engine_t **engine,
         if (warmup_ret != KADD_SUCCESS) {
             fprintf(stderr, "[kadd_inference] ERROR: Warmup inference failed (feature_dim=%d)\n",
                     e->feature_dim);
-            release_engine_resources(e);
-            free(e);
+            kadd_inference_engine_free(e);
             return KADD_ERROR_MODEL_LOAD_FAILED;
         }
     }
@@ -332,14 +369,17 @@ int kadd_inference_predict_batch(kadd_inference_engine_t *engine,
         return KADD_ERROR_INVALID_PARAM;
     }
 
-    if (batch_size <= 0) {
-        return KADD_ERROR_INVALID_PARAM;
-    }
-    int eff_batch = (batch_size > KADD_INFERENCE_MAX_BATCH_SIZE)
+    int eff_batch = (batch_size <= 0 || batch_size > KADD_INFERENCE_MAX_BATCH_SIZE)
                     ? KADD_INFERENCE_DEFAULT_BATCH_SIZE : batch_size;
 
     for (int i = 0; i < n; i += eff_batch) {
         int cur = (i + eff_batch < n) ? eff_batch : (n - i);
+
+        for (int j = 0; j < cur * engine->feature_dim; j++) {
+            if (!isfinite(features[i * engine->feature_dim + j])) {
+                return KADD_ERROR_INVALID_PARAM;
+            }
+        }
 
         int64_t shape[] = {cur, engine->feature_dim};
         OrtValue *input = NULL;
@@ -371,7 +411,7 @@ int kadd_inference_predict_batch(kadd_inference_engine_t *engine,
         }
 
         for (int j = 0; j < cur; j++) {
-            probabilities[i + j] = data[j * 2 + 1];
+            probabilities[i + j] = data[j * engine->output_dim + 1];
         }
         (void)engine->api->ReleaseValue(output);
     }

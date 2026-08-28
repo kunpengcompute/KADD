@@ -166,8 +166,7 @@ static int create_engine_internal(kadd_sqli_engine_t **engine,
                                    const kadd_config_t *config)
 {
     if (!engine || !table_paths || !config) {
-        fprintf(stderr, "[kadd_sqli] ERROR: Invalid parameters\n");
-        return KADD_ERROR_INVALID_INPUT;
+        return KADD_ERROR_NULL_PTR;
     }
 
     kadd_sqli_engine_t *e = (kadd_sqli_engine_t *)calloc(1, sizeof(kadd_sqli_engine_t));
@@ -188,11 +187,12 @@ static int create_engine_internal(kadd_sqli_engine_t **engine,
         return ret;
     }
 
-    if (kadd_dfa_engine_create(&e->dfa_engine, table_paths, e->max_input_chars, e->max_tokens) != 0) {
-        fprintf(stderr, "[kadd_sqli] ERROR: Failed to create DFA engine\n");
+    int dfa_init_ret = kadd_dfa_engine_create(&e->dfa_engine, table_paths, e->max_input_chars, e->max_tokens);
+    if (dfa_init_ret != KADD_SUCCESS) {
+        fprintf(stderr, "[kadd_sqli] ERROR: Failed to create DFA engine (ret=%d)\n", dfa_init_ret);
         release_engine_buffers(e);
         free(e);
-        return KADD_SQLI_ERROR_DFA;
+        return dfa_init_ret;
     }
 
     /* Load ML model */
@@ -209,14 +209,14 @@ static int create_engine_internal(kadd_sqli_engine_t **engine,
                     kadd_dfa_engine_free(e->dfa_engine);
                     release_engine_buffers(e);
                     free(e);
-                    return KADD_SQLI_ERROR_ML;
+                    return KADD_ERROR_MODEL_LOAD_FAILED;
                 }
             } else {
                 fprintf(stderr, "[kadd_sqli] ERROR: Failed to load ML model: %s\n", model_path);
                 kadd_dfa_engine_free(e->dfa_engine);
                 release_engine_buffers(e);
                 free(e);
-                return KADD_SQLI_ERROR_ML;
+                return KADD_ERROR_MODEL_LOAD_FAILED;
             }
         }
 #else
@@ -227,7 +227,7 @@ static int create_engine_internal(kadd_sqli_engine_t **engine,
             kadd_dfa_engine_free(e->dfa_engine);
             release_engine_buffers(e);
             free(e);
-            return KADD_SQLI_ERROR_ML;
+            return KADD_ERROR_MODEL_LOAD_FAILED;
         }
 #endif
         e->feature_dim = kadd_model_get_feature_dim(e->ml_model);
@@ -237,12 +237,12 @@ static int create_engine_internal(kadd_sqli_engine_t **engine,
     if (e->engine_mode == KADD_ENGINE_MODE_DL) {
 #if KADD_HAVE_SVE
         const char *model_path = (strlen(config->model_cnn) > 0) ? config->model_cnn : config->model_cnn_onnx;
-        if (kadd_dl_model_load(&e->dl_model, model_path) != 0) {
+        if (kadd_dl_model_load(&e->dl_model, model_path, 0) != 0) {
             /* Fallback to ONNX if native failed and they are different */
             if (strlen(config->model_cnn) > 0 && strlen(config->model_cnn_onnx) > 0 &&
                 strcmp(config->model_cnn, config->model_cnn_onnx) != 0) {
                 fprintf(stdout, "[kadd_sqli] WARN: native DL model load failed, trying ONNX: %s\n", config->model_cnn_onnx);
-                if (kadd_dl_model_load(&e->dl_model, config->model_cnn_onnx) != 0) {
+                if (kadd_dl_model_load(&e->dl_model, config->model_cnn_onnx, 0) != 0) {
                     fprintf(stderr, "[kadd_sqli] ERROR: Failed to load DL model (both native and ONNX)\n");
                     kadd_dfa_engine_free(e->dfa_engine);
                     release_engine_buffers(e);
@@ -260,7 +260,7 @@ static int create_engine_internal(kadd_sqli_engine_t **engine,
 #else
         /* SVE unavailable: use ONNX model directly */
         const char *model_path = (strlen(config->model_cnn_onnx) > 0) ? config->model_cnn_onnx : config->model_cnn;
-        if (kadd_dl_model_load(&e->dl_model, model_path) != 0) {
+        if (kadd_dl_model_load(&e->dl_model, model_path, 0) != 0) {
             fprintf(stderr, "[kadd_sqli] ERROR: Failed to load DL model: %s\n", model_path);
             kadd_dfa_engine_free(e->dfa_engine);
             release_engine_buffers(e);
@@ -277,8 +277,7 @@ static int create_engine_internal(kadd_sqli_engine_t **engine,
 int kadd_sqli_engine_create_from_file(kadd_sqli_engine_t **engine, const char *config_file)
 {
     if (!engine || !config_file) {
-        fprintf(stderr, "[kadd_sqli] ERROR: Invalid parameters\n");
-        return KADD_ERROR_INVALID_INPUT;
+        return KADD_ERROR_NULL_PTR;
     }
 
     kadd_config_t config;
@@ -301,8 +300,7 @@ int kadd_sqli_engine_create_from_file(kadd_sqli_engine_t **engine, const char *c
 int kadd_sqli_detect(kadd_sqli_engine_t *engine, const char *input, float *probability)
 {
     if (!engine || !input || !probability) {
-        fprintf(stderr, "[kadd_sqli] ERROR: Invalid parameters\n");
-        return KADD_ERROR_INVALID_INPUT;
+        return KADD_ERROR_NULL_PTR;
     }
 
     size_t input_len = strlen(input);
@@ -313,26 +311,28 @@ int kadd_sqli_detect(kadd_sqli_engine_t *engine, const char *input, float *proba
 
     /* Step 1: DFA tokenize */
     int token_count = 0;
-    if (kadd_dfa_engine_tokenize(engine->dfa_engine, input, input_len,
-                                 engine->token_buffer, &token_count) != 0) {
-        fprintf(stderr, "[kadd_sqli] ERROR: DFA tokenize failed\n");
-        return KADD_SQLI_ERROR_DFA;
+    int dfa_ret = kadd_dfa_engine_tokenize(engine->dfa_engine, input, input_len,
+                                           engine->token_buffer, &token_count);
+    if (dfa_ret != KADD_SUCCESS) {
+        fprintf(stderr, "[kadd_sqli] ERROR: DFA tokenize failed (ret=%d)\n", dfa_ret);
+        return dfa_ret;
     }
 
     float prob = 0.0f;
 
     if (engine->engine_mode == KADD_ENGINE_MODE_ML) {
         /* Step 2a: Feature extraction -> ML inference */
-        if (kadd_seq_to_feature(engine->token_buffer, token_count, engine->window_size,
-                                 engine->feature_buffer, engine->feature_dim) != 0) {
-            fprintf(stderr, "[kadd_sqli] ERROR: Feature extraction failed\n");
-            return KADD_SQLI_ERROR_FEATURE;
+        int feat_ret = kadd_seq_to_feature(engine->token_buffer, token_count, engine->window_size,
+                                           engine->feature_buffer, engine->feature_dim);
+        if (feat_ret != KADD_SUCCESS) {
+            fprintf(stderr, "[kadd_sqli] ERROR: Feature extraction failed (ret=%d)\n", feat_ret);
+            return feat_ret;
         }
         convert_int_to_float_features(engine->feature_buffer, engine->float_feature_buffer, engine->feature_dim);
         int ret = kadd_model_predict(engine->ml_model, engine->float_feature_buffer, &prob);
         if (ret != 0) {
             fprintf(stderr, "[kadd_sqli] ERROR: ML prediction failed\n");
-            return KADD_SQLI_ERROR_ML;
+            return KADD_ERROR_INFERENCE_FAILED;
         }
     } else if (engine->engine_mode == KADD_ENGINE_MODE_DL) {
         /* Step 2b: Tokens -> DL inference */
@@ -345,7 +345,7 @@ int kadd_sqli_detect(kadd_sqli_engine_t *engine, const char *input, float *proba
         int ret = kadd_dl_model_predict(engine->dl_model, engine->dl_input_buffer, &prob);
         if (ret != 0) {
             fprintf(stderr, "[kadd_sqli] ERROR: DL prediction failed\n");
-            return KADD_SQLI_ERROR_DL;
+            return KADD_ERROR_INFERENCE_FAILED;
         }
     }
 
@@ -359,7 +359,7 @@ static int allocate_batch_buffers(kadd_sqli_engine_t *engine, int batch_size,
     if (!engine || !buffers) {
         fprintf(stderr, "[kadd_sqli] ERROR: Invalid parameters for allocate_batch_buffers (engine=%s, buffers=%s)\n",
                 (engine ? "valid" : "NULL"), (buffers ? "valid" : "NULL"));
-        return KADD_ERROR_INVALID_INPUT;
+        return KADD_ERROR_NULL_PTR;
     }
 
     int **dfa_outputs = (int **)calloc(batch_size, sizeof(int *));
@@ -397,7 +397,7 @@ static int process_single_batch(kadd_batch_dfa_params_t *params)
     int dfa_result = kadd_dfa_engine_tokenize_batch(params->engine->dfa_engine, &dfa_batch);
     if (dfa_result != KADD_SUCCESS) {
         fprintf(stderr, "[kadd_sqli] ERROR: Batch DFA tokenize failed (result=%d)\n", dfa_result);
-        return KADD_SQLI_ERROR_DFA;
+        return dfa_result;
     }
 
     // Feature 批量提取特征
@@ -414,7 +414,7 @@ static int process_single_batch(kadd_batch_dfa_params_t *params)
     int feat_result = kadd_seq_to_feature_batch(&feat_batch);
     if (feat_result != KADD_SUCCESS) {
         fprintf(stderr, "[kadd_sqli] ERROR: Batch feature extraction failed (result=%d)\n", feat_result);
-        return KADD_SQLI_ERROR_FEATURE;
+        return feat_result;
     }
 
     return KADD_SUCCESS;
@@ -433,7 +433,7 @@ static int process_ml_batch_and_update(kadd_batch_ml_params_t *params,
                                                 params->current_batch, batch_probs, params->current_batch);
     if (ml_result != KADD_SUCCESS) {
         fprintf(stderr, "[kadd_sqli] ERROR: Batch ML prediction failed (result=%d)\n", ml_result);
-        return KADD_SQLI_ERROR_ML;
+        return KADD_ERROR_INFERENCE_FAILED;
     }
 
     // 更新概率
@@ -451,17 +451,14 @@ static int init_batch_detect_params(int batch_size, int *out_actual_batch_size,
                                      float *probabilities, int count)
 {
     if (!out_actual_batch_size || !probabilities) {
-        fprintf(stderr, "[kadd_sqli] ERROR: Invalid batch detect params (out_batch_size=%s, probs=%s)\n",
+        fprintf(stderr, "[kadd_sqli] ERROR: NULL pointer in batch detect params (out_batch_size=%s, probs=%s)\n",
                 (out_actual_batch_size ? "valid" : "NULL"), (probabilities ? "valid" : "NULL"));
-        return KADD_ERROR_INVALID_INPUT;
+        return KADD_ERROR_NULL_PTR;
     }
 
     *out_actual_batch_size = batch_size;
-    if (*out_actual_batch_size <= 0) {
+    if (*out_actual_batch_size <= 0 || *out_actual_batch_size > KADD_ML_MAX_BATCH_SIZE) {
         *out_actual_batch_size = KADD_ML_DEFAULT_BATCH_SIZE;
-    }
-    if (*out_actual_batch_size > KADD_ML_MAX_BATCH_SIZE) {
-        *out_actual_batch_size = KADD_ML_MAX_BATCH_SIZE;
     }
 
     // 初始化所有概率为0（表示失败）
@@ -525,22 +522,23 @@ static int process_batch_loop(kadd_sqli_engine_t *engine, const char **inputs,
 int kadd_sqli_detect_batch(kadd_sqli_engine_t *engine, const char **inputs, int count,
                             float *probabilities, int batch_size)
 {
-    if (!engine || !inputs || !probabilities || count <= 0) {
-        fprintf(stderr, "[kadd_sqli] ERROR: Invalid batch parameters (engine=%s, inputs=%s, probs=%s, count=%d)\n",
-                (engine ? "valid" : "NULL"), (inputs ? "valid" : "NULL"), (probabilities ? "valid" : "NULL"), count);
-        return KADD_ERROR_INVALID_INPUT;
+    if (!engine || !inputs || !probabilities) {
+        return KADD_ERROR_NULL_PTR;
+    }
+    if (count <= 0) {
+        return KADD_ERROR_INVALID_PARAM;
     }
     if (count > KADD_ML_MAX_SAMPLE_COUNT) {
         fprintf(stderr, "[kadd_sqli] ERROR: Batch count %d exceeds limit %d\n", count, KADD_ML_MAX_SAMPLE_COUNT);
         return KADD_ERROR_INVALID_PARAM;
     }
 
-    /* DL 模式不支持批处理（ONNX 不支持 batch），逐条调用 kadd_sqli_detect */
+    /* DL 模式逐条推理，任意一条失败立即返回错误 */
     if (engine->engine_mode == KADD_ENGINE_MODE_DL) {
         for (int i = 0; i < count; i++) {
             int ret = kadd_sqli_detect(engine, inputs[i], &probabilities[i]);
             if (ret != KADD_SUCCESS) {
-                probabilities[i] = 0.0f;
+                return ret;
             }
         }
         return KADD_SUCCESS;

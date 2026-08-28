@@ -454,6 +454,32 @@ TEST(ConfigLoaderStaticTest, ReadFile_EmptyFile)
     remove(test_file);
 }
 
+// ========== read_file 超大文件测试 ==========
+
+// 覆盖 read_file 中 file_size > KADD_CONFIG_MAX_FILE_SIZE 分支
+// 使用 ftruncate 稀疏创建 10MB+1 字节文件，避免慢速写入
+TEST(ConfigLoaderTest, FileSize_ExceedsMax)
+{
+    const char *path = "/tmp/kadd_config_too_large.json";
+
+    FILE *fp = fopen(path, "wb");
+    ASSERT_NE(fp, nullptr) << "无法创建超大测试文件";
+    fflush(fp);
+    int fd = fileno(fp);
+    ASSERT_NE(fd, -1);
+
+    // 稀疏创建：只移动文件指针，不实际写入数据
+    const long long max_size = static_cast<long long>(KADD_CONFIG_MAX_FILE_SIZE);
+    ASSERT_EQ(ftruncate(fd, max_size + 1), 0) << "ftruncate 创建 10MB+1 文件失败";
+    fclose(fp);
+
+    kadd_config_t config;
+    int ret = kadd_config_load(path, &config);
+    EXPECT_EQ(ret, KADD_ERROR_CONFIG) << "超过 10MB 的文件应该返回 KADD_ERROR_CONFIG";
+
+    remove(path);
+}
+
 // ========== 错误处理测试 ==========
 
 /**
@@ -570,5 +596,49 @@ TEST(ConfigLoaderTest, EngineMode_Empty)
     EXPECT_EQ(ret, KADD_SUCCESS);
     EXPECT_EQ(config.engine_mode, KADD_ENGINE_MODE_ML) << "空字符串应该默认为ML模式";
     kadd_config_free(&config);
+    DeleteTestFile(config_path);
+}
+
+// ========== 覆盖率优化：DL 模式缺少 model_cnn 校验 ==========
+
+TEST(ConfigLoaderTest, EngineMode_DL_MissingModelCnn)
+{
+    std::string config_content = R"({
+        "transition_table": "/path/to/transition.bin",
+        "output_table": "/path/to/output.bin",
+        "eod_table": "/path/to/eod.bin",
+        "engine_mode": "dl",
+        "model_rf": "/path/to/model_rf.krf",
+        "model_rf_onnx": "/path/to/model_rf.onnx",
+        "model_cnn": "",
+        "model_cnn_onnx": ""
+    })";
+
+    std::string config_path = CreateTestConfigFile(config_content.c_str());
+    kadd_config_t config;
+    int ret = kadd_config_load(config_path.c_str(), &config);
+    EXPECT_EQ(ret, KADD_ERROR_CONFIG) << "DL 模式缺少 model_cnn 应返回 KADD_ERROR_CONFIG";
+    DeleteTestFile(config_path);
+}
+
+// ========== 覆盖率优化：ML 模式缺少 model_rf 校验 ==========
+
+TEST(ConfigLoaderTest, EngineMode_ML_MissingModelRf)
+{
+    std::string config_content = R"({
+        "transition_table": "/path/to/transition.bin",
+        "output_table": "/path/to/output.bin",
+        "eod_table": "/path/to/eod.bin",
+        "engine_mode": "ml",
+        "model_rf": "",
+        "model_rf_onnx": "",
+        "model_cnn": "/path/to/model_cnn.kcn",
+        "model_cnn_onnx": "/path/to/model_cnn.onnx"
+    })";
+
+    std::string config_path = CreateTestConfigFile(config_content.c_str());
+    kadd_config_t config;
+    int ret = kadd_config_load(config_path.c_str(), &config);
+    EXPECT_EQ(ret, KADD_ERROR_CONFIG) << "ML 模式缺少 model_rf 应返回 KADD_ERROR_CONFIG";
     DeleteTestFile(config_path);
 }

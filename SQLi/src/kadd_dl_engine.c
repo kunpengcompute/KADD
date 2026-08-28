@@ -17,8 +17,12 @@
 #endif
 #include "kadd_inference_engine.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+/* token 词汇表大小（与 kadd_cnn_engine.c 的 KADD_CNN_VOCAB_SIZE 一致） */
+#define KADD_DL_VOCAB_SIZE 29
 
 /* ========== 内部结构体 ========== */
 struct kadd_dl_model_t {
@@ -32,7 +36,7 @@ struct kadd_dl_model_t {
 
 /* ========== 公共 API ========== */
 
-int kadd_dl_model_load(kadd_dl_model_t **model_out, const char *model_path)
+int kadd_dl_model_load(kadd_dl_model_t **model_out, const char *model_path, int feature_dim)
 {
     if (!model_out || !model_path) {
         return KADD_ERROR_NULL_PTR;
@@ -49,9 +53,18 @@ int kadd_dl_model_load(kadd_dl_model_t **model_out, const char *model_path)
     {
         kadd_cnn_model_t *cnn = NULL;
         if (kadd_cnn_model_load(&cnn, model_path) == KADD_SUCCESS) {
+            int cnn_dim = kadd_cnn_model_get_feature_dim(cnn);
+            if (feature_dim != 0 && feature_dim != cnn_dim) {
+                fprintf(stderr,
+                        "[kadd_dl] ERROR: feature_dim mismatch: user=%d, model=%d\n",
+                        feature_dim, cnn_dim);
+                kadd_cnn_model_free(cnn);
+                free(h);
+                return KADD_ERROR_INVALID_PARAM;
+            }
             h->backend = 1;
             h->cnn_model = cnn;
-            h->feature_dim = 300; /* KADD_CNN_SEQUENCE_LENGTH */
+            h->feature_dim = cnn_dim;
             *model_out = h;
             return KADD_SUCCESS;
         }
@@ -64,8 +77,17 @@ int kadd_dl_model_load(kadd_dl_model_t **model_out, const char *model_path)
         free(h);
         return KADD_ERROR_MODEL_LOAD_FAILED;
     }
+    int onnx_dim = kadd_inference_engine_get_feature_dim(h->onnx_engine);
+    if (feature_dim != 0 && feature_dim != onnx_dim) {
+        fprintf(stderr,
+                "[kadd_dl] ERROR: feature_dim mismatch: user=%d, model=%d\n",
+                feature_dim, onnx_dim);
+        kadd_inference_engine_free(h->onnx_engine);
+        free(h);
+        return KADD_ERROR_INVALID_PARAM;
+    }
     h->backend = 0;
-    h->feature_dim = kadd_inference_engine_get_feature_dim(h->onnx_engine);
+    h->feature_dim = onnx_dim;
 
     *model_out = h;
     return KADD_SUCCESS;
@@ -81,6 +103,18 @@ int kadd_dl_model_predict_batch(kadd_dl_model_t *model, const float *inputs,
 {
     if (!model || !inputs || !probabilities) {
         return KADD_ERROR_NULL_PTR;
+    }
+
+    /* 统一 token 校验（与 kadd_cnn_engine 的 decode_tokens 一致）：
+     * 保证 SVE 原生后端与 ONNX 后端对非法输入的返回码一致 */
+    for (int i = 0; i < n * model->feature_dim; i++) {
+        const float value = inputs[i];
+        if (!isfinite(value) ||
+            value < 0.0F ||
+            value >= (float)KADD_DL_VOCAB_SIZE ||
+            truncf(value) != value) {
+            return KADD_ERROR_INVALID_PARAM;
+        }
     }
 
 #if KADD_HAVE_SVE

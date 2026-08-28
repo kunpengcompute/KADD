@@ -435,6 +435,11 @@ int kadd_rf_model_predict(const kadd_rf_model_t *model,
     if (!model || !features || !positive_probability) {
         return KADD_ERROR_NULL_PTR;
     }
+    for (uint32_t i = 0; i < model->feature_count; ++i) {
+        if (!isfinite(features[i])) {
+            return KADD_ERROR_INVALID_PARAM;
+        }
+    }
     double sum = 0.0;
     for (uint32_t tree = 0; tree < model->tree_count; ++tree) {
         sum += predict_tree(model, model->tree_offsets[tree], features);
@@ -474,6 +479,12 @@ static void predict_batch_scalar(const kadd_rf_model_t *model,
  * so the returned float is identical to scalar inference.
  *
  * This hot path performs no heap allocation and no input type conversion.
+ *
+ * NOTE: Unlike kadd_cnn_engine which uses fixed-width SVE assumptions
+ * (and thus requires runtime_sve_width_is_compatible()), this RF SVE
+ * implementation is fully width-adaptive via svcntw()/svcntd() and works
+ * correctly on any SVE vector length.  No compile-time bit-width check
+ * is needed.
  */
 static void predict_batch_sve_chunk(const kadd_rf_model_t *model,
                                     const float *features,
@@ -595,12 +606,11 @@ int kadd_rf_model_predict_batch(const kadd_rf_model_t *model,
         return KADD_ERROR_NULL_PTR;
     }
     if (sample_count <= 0 ||
-        sample_count > KADD_RF_MAX_SAMPLE_COUNT ||
-        batch_size <= 0) {
+        sample_count > KADD_RF_MAX_SAMPLE_COUNT ) {
         return KADD_ERROR_INVALID_PARAM;
     }
     int effective_batch = batch_size;
-    if (effective_batch > KADD_RF_MAX_BATCH_SIZE) {
+    if (effective_batch <= 0 || effective_batch > KADD_RF_MAX_BATCH_SIZE) {
         effective_batch = KADD_RF_DEFAULT_BATCH_SIZE;
     }
 
@@ -644,7 +654,7 @@ void kadd_rf_model_free(kadd_rf_model_t *model)
 int kadd_rf_model_get_feature_dim(const kadd_rf_model_t *model)
 {
     if (!model) {
-        return -1;
+        return KADD_ERROR_NULL_PTR;
     }
     return (int)model->feature_count;
 }

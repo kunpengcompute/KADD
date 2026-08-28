@@ -188,13 +188,13 @@ TEST_F(InferenceEngineTest, InvalidBatchSize)
     std::vector<float> features(10 * feature_dim_rf, 0.0f);
     std::vector<float> probs(10, 0.0f);
 
-    // 负批次大小 — 应与 RF native 后端行为一致，返回 INVALID_PARAM
+    // 负批次大小 — 应回退到默认值，返回成功
     ret = kadd_inference_predict_batch(engine_rf, features.data(), 10, probs.data(), -1);
-    EXPECT_EQ(ret, KADD_ERROR_INVALID_PARAM);
+    EXPECT_EQ(ret, KADD_SUCCESS);
 
-    // 零批次大小 — 应与 RF native 后端行为一致，返回 INVALID_PARAM
+    // 零批次大小 — 应回退到默认值，返回成功
     ret = kadd_inference_predict_batch(engine_rf, features.data(), 10, probs.data(), 0);
-    EXPECT_EQ(ret, KADD_ERROR_INVALID_PARAM);
+    EXPECT_EQ(ret, KADD_SUCCESS);
 }
 
 // ========== 6. 一致性测试 ==========
@@ -939,6 +939,80 @@ TEST(InferenceEngineStaticTest, DetectIoNames_CnnModel)
     EXPECT_NE(engine->output_name, nullptr);
 
     kadd_inference_engine_free(engine);
+}
+
+// ========== 17. 覆盖率优化：非有限特征值与路径加载测试 ==========
+
+TEST_F(InferenceEngineTest, PredictWithNaNFeature)
+{
+    int ret = kadd_inference_engine_load(&engine_rf, "config.json", KADD_INFERENCE_TYPE_RF);
+    ASSERT_EQ(ret, KADD_SUCCESS) << "RF 模型加载失败";
+
+    feature_dim_rf = kadd_inference_engine_get_feature_dim(engine_rf);
+    std::vector<float> features(feature_dim_rf, 0.5f);
+    features[0] = NAN;
+
+    float prob = 0.0f;
+    ret = kadd_inference_predict(engine_rf, features.data(), &prob);
+    EXPECT_EQ(ret, KADD_ERROR_INVALID_PARAM) << "NaN 特征应该返回 INVALID_PARAM";
+}
+
+TEST_F(InferenceEngineTest, PredictWithInfFeature)
+{
+    int ret = kadd_inference_engine_load(&engine_rf, "config.json", KADD_INFERENCE_TYPE_RF);
+    ASSERT_EQ(ret, KADD_SUCCESS) << "RF 模型加载失败";
+
+    feature_dim_rf = kadd_inference_engine_get_feature_dim(engine_rf);
+    std::vector<float> features(feature_dim_rf, 0.5f);
+    features[0] = INFINITY;
+
+    float prob = 0.0f;
+    ret = kadd_inference_predict(engine_rf, features.data(), &prob);
+    EXPECT_EQ(ret, KADD_ERROR_INVALID_PARAM) << "Inf 特征应该返回 INVALID_PARAM";
+}
+
+TEST_F(InferenceEngineTest, PredictBatchWithNaNFeature)
+{
+    int ret = kadd_inference_engine_load(&engine_rf, "config.json", KADD_INFERENCE_TYPE_RF);
+    ASSERT_EQ(ret, KADD_SUCCESS) << "RF 模型加载失败";
+
+    feature_dim_rf = kadd_inference_engine_get_feature_dim(engine_rf);
+    const int n = 2;
+    std::vector<float> features(n * feature_dim_rf, 0.5f);
+    features[0] = NAN;
+    std::vector<float> probs(n, 0.0f);
+
+    ret = kadd_inference_predict_batch(engine_rf, features.data(), n, probs.data(), 1);
+    EXPECT_EQ(ret, KADD_ERROR_INVALID_PARAM) << "批量推理含 NaN 特征应该返回 INVALID_PARAM";
+}
+
+TEST_F(InferenceEngineTest, LoadFromPath_InvalidModel)
+{
+    kadd_inference_engine_t *engine = nullptr;
+    int ret = kadd_inference_engine_load_from_path(&engine, "/nonexistent_model_xyz.onnx");
+
+    EXPECT_NE(ret, KADD_SUCCESS);
+    EXPECT_EQ(engine, nullptr);
+}
+
+TEST_F(InferenceEngineTest, LoadFromPath_GarbageFile)
+{
+    // 写一个包含垃圾数据的 .onnx 文件，覆盖 create_ort_session 的
+    // CreateSession 失败路径 → check_ort_status 错误路径
+    const char *garbage_path = "/tmp/garbage_model_xyz.onnx";
+    FILE *fp = fopen(garbage_path, "wb");
+    ASSERT_NE(fp, nullptr);
+    const char garbage[] = "THIS_IS_NOT_A_VALID_ONNX_MODEL_FILE_GARBAGE_DATA_12345";
+    fwrite(garbage, 1, sizeof(garbage), fp);
+    fclose(fp);
+
+    kadd_inference_engine_t *engine = nullptr;
+    int ret = kadd_inference_engine_load_from_path(&engine, garbage_path);
+
+    EXPECT_NE(ret, KADD_SUCCESS) << "垃圾文件加载应失败";
+    EXPECT_EQ(engine, nullptr);
+
+    remove(garbage_path);
 }
 
 // ========== 主函数 ==========

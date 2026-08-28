@@ -37,6 +37,8 @@ int kadd_cnn_model_predict_batch(const kadd_cnn_model_t *model,
                                  float *positive_probabilities,
                                  int batch_size);
 
+int kadd_cnn_model_get_feature_dim(const kadd_cnn_model_t *model);
+
 void kadd_cnn_model_free(kadd_cnn_model_t *model);
 
 #ifdef __cplusplus
