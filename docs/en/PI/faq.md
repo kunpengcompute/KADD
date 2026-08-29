@@ -8,7 +8,7 @@ This document describes the frequently asked questions (FAQs) and solutions rela
 
 ### Q1: What Should I Do If a Dynamic Link Library Is Missing?
 
-**Question**: On Kunpeng 920, after deployment, opening a new terminal and manually activating the virtual environment results in missing dynamic link library errors when running the program.
+**Question**: On Kunpeng 920 processor, after deployment, opening a new terminal and manually activating the virtual environment results in missing dynamic link library errors when running the program.
 
 **Solution**:
 
@@ -69,8 +69,8 @@ Different Kunpeng chip models require different Python versions:
 
 | Kunpeng Chip Model | Required Python Version |
 | ------------------ | ----------------------- |
-| Kunpeng 920        | 3.9                     |
-| Kunpeng 920B       | 3.9                     |
+| Kunpeng 920 processor       | 3.9                     |
+| Kunpeng 920B processor      | 3.9                     |
 | Kunpeng 950        | 3.10                    |
 
 Use the `-p` parameter to specify the correct Python version:

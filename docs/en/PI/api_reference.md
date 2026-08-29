@@ -2,7 +2,7 @@
 
 ## Overview
 
-The KADD PI (jailbreak text detection) engine provides the following Python API interfaces:
+The KADD PI (Prompt Injection, jailbreak text detection) engine provides the following Python API interfaces:
 
 | Interface | Function |
 |-----------|----------|
@@ -12,9 +12,9 @@ The KADD PI (jailbreak text detection) engine provides the following Python API 
 
 ### Processing Flow
 
-```bash
-Input text → Black/White List Filter → Regex Rule Filter → Model Classifier Filter → Output result
-```
+
+Input text, first Black/White List Filter, then Regex Rule Filter, next Model Classifier Filter, finally Output result
+
 
 ### Constants
 
@@ -147,11 +147,9 @@ kp_detector_update_blackwhitelist(
   * List length exceeds 500
   * Individual item length exceeds 8500 characters
 
-**Precautions**
+**Limits**
 
 * Each list (blacklist/whitelist) supports up to 500 entries.
-* When the limit is reached, new entries are skipped with a warning log.
-* The black/white list uses MinHash LSH approximate matching with a similarity threshold of 0.8.
 
 **Example**
 
@@ -208,7 +206,6 @@ except KpDetectionException as e:
 
 ---
 
-## ⚠️ Important Notes
 
 **For details about configuration and source code, see the following files**
 

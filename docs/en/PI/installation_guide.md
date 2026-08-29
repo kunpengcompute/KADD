@@ -8,8 +8,8 @@ KADD is a security detection toolset. All features can be built using the `build
 
 | Feature | Description | Status |
 |---------|-------------|--------|
-| SQLi | SQL injection detection | ✅ Implemented |
-| PI | Jailbreak text detection | ✅ Implemented |
+| SQLi | SQL injection detection |  Implemented |
+| PI | Jailbreak text detection |  Implemented |
 
 ## Environment Requirements
 
@@ -21,9 +21,9 @@ The processor is a new Kunpeng 920 processor model, and the OS is openEuler 24.0
 
 | Kunpeng Chip Model | Python Version | ONNX Runtime |
 | ----------------- | --------------- | ------------- |
-| Kunpeng 920       | 3.9             | onnxruntime_acl-1.19.2 |
-| Kunpeng 920B      | 3.9             | onnxruntime_acl-1.19.2 |
-| Kunpeng 950       | 3.10            | onnxruntime-1.22.2 |
+| Kunpeng 920 processor      | 3.9             | onnxruntime_acl-1.19.2 |
+| Kunpeng 920B processor     | 3.9             | onnxruntime_acl-1.19.2 |
+| Kunpeng 950 processor      | 3.10            | onnxruntime-1.22.2 |
 | Other             | No restriction  | onnxruntime==1.19.2 |
 
 ### Software Dependencies
@@ -44,9 +44,9 @@ The processor is a new Kunpeng 920 processor model, and the OS is openEuler 24.0
 
 ## Deployment
 
-### 🚀 One-Click Deployment (Recommended)
+###  One-Click Deployment (Recommended)
 
-PI supports one-click environment deployment. Run the deployment script on the target machine:
+PI supports one-click environment deployment. Run the deployment script (in the repo) on the target machine(PI/depoly/deploy.sh):
 
 ```bash
 cd /opt/KADD/PI
@@ -61,35 +61,20 @@ The deployment script automatically completes the following:
 5. Configures the acceleration library dynamic link path
 6. Runs functional tests to verify the deployment
 
-After deployment, you can run `python test_kp_detect.py` to test single text detection.
+After deployment("Deployment Complete" on terminal), you can run `python test_kp_detect.py` to test single text detection.
 
 ### Deployment Options
+| instruction | explanation |
+|------|------|
+| source ./deploy/deploy.sh -h | View help |
+| source ./deploy/deploy.sh -p /opt/python3.9/bin/python3.9| Specify Python executable path or command |
+| source ./deploy/deploy.sh -e /opt/python_venv|Specify an existing virtual environment path|
+| source ./deploy/deploy.sh -d /data/envs| Specify the virtual environment creation directory |
+| source ./deploy/deploy.sh --recreate-ven|If the target virtual environment already exists, delete and recreate it|
+| source ./deploy/deploy.sh --pip-index-url https://pypi.tuna.tsinghua.edu.cn/simple|Specify pip index URL (default: Aliyun)|
+| source ./deploy/deploy.sh --proxy http://127.0.0.1:7890| Set a unified proxy for downloading dependencies|
+| source ./deploy/deploy.sh -s|Skip functional test after deployment |
 
-```bash
-# View help
-source ./deploy/deploy.sh -h
-
-# Specify Python executable path or command
-source ./deploy/deploy.sh -p /opt/python3.9/bin/python3.9
-
-# Specify an existing virtual environment path
-source ./deploy/deploy.sh -e /opt/python_venv
-
-# Specify the virtual environment creation directory
-source ./deploy/deploy.sh -d /data/envs
-
-# If the target virtual environment already exists, delete and recreate it
-source ./deploy/deploy.sh --recreate-venv
-
-# Specify pip index URL (default: Aliyun)
-source ./deploy/deploy.sh --pip-index-url https://pypi.tuna.tsinghua.edu.cn/simple
-
-# Set a unified proxy for downloading dependencies
-source ./deploy/deploy.sh --proxy http://127.0.0.1:7890
-
-# Skip functional test after deployment
-source ./deploy/deploy.sh -s
-```
 
 ### Deployment Options Reference
 
@@ -108,7 +93,7 @@ source ./deploy/deploy.sh -s
 
 ---
 
-## Performance Optimization
+## Performance Optimization Command
 
 After deployment, use the following command to run scripts for maximum performance:
 

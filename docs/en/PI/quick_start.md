@@ -1,6 +1,6 @@
 # Quick Start
 
-This document provides a quick start guide for KADD PI (jailbreak text detection). By running the test scripts, you can quickly experience the jailbreak text detection function. By using the API, you can integrate it into existing systems. For details, see [User Guide](user_guide.md).
+This document provides a quick start guide for KADD PI (Prompt Injection, jailbreak text detection). By running the test scripts, you can quickly experience the jailbreak text detection function. By using the API, you can integrate it into existing systems. For details, see [User Guide](user_guide.md).
 
 ## Prerequisites
 
