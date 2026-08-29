@@ -4,15 +4,15 @@
 
 ## 最新消息
 
+- [2026-09-30] : 发布KADD PI特性 1.0.0版本。基于规则和深度学习（LERT模型）相结合的混合检测方案，支持黑白名单过滤、正则规则匹配和ONNX模型推理三级检测，提供高性能越狱文本检测能力，提供Python语言的API接口。
 - [2026-06-30] : 发布KADD SQL注入检测库 1.0.0版本。基于DFA状态机+机器学习的混合检测方案，提供高性能SQL注入攻击检测能力，支持文本特征提取和批量推理优化。
-- [2026-09-30] : 新增PI特性
 
 ## 项目介绍
 
 KADD是鲲鹏智能数据分析套件，提供多种安全检测能力。当前支持以下特性：
 
-- **SQL注入检测**：采用DFA状态机与机器学习相结合的混合检测架构，通过DFA引擎进行精确的SQL语句分词，结合ML引擎进行智能特征推理，实现对SQL注入攻击的高精度、低延迟检测
 - **PI特性**：采用规则和深度学习相结合的混合检测架构，实现对越狱文本的高精度、低延迟检测，提供python语言的API接口
+- **SQL注入检测**：采用DFA状态机与机器学习相结合的混合检测架构，通过DFA引擎进行精确的SQL语句分词，结合ML引擎进行智能特征推理，实现对SQL注入攻击的高精度、低延迟检测
 
 方案针对鲲鹏处理器特性进行优化，在保证检测准确率的同时，提供简洁的C语言API接口，易于集成到现有安全防护系统中。
 
@@ -20,41 +20,84 @@ KADD是鲲鹏智能数据分析套件，提供多种安全检测能力。当前�
 
 | 特性名称 | 特性介绍 |
 |----------|----------|
+| [PI特性](#pi特性) | 采用规则与深度学习（LERT模型）相结合的混合检测架构，通过黑白名单、正则规则和ONNX模型推理三级过滤，实现高性能越狱文本检测能力，提供Python语言API接口。 |
 | [SQL注入检测](#sql注入检测特性) | 提供基于DFA状态机的SQL语句精确分词、28维特征向量提取、基于ONNX的机器学习推理，实现高性能SQL注入攻击检测能力。 |
-| [PI特性](#pi特性) | 提供基于BERT模型的模型推理，实现高性能越狱文本检测能力。 |
 
 ## 目录结构
 
 项目目录结构如下：
 
 ```text
-|—— assets/                  # 资产文件目录
-│   ├── data/                # DFA表文件
-│   └── model/               # ML模型文件
-|—— config.json              # 项目配置文件
-|—— demo/                    # 示例程序
-|—— docs/                    # 文档资料目录
-│   └── zh/                  # 中文文档目录
-│       ├── SQLi/            # SQL注入检测特性文档
+|—— build.sh                  # 项目构建脚本
+|—— config.json               # 项目配置文件
+|—— LICENSE                   # 项目主许可证
+|—— README.md                 # 说明文档
+|—— docs/                     # 文档资料目录
+│   ├── LICENSE               # 文档许可证
+│   ├── en/                   # 英文文档目录
+│   │   ├── PI/               # PI特性文档
+│   │   │   ├── api_reference.md
+│   │   │   ├── faq.md
+│   │   │   ├── installation_guide.md
+│   │   │   ├── quick_start.md
+│   │   │   ├── release_notes.md
+│   │   │   └── user_guide.md
+│   │   └── SQLi/             # SQL注入检测特性文档
+│   │       ├── api_reference.md
+│   │       ├── faq.md
+│   │       ├── installation_guide.md
+│   │       ├── quick_start.md
+│   │       ├── release_notes.md
+│   │       └── user_guide.md
+│   ├── figures/              # 图片资源
+│   │   └── SQLi/
+│   └── zh/                   # 中文文档目录
+│       ├── PI/               # PI特性文档
 │       │   ├── api_reference.md
 │       │   ├── faq.md
 │       │   ├── installation_guide.md
 │       │   ├── quick_start.md
 │       │   ├── release_notes.md
 │       │   └── user_guide.md
-│       └── PI/              # PI特性文档（待补充）
-|—— include/                 # 头文件目录（开源）
-|—— lib/                     # 预编译库（闭源）
-|—— tools/                   # 训练工具
-│   ├── dfa_compile/         # DFA编译器
-│   └── model_train/         # 模型训练工具
-|—— SQLi/                    # SQL注入检测特性代码
-│   └── THIRD_PARTY_LICENSES # SQL注入检测特性三方许可证
-|—— PI/                      # PI特性代码
-│   └── THIRD_PARTY_LICENSES # PI特性三方许可证（待补充）
-|—— README.md                # 说明文档
-└—— LICENSE                  # 项目主许可证
+│       └── SQLi/             # SQL注入检测特性文档
+│           ├── api_reference.md
+│           ├── faq.md
+│           ├── installation_guide.md
+│           ├── quick_start.md
+│           ├── release_notes.md
+│           └── user_guide.md
+|—— PI/                       # PI特性代码
+│   └── THIRD_PARTY_LICENSES  # PI特性三方许可证
+|—— SQLi/                     # SQL注入检测特性代码
+│   └── THIRD_PARTY_LICENSES  # SQL注入检测特性三方许可证
 ```
+
+## PI特性
+
+### 特性简介
+
+KADD PI（Prompt Injection，越狱文本检测）采用规则和深度学习相结合的混合检测架构。检测流程为三级过滤：黑白名单过滤（基于MinHash LSH近似匹配）、正则规则过滤（匹配常见越狱模式）、模型分类过滤（基于LERT模型的ONNX推理），实现对越狱文本的高精度、低延迟检测。方案针对鲲鹏处理器特性进行优化，在保证检测准确率的同时，提供简洁的Python语言API接口，易于集成到现有安全防护系统中。
+
+### 版本说明
+
+PI特性的版本说明包含软件版本配套关系和软件包下载以及每个版本的特性变更说明，具体请参见[版本说明](docs/zh/PI/release_notes.md)。
+
+### 快速入门
+
+PI特性的快速入门，包括快速安装、数据准备和工具使用等，具体请参见[快速入门](docs/zh/PI/quick_start.md)。
+
+### 学习文档
+
+本特性提供以下学习文档可供参考。
+
+| 文档 | 介绍|
+| -- | -- |
+| [版本说明书](docs/zh/PI/release_notes.md) | 提供KADD PI特性的版本更新说明。 |
+| [安装指南](docs/zh/PI/installation_guide.md) | 提供KADD PI特性的环境部署、依赖包安装及编译方法。 |
+| [快速入门](docs/zh/PI/quick_start.md) | 提供KADD PI特性的demo示例快速使用方法。 |
+| [API参考](docs/zh/PI/api_reference.md) | 提供KADD PI特性的初始化、检测和黑白名单更新接口的完整API说明。 |
+| [用户指南](docs/zh/PI/user_guide.md) | 提供KADD PI特性的配置说明、检测原理和代码示例。 |
+| [FAQ](docs/zh/PI/faq.md) | 列举KADD PI特性的一些常见问题。 |
 
 ## SQL注入检测特性
 
@@ -83,24 +126,6 @@ SQL注入检测特性的快速入门，包括快速安装、数据准备和工�
 | [用户指南](docs/zh/SQLi/user_guide.md) | 提供KADD SQL注入检测特性的用法和实践。 |
 | [FAQ](docs/zh/SQLi/faq.md) | 列举KADD SQL注入检测特性的一些常见问题。 |
 
-## PI特性
-
-### 特性简介
-
-具体请参见[PI说明](PI/README.md)。
-
-### 版本说明
-
-具体请参见[PI说明](PI/README.md)。
-
-### 快速入门
-
-具体请参见[PI说明](PI/README.md)。
-
-### 学习文档
-
-具体请参见[PI说明](PI/README.md)。
-
 ## 贡献声明
 
 如果使用过程中有任何问题，或者需要反馈特性需求和bug报告，可以提交issues联系我们，具体贡献方法可参考[这里](https://gitcode.com/boostkit/community/blob/master/docs/contributor/contributing.md)。
@@ -128,5 +153,5 @@ SQL注入检测特性的快速入门，包括快速安装、数据准备和工�
 
 各特性模块使用的第三方库及其许可证详见对应模块目录下的 `THIRD_PARTY_LICENSES` 文件：
 
-- **SQL注入检测特性**：详见 [SQLi/THIRD_PARTY_LICENSES](SQLi/THIRD_PARTY_LICENSES)
 - **PI特性**：详见 [PI/THIRD_PARTY_LICENSES](PI/THIRD_PARTY_LICENSES)
+- **SQL注入检测特性**：详见 [SQLi/THIRD_PARTY_LICENSES](SQLi/THIRD_PARTY_LICENSES)
