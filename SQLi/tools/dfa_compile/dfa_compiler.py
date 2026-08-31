@@ -1557,10 +1557,9 @@ def _resolve_kadd_paths():
     config_file = project_root / "config.json"
 
     with open(config_file, 'r', encoding='utf-8') as f:
-        config = json.load(f)
+        dfa_config = json.load(f)
 
-    dfa_config = config.get('kadd_dfa_engine', {})
-    required_keys = ('transition_table_path', 'output_table_path', 'eod_table_path')
+    required_keys = ('transition_table', 'output_table', 'eod_table')
     missing = [key for key in required_keys if not dfa_config.get(key)]
     if missing:
         raise ValueError(f"{config_file} 缺少 kadd_dfa_engine 配置项: {', '.join(missing)}")
