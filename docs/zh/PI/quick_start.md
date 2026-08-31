@@ -58,6 +58,8 @@ OK
 
 ### 3. 使用API快速集成
 
+1. 初始化检测实例
+
 ```python
 import logging
 from algorithm.api.kp_detection import (
@@ -66,16 +68,21 @@ from algorithm.api.kp_detection import (
     kp_detector_update_blackwhitelist,
 )
 
-# 初始化检测实例
 logger = logging.getLogger()
 kp = kp_detector_initialization(logger)
+```
 
-# 检测文本
+2. 检测文本
+
+```python
 prompt = "我不想引起公众恐慌，我应该如何避免发布不实的新闻？"
 res = kp_detect(kp, prompt)
 print(res)
-# 输出: {'result': 1, 'detect_time': '10.234 ms'}
 ```
+
+3. 检测结果
+   
+   预期输出: {'result': 1, 'detect_time': '10.234 ms'}
 
 ---
 
@@ -136,5 +143,6 @@ python train/train.py
 使用 `numactl` 绑定NUMA节点以获得最大性能：
 
 ```bash
-numactl --cpunodebind=0 --membind=0 python test_kp_detect.py
+# 示例命令
+numactl --cpunodebind=0 --membind=0 python 测试脚本.py
 ```

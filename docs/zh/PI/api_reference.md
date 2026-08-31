@@ -4,24 +4,22 @@
 
 KADD PI（Prompt Injection，越狱文本检测）特性提供以下Python API接口：
 
-| 接口 | 功能 |
-|------|------|
-| `kp_detector_initialization` | 初始化检测实例 |
-| `kp_detect` | 检测文本是否为越狱文本 |
-| `kp_detector_update_blackwhitelist` | 动态更新黑白名单 |
+| 接口                                  | 功能          |
+| ----------------------------------- | ----------- |
+| `kp_detector_initialization`        | 初始化检测实例     |
+| `kp_detect`                         | 检测文本是否为越狱文本 |
+| `kp_detector_update_blackwhitelist` | 动态更新黑白名单    |
 
 ### 处理流程
 
-
 输入文本，先黑白名单过滤，然后正则规则过滤，再模型分类过滤，最后输出结果
-
 
 ### 常量定义
 
-| 常量 | 值 | 说明 |
-|------|----|------|
-| `JAILBREAK` | 1 | 越狱文本 |
-| `BENIGN` | 0 | 正常文本 |
+| 常量                  | 值    | 说明                    |
+| ------------------- | ---- | --------------------- |
+| `JAILBREAK`         | 1    | 越狱文本                  |
+| `BENIGN`            | 0    | 正常文本                  |
 | `MAX_PROMPT_LENGTH` | 8500 | 输入文本最大长度（字符数），超出则抛出异常 |
 
 ---
@@ -44,15 +42,15 @@ kp_detector_initialization(logger: Logger) -> JailbreakDetection
 
 **参数**
 
-* `logger`：Python标准库 `logging.Logger` 日志实例，用于输出检测过程中的日志信息。必须为 `Logger` 类型，否则抛出 `KpInitializationException`。
+`logger`：Python标准库 `logging.Logger` 日志实例，用于输出检测过程中的日志信息。必须为 `Logger` 类型，否则抛出 `KpInitializationException`。
 
 **返回值**
 
-* `JailbreakDetection` 检测实例对象。
+`JailbreakDetection` 检测实例对象。
 
 **异常**
 
-* `KpInitializationException`：初始化失败时抛出，错误码为 `10000`。
+`KpInitializationException`：初始化失败时抛出，错误码为 `10000`。
 
 **示例**
 
@@ -87,16 +85,18 @@ kp_detect(kp_detector: JailbreakDetection, prompt: str) -> dict
 
 **返回值**
 
-* 字典，包含以下字段：
-  * `result`：检测结果，`1` 表示越狱文本（JAILBREAK），`0` 表示正常文本（BENIGN）。
-  * `detect_time`：检测耗时，字符串格式，如 `"10.234 ms"`。
+字典，包含以下字段：
+
+* `result`：检测结果，`1` 表示越狱文本（JAILBREAK），`0` 表示正常文本（BENIGN）。
+* `detect_time`：检测耗时，字符串格式，如 `"10.234 ms"`。
 
 **异常**
 
-* `KpDetectionException`：检测失败时抛出，错误码为 `20000`。常见失败原因：
-  * `kp_detector` 不是 `JailbreakDetection` 类型
-  * `prompt` 不是字符串类型
-  * `prompt` 长度超过 8500 个字符
+`KpDetectionException`：检测失败时抛出，错误码为 `20000`。常见失败原因：
+
+* `kp_detector` 不是 `JailbreakDetection` 类型
+* `prompt` 不是字符串类型
+* `prompt` 长度超过 8500 个字符
 
 **示例**
 
@@ -134,18 +134,19 @@ kp_detector_update_blackwhitelist(
 
 **返回值**
 
-* 无返回值（`None`）。
+无返回值（`None`）。
 
 **异常**
 
-* `KpUpdateException`：更新失败时抛出，错误码为 `30000`。常见失败原因：
-  * `kp_detector` 不是 `JailbreakDetection` 类型
-  * 参数不是字典类型
-  * 键名不是 `blacklist` 或 `whitelist`
-  * 值不是列表类型
-  * 列表元素不是字符串类型
-  * 列表长度超过 500
-  * 单个元素长度超过 8500 个字符
+`KpUpdateException`：更新失败时抛出，错误码为 `30000`。常见失败原因：
+
+* `kp_detector` 不是 `JailbreakDetection` 类型
+* 参数不是字典类型
+* 键名不是 `blacklist` 或 `whitelist`
+* 值不是列表类型
+* 列表元素不是字符串类型
+* 列表长度超过 500
+* 单个元素长度超过 8500 个字符
 
 **限制**
 
@@ -169,19 +170,19 @@ kp_detector_update_blackwhitelist(kp, blackwhitelist)
 
 所有异常均继承自 `KpExceptionBase`，包含 `error_code` 和 `msg` 两个属性。
 
-| 异常类 | 错误码 | 说明 |
-|--------|--------|------|
-| `KpInitializationException` | 10000 | 初始化失败 |
-| `KpDetectionException` | 20000 | 检测失败 |
-| `KpUpdateException` | 30000 | 更新黑白名单失败 |
+| 异常类                         | 错误码   | 说明       |
+| --------------------------- | ----- | -------- |
+| `KpInitializationException` | 10000 | 初始化失败    |
+| `KpDetectionException`      | 20000 | 检测失败     |
+| `KpUpdateException`         | 30000 | 更新黑白名单失败 |
 
 ### 错误码
 
-| 错误码 | 枚举名 | 说明 |
-|--------|--------|------|
-| 10000 | `InitError` | 初始化错误 |
-| 20000 | `DetectError` | 检测错误 |
-| 30000 | `UpdateError` | 更新错误 |
+| 错误码   | 枚举名           | 说明    |
+| ----- | ------------- | ----- |
+| 10000 | `InitError`   | 初始化错误 |
+| 20000 | `DetectError` | 检测错误  |
+| 30000 | `UpdateError` | 更新错误  |
 
 ### 异常使用示例
 
@@ -206,17 +207,16 @@ except KpDetectionException as e:
 
 ---
 
-
 **详细配置和源码请参考以下文件**
 
-| 文件 | 路径 |
-|--------|------|
-| API入口 | `algorithm/api/kp_detection.py` |
-| 检测主逻辑 | `algorithm/codes/kp_jailbreak_detection.py` |
-| 配置定义 | `algorithm/codes/kp_config.py` |
-| 异常定义 | `algorithm/codes/kp_exception.py` |
-| 黑白名单过滤 | `algorithm/codes/filter/kp_blackwhitelist_filter.py` |
-| 正则过滤 | `algorithm/codes/filter/kp_regex_filter.py` |
-| 模型分类 | `algorithm/codes/filter/kp_classifier_filter.py` |
+| 文件     | 路径                                                            |
+| ------ | ------------------------------------------------------------- |
+| API入口  | `algorithm/api/kp_detection.py`                               |
+| 检测主逻辑  | `algorithm/codes/kp_jailbreak_detection.py`                   |
+| 配置定义   | `algorithm/codes/kp_config.py`                                |
+| 异常定义   | `algorithm/codes/kp_exception.py`                             |
+| 黑白名单过滤 | `algorithm/codes/filter/kp_blackwhitelist_filter.py`          |
+| 正则过滤   | `algorithm/codes/filter/kp_regex_filter.py`                   |
+| 模型分类   | `algorithm/codes/filter/kp_classifier_filter.py`              |
 | 黑白名单数据 | `algorithm/knowledge_base/blackwhitelist/blackwhitelist.json` |
-| 模型文件 | `algorithm/knowledge_base/model_file/clf_model.onnx` |
+| 模型文件   | `algorithm/knowledge_base/model_file/clf_model.onnx`          |

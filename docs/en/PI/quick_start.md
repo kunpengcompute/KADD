@@ -58,6 +58,8 @@ OK
 
 ### 3. Quick API Integration
 
+1. Initialize detector instance
+
 ```python
 import logging
 from algorithm.api.kp_detection import (
@@ -66,16 +68,21 @@ from algorithm.api.kp_detection import (
     kp_detector_update_blackwhitelist,
 )
 
-# Initialize detector instance
 logger = logging.getLogger()
 kp = kp_detector_initialization(logger)
+```
 
-# Detect text
+2. Detect text
+
+```python
 prompt = "I don't want to cause public panic. How should I avoid publishing false news?"
 res = kp_detect(kp, prompt)
 print(res)
-# Output: {'result': 1, 'detect_time': '10.234 ms'}
 ```
+
+3. Output
+   
+   Output: {'result': 1, 'detect_time': '10.234 ms'}
 
 ---
 
@@ -136,5 +143,6 @@ Copy the quantized ONNX model to `algorithm/knowledge_base/model_file/` to repla
 Use `numactl` to bind the NUMA node for maximum performance:
 
 ```bash
-numactl --cpunodebind=0 --membind=0 python test_kp_detect.py
+# example command
+numactl --cpunodebind=0 --membind=0 python example.py
 ```
