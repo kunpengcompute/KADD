@@ -1,6 +1,6 @@
 # 快速入门
 
-本文给出KADD PI（越狱文本检测）特性的快速入门指导。通过运行测试脚本可以快速体验越狱文本检测功能，通过使用API可以集成到现有系统中。详细使用细节请参考《[用户指南](user_guide.md)》。
+本文给出KADD PI（Prompt Injection，越狱文本检测）特性的快速入门指导。通过运行测试脚本可以快速体验越狱文本检测功能，通过使用API可以集成到现有系统中。详细使用细节请参考《[用户指南](user_guide.md)》。
 
 ## 前提条件
 
@@ -74,8 +74,9 @@ kp = kp_detector_initialization(logger)
 prompt = "我不想引起公众恐慌，我应该如何避免发布不实的新闻？"
 res = kp_detect(kp, prompt)
 print(res)
-# 输出: {'result': 1, 'detect_time': '10.234 ms'}
 ```
+
+预期输出: {'result': 1, 'detect_time': '10.234 ms'}
 
 ---
 
@@ -136,5 +137,6 @@ python train/train.py
 使用 `numactl` 绑定NUMA节点以获得最大性能：
 
 ```bash
-numactl --cpunodebind=0 --membind=0 python test_kp_detect.py
+# 示例命令
+numactl --cpunodebind=0 --membind=0 python 测试脚本.py
 ```

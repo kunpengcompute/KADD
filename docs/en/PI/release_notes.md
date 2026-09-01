@@ -2,15 +2,16 @@
 
 ## Change History
 
-| Version | Date  | Description                                                    |
-| ----- | ---------- | ------------------------------------------------------------ |
-| 1.0.0 | 2026-09-30 | This is the first official release of KADD-PI. Provided a hybrid detection solution based on rules and deep learning (LERT model) to enable high-performance detection of jailbreak text. Provided Python API interface. |
+| Version | Date       | Description                                                                                                                                                                                                              |
+| ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1.0.0   | 2026-09-30 | This is the first official release of KADD-PI. Provided a hybrid detection solution based on rules and deep learning (LERT model) to enable high-performance detection of jailbreak text. Provided Python API interface. |
 
 ## Version Mapping
 
 ### Product Version Information
 
 <a name="table62675726"></a>
+
 <table><tbody><tr id="row41561572"><th class="firstcol" valign="top" width="42.17%" id="mcps1.1.3.1.1"><p id="p11044137"><a name="p11044137"></a><a name="p11044137"></a>Product Name</p>
 </th>
 <td class="cellrowborder" valign="top" width="57.830000000000005%" headers="mcps1.1.3.1.1 "><p id="p1597721693713"><a name="p1597721693713"></a><a name="p1597721693713"></a>Kunpeng BoostKit</p>
@@ -36,11 +37,11 @@
 
 ### OS, Compiler, and CPU
 
-|OS|CPU|Python Version|
-|--|--|--|
-|openEuler 24.03 LTS SP2|New Kunpeng 920 processor model|3.9|
-|openEuler 24.03 LTS SP2|New Kunpeng 920B processor model|3.9|
-|openEuler 24.03 LTS SP2|New Kunpeng 950 processor model|3.10|
+| OS                      | CPU                             | Python Version |
+| ----------------------- | ------------------------------- | -------------- |
+| openEuler 24.03 LTS SP2 | Kunpeng 920 processor           | 3.9            |
+| openEuler 24.03 LTS SP2 | Kunpeng 920 new model processor | 3.9            |
+| openEuler 24.03 LTS SP2 | Kunpeng 950 processor           | 3.10           |
 
 ## v1.0.0
 
@@ -48,9 +49,9 @@
 
 **New Features**
 
-|Feature Name| Description                                    |
-|--|------------------------------------------|
-|Jailbreak text detection| Provided a hybrid detection solution based on rules and deep learning (LERT model) to enable high-performance detection of jailbreak text. Supported three-level detection: black/white list filtering, regex rule matching, and ONNX model inference. Provided Python API interface. |
+| Feature Name             | Description                                                                                                                                                                                                                                                                           |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Jailbreak text detection | Provided a hybrid detection solution based on rules and deep learning (LERT model) to enable high-performance detection of jailbreak text. Supported three-level detection: black/white list filtering, regex rule matching, and ONNX model inference. Provided Python API interface. |
 
 ## Related Documentation
 

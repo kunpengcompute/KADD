@@ -1,6 +1,6 @@
 # Quick Start
 
-This document provides a quick start guide for KADD PI (jailbreak text detection). By running the test scripts, you can quickly experience the jailbreak text detection function. By using the API, you can integrate it into existing systems. For details, see [User Guide](user_guide.md).
+This document provides a quick start guide for KADD PI (Prompt Injection, jailbreak text detection). By running the test scripts, you can quickly experience the jailbreak text detection function. By using the API, you can integrate it into existing systems. For details, see [User Guide](user_guide.md).
 
 ## Prerequisites
 
@@ -74,8 +74,9 @@ kp = kp_detector_initialization(logger)
 prompt = "I don't want to cause public panic. How should I avoid publishing false news?"
 res = kp_detect(kp, prompt)
 print(res)
-# Output: {'result': 1, 'detect_time': '10.234 ms'}
 ```
+
+Output: {'result': 1, 'detect_time': '10.234 ms'}
 
 ---
 
@@ -136,5 +137,6 @@ Copy the quantized ONNX model to `algorithm/knowledge_base/model_file/` to repla
 Use `numactl` to bind the NUMA node for maximum performance:
 
 ```bash
-numactl --cpunodebind=0 --membind=0 python test_kp_detect.py
+# example command
+numactl --cpunodebind=0 --membind=0 python example.py
 ```

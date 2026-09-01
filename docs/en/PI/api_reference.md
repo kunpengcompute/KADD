@@ -2,27 +2,25 @@
 
 ## Overview
 
-The KADD PI (jailbreak text detection) engine provides the following Python API interfaces:
+The KADD PI (Prompt Injection, jailbreak text detection) engine provides the following Python API interfaces:
 
-| Interface | Function |
-|-----------|----------|
-| `kp_detector_initialization` | Initialize the detector instance |
-| `kp_detect` | Detect whether the input text is jailbreak text |
-| `kp_detector_update_blackwhitelist` | Dynamically update the black/white list |
+| Interface                           | Function                                        |
+| ----------------------------------- | ----------------------------------------------- |
+| `kp_detector_initialization`        | Initialize the detector instance                |
+| `kp_detect`                         | Detect whether the input text is jailbreak text |
+| `kp_detector_update_blackwhitelist` | Dynamically update the black/white list         |
 
 ### Processing Flow
 
-```bash
-Input text → Black/White List Filter → Regex Rule Filter → Model Classifier Filter → Output result
-```
+Input text, first Black/White List Filter, then Regex Rule Filter, next Model Classifier Filter, finally Output result
 
 ### Constants
 
-| Constant | Value | Description |
-|----------|-------|-------------|
-| `JAILBREAK` | 1 | Jailbreak text |
-| `BENIGN` | 0 | Normal (benign) text |
-| `MAX_PROMPT_LENGTH` | 8500 | Maximum input text length (characters); exceeding raises an exception |
+| Constant            | Value | Description                                                           |
+| ------------------- | ----- | --------------------------------------------------------------------- |
+| `JAILBREAK`         | 1     | Jailbreak text                                                        |
+| `BENIGN`            | 0     | Normal (benign) text                                                  |
+| `MAX_PROMPT_LENGTH` | 8500  | Maximum input text length (characters); exceeding raises an exception |
 
 ---
 
@@ -44,15 +42,15 @@ kp_detector_initialization(logger: Logger) -> JailbreakDetection
 
 **Parameters**
 
-* `logger`: A standard library `logging.Logger` instance for outputting log information during detection. Must be of `Logger` type, otherwise raises `KpInitializationException`.
+`logger`: A standard library `logging.Logger` instance for outputting log information during detection. Must be of `Logger` type, otherwise raises `KpInitializationException`.
 
 **Return Value**
 
-* `JailbreakDetection` detector instance object.
+`JailbreakDetection` detector instance object.
 
 **Exceptions**
 
-* `KpInitializationException`: Raised when initialization fails, with error code `10000`.
+`KpInitializationException`: Raised when initialization fails, with error code `10000`.
 
 **Example**
 
@@ -87,16 +85,18 @@ kp_detect(kp_detector: JailbreakDetection, prompt: str) -> dict
 
 **Return Value**
 
-* Dictionary containing the following fields:
-  * `result`: Detection result, `1` for jailbreak text (JAILBREAK), `0` for normal text (BENIGN).
-  * `detect_time`: Detection time in string format, e.g., `"10.234 ms"`.
+Dictionary containing the following fields:
+
+* `result`: Detection result, `1` for jailbreak text (JAILBREAK), `0` for normal text (BENIGN).
+* `detect_time`: Detection time in string format, e.g., `"10.234 ms"`.
 
 **Exceptions**
 
-* `KpDetectionException`: Raised when detection fails, with error code `20000`. Common failure reasons:
-  * `kp_detector` is not of `JailbreakDetection` type
-  * `prompt` is not a string
-  * `prompt` length exceeds 8500 characters
+`KpDetectionException`: Raised when detection fails, with error code `20000`. Common failure reasons:
+
+* `kp_detector` is not of `JailbreakDetection` type
+* `prompt` is not a string
+* `prompt` length exceeds 8500 characters
 
 **Example**
 
@@ -134,24 +134,23 @@ kp_detector_update_blackwhitelist(
 
 **Return Value**
 
-* None.
+None.
 
 **Exceptions**
 
-* `KpUpdateException`: Raised when the update fails, with error code `30000`. Common failure reasons:
-  * `kp_detector` is not of `JailbreakDetection` type
-  * Parameter is not a dictionary
-  * Key is not `blacklist` or `whitelist`
-  * Value is not a list
-  * List element is not a string
-  * List length exceeds 500
-  * Individual item length exceeds 8500 characters
+`KpUpdateException`: Raised when the update fails, with error code `30000`. Common failure reasons:
 
-**Precautions**
+* `kp_detector` is not of `JailbreakDetection` type
+* Parameter is not a dictionary
+* Key is not `blacklist` or `whitelist`
+* Value is not a list
+* List element is not a string
+* List length exceeds 500
+* Individual item length exceeds 8500 characters
+
+**Limits**
 
 * Each list (blacklist/whitelist) supports up to 500 entries.
-* When the limit is reached, new entries are skipped with a warning log.
-* The black/white list uses MinHash LSH approximate matching with a similarity threshold of 0.8.
 
 **Example**
 
@@ -171,19 +170,19 @@ kp_detector_update_blackwhitelist(kp, blackwhitelist)
 
 All exceptions inherit from `KpExceptionBase`, containing `error_code` and `msg` attributes.
 
-| Exception Class | Error Code | Description |
-|-----------------|-----------|-------------|
-| `KpInitializationException` | 10000 | Initialization failure |
-| `KpDetectionException` | 20000 | Detection failure |
-| `KpUpdateException` | 30000 | Black/white list update failure |
+| Exception Class             | Error Code | Description                     |
+| --------------------------- | ---------- | ------------------------------- |
+| `KpInitializationException` | 10000      | Initialization failure          |
+| `KpDetectionException`      | 20000      | Detection failure               |
+| `KpUpdateException`         | 30000      | Black/white list update failure |
 
 ### Error Codes
 
-| Error Code | Enum Name | Description |
-|-----------|-----------|-------------|
-| 10000 | `InitError` | Initialization error |
-| 20000 | `DetectError` | Detection error |
-| 30000 | `UpdateError` | Update error |
+| Error Code | Enum Name     | Description          |
+| ---------- | ------------- | -------------------- |
+| 10000      | `InitError`   | Initialization error |
+| 20000      | `DetectError` | Detection error      |
+| 30000      | `UpdateError` | Update error         |
 
 ### Exception Usage Example
 
@@ -208,18 +207,16 @@ except KpDetectionException as e:
 
 ---
 
-## ⚠️ Important Notes
-
 **For details about configuration and source code, see the following files**
 
-| File | Path |
-|--------|------|
-| API entry | `algorithm/api/kp_detection.py` |
-| Detection logic | `algorithm/codes/kp_jailbreak_detection.py` |
-| Configuration | `algorithm/codes/kp_config.py` |
-| Exceptions | `algorithm/codes/kp_exception.py` |
-| Black/white list filter | `algorithm/codes/filter/kp_blackwhitelist_filter.py` |
-| Regex filter | `algorithm/codes/filter/kp_regex_filter.py` |
-| Model classifier | `algorithm/codes/filter/kp_classifier_filter.py` |
-| Black/white list data | `algorithm/knowledge_base/blackwhitelist/blackwhitelist.json` |
-| Model file | `algorithm/knowledge_base/model_file/clf_model.onnx` |
+| File                    | Path                                                          |
+| ----------------------- | ------------------------------------------------------------- |
+| API entry               | `algorithm/api/kp_detection.py`                               |
+| Detection logic         | `algorithm/codes/kp_jailbreak_detection.py`                   |
+| Configuration           | `algorithm/codes/kp_config.py`                                |
+| Exceptions              | `algorithm/codes/kp_exception.py`                             |
+| Black/white list filter | `algorithm/codes/filter/kp_blackwhitelist_filter.py`          |
+| Regex filter            | `algorithm/codes/filter/kp_regex_filter.py`                   |
+| Model classifier        | `algorithm/codes/filter/kp_classifier_filter.py`              |
+| Black/white list data   | `algorithm/knowledge_base/blackwhitelist/blackwhitelist.json` |
+| Model file              | `algorithm/knowledge_base/model_file/clf_model.onnx`          |

@@ -8,7 +8,7 @@ This document describes the frequently asked questions (FAQs) and solutions rela
 
 ### Q1: What Should I Do If a Dynamic Link Library Is Missing?
 
-**Question**: On Kunpeng 920, after deployment, opening a new terminal and manually activating the virtual environment results in missing dynamic link library errors when running the program.
+**Question**: On Kunpeng 920 processor, after deployment, opening a new terminal and manually activating the virtual environment results in missing dynamic link library errors when running the program.
 
 **Solution**:
 
@@ -67,11 +67,11 @@ pip install onnxruntime==1.19.2
 
 Different Kunpeng chip models require different Python versions:
 
-| Kunpeng Chip Model | Required Python Version |
-| ------------------ | ----------------------- |
-| Kunpeng 920        | 3.9                     |
-| Kunpeng 920B       | 3.9                     |
-| Kunpeng 950        | 3.10                    |
+| Kunpeng Chip Model              | Required Python Version |
+| ------------------------------- | ----------------------- |
+| Kunpeng 920 processor           | 3.9                     |
+| Kunpeng 920 new model processor | 3.9                     |
+| Kunpeng 950 processor           | 3.10                    |
 
 Use the `-p` parameter to specify the correct Python version:
 
@@ -91,10 +91,10 @@ source ./deploy/deploy.sh -p /opt/python3.9/bin/python3.9
 
 The result is a dictionary. The `result` field values mean:
 
-| result value | Meaning | Constant |
-|-------------|---------|----------|
-| 1 | Jailbreak text (JAILBREAK) | `KunpengConstant.JAILBREAK` |
-| 0 | Normal text (BENIGN) | `KunpengConstant.BENIGN` |
+| result value | Meaning                    | Constant                    |
+| ------------ | -------------------------- | --------------------------- |
+| 1            | Jailbreak text (JAILBREAK) | `KunpengConstant.JAILBREAK` |
+| 0            | Normal text (BENIGN)       | `KunpengConstant.BENIGN`    |
 
 ```python
 res = kp_detect(kp, prompt)
@@ -112,12 +112,11 @@ else:
 
 **Solution**:
 
-| Limit | Value | Behavior When Exceeded |
-|-------|-------|------------------------|
-| Black/white list entry count | 500 each | New entries are skipped with a warning log |
-| Black/white list single entry length | 8500 chars | Raises `KpUpdateException` |
-| Input text to detect length | 8500 chars | Raises `KpDetectionException` |
-
+| Limit                                | Value      | Behavior When Exceeded                     |
+| ------------------------------------ | ---------- | ------------------------------------------ |
+| Black/white list entry count         | 500 each   | New entries are skipped with a warning log |
+| Black/white list single entry length | 8500 chars | Raises `KpUpdateException`                 |
+| Input text to detect length          | 8500 chars | Raises `KpDetectionException`              |
 
 ---
 
@@ -143,13 +142,7 @@ It is recommended that each thread create an independent detector instance to av
 # Each thread creates an independent instance
 logger = logging.getLogger()
 kp = kp_detector_initialization(logger)
-
-# Use the detector...
-
-# Release when the thread ends (Python garbage collection handles this automatically)
 ```
-
----
 
 ## Performance
 
@@ -190,11 +183,11 @@ After training, the ONNX model is automatically exported and quantized to INT8. 
 
 **Training parameters:**
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| epochs | 15 | Number of training epochs |
-| lr | 2e-5 | Learning rate |
-| batch_size | 8 | Batch size |
-| max_length | 512 | Maximum sequence length |
-| warmup_rate | 0.03 | Warmup ratio |
-| dropout | 0 | Dropout rate |
+| Parameter   | Default | Description               |
+| ----------- | ------- | ------------------------- |
+| epochs      | 15      | Number of training epochs |
+| lr          | 2e-5    | Learning rate             |
+| batch_size  | 8       | Batch size                |
+| max_length  | 512     | Maximum sequence length   |
+| warmup_rate | 0.03    | Warmup ratio              |
+| dropout     | 0       | Dropout rate              |
