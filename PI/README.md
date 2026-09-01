@@ -86,24 +86,18 @@ source ./deploy/deploy.sh
 ```python
 import logging
 from algorithm.api.kp_detection import kp_detect, kp_detector_initialization, kp_detector_update_blackwhitelist
-```
 
-```python
 # 初始化检测实例
 logger = logging.getLogger()
 kp = kp_detector_initialization(logger)
-```
 
-```python
 # 更新黑白名单
 blackwhitelist = {
     "blacklist": ["这是测试文本"],
     "whitelist": ["这是测试文本"]
 }
 kp_detector_update_blackwhitelist(kp, blackwhitelist)
-```
 
-```python
 # 检测文本
 prompt = "这是测试文本"
 res = kp_detect(kp, prompt)

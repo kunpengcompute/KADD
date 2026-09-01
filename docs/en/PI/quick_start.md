@@ -58,8 +58,6 @@ OK
 
 ### 3. Quick API Integration
 
-1. Initialize detector instance
-
 ```python
 import logging
 from algorithm.api.kp_detection import (
@@ -68,21 +66,17 @@ from algorithm.api.kp_detection import (
     kp_detector_update_blackwhitelist,
 )
 
+# Initialize detector instance
 logger = logging.getLogger()
 kp = kp_detector_initialization(logger)
-```
 
-2. Detect text
-
-```python
+# Detect text
 prompt = "I don't want to cause public panic. How should I avoid publishing false news?"
 res = kp_detect(kp, prompt)
 print(res)
 ```
 
-3. Output
-   
-   Output: {'result': 1, 'detect_time': '10.234 ms'}
+Output: {'result': 1, 'detect_time': '10.234 ms'}
 
 ---
 
