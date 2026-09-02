@@ -47,7 +47,12 @@ option(KADD_STRIP "Strip symbols from built binaries and libraries (-s)" ON)
 if(KADD_STRIP)
     add_link_options(-s)
 endif()
-option(ENABLE_ARM_SVE "Enable ARM SVE acceleration (auto-detects SVE2 support)" ON)
+# ARM SVE 加速选项（ON/OFF）：
+#   ON（默认）—— 请求 SVE 加速：平台/编译器支持则启用；
+#                不支持则禁用 SVE 并回退 ONNX 后端（WARNING 明示原因与后端，编译继续）
+#   OFF       —— 完全禁用 SVE，直接使用 ONNX 后端
+# 注意：ONNX Runtime 为强制依赖，缺失时无条件 FATAL_ERROR（即"无法回退则编译失败"）
+option(ENABLE_ARM_SVE "Enable ARM SVE acceleration (falls back to ONNX backend when unsupported)" ON)
 # 可选：固定 SVE 向量位宽（默认 256 位；设为空字符串则自适应任意宽度）。
 # 固定 256 位时启用 SVE256 专用路径并排除不可用的 VLA 回退，使覆盖率报告不含其 0% 函数。
 set(KADD_SVE_VECTOR_BITS "256" CACHE STRING "Fixed SVE vector length in bits (empty=adaptive; e.g. 128, 256, 512)")
@@ -61,20 +66,69 @@ else()
     set(KADD_ASSETS_PATH "assets")
 endif()
 
-# SVE 加速：强制启用（目标平台为 ARM64 + SVE 硬件）
-if(ENABLE_ARM_SVE AND NOT CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|ARM64")
-    message(WARNING "ENABLE_ARM_SVE is ON but system is not ARM64. SVE will be disabled.")
-    set(ENABLE_ARM_SVE OFF)
-endif()
+# ============================================================================
+# ARM SVE 加速：能力检测与回退（行为矩阵）
+#
+#   | SVE  | 平台/编译器      | 行为                                             |
+#   |------|------------------|--------------------------------------------------|
+#   | ON   | aarch64 + 支持   | 加 -march=armv8-a+sve，明示"使用 SVE"             |
+#   | ON   | aarch64 + 不支持 | 不加 SVE 参数，WARNING 明示原因 + "使用 ONNX"      |
+#   | ON   | 其他平台（x86 等）| 不加 SVE 参数，WARNING 明示原因 + "使用 ONNX"      |
+#   | OFF  | 任意             | 跳过检测，明示"使用 ONNX"                          |
+#
+# 检测原则：
+#   1. 以编译器预定义宏（__aarch64__）判断目标架构，而非 CMAKE_SYSTEM_PROCESSOR——
+#      交叉编译（CC=xxx-gcc 且未提供 toolchain 文件）时后者仍是宿主机架构；
+#   2. 带 -march=armv8-a+sve 编译真实 SVE 代码来检测编译器能力——
+#      __ARM_FEATURE_SVE 宏只有在 -march 启用 SVE 后才会被编译器定义，
+#      裸查宏检测的是"当前参数是否已启用 SVE"，在标准工具链上永远判定
+#      "不支持"，导致 SVE 被静默关闭；
+#   3. 统一到 armv8-a+sve（纯 SVE1）：armv9-a 隐含 SVE2，GCC 会生成 SVE2 指令
+#      （如 whilewr/whilerw），而部分鲲鹏 CPU 仅支持 SVE1，运行会 SIGILL；
+#      当前实现只用 SVE1 intrinsic，无需 SVE2；SVE2 完全向下兼容 SVE1，
+#      armv8-a+sve 产物可运行于所有支持 SVE 的 CPU（含全部 Armv9）；
+#   4. 编译期无法检测目标硬件是否真有 SVE，由源码在运行时通过
+#      getauxval(AT_HWCAP) 判断并回退 ONNX 后端。
+# ============================================================================
+set(KADD_SVE_ENABLED FALSE)
+set(KADD_SVE_FALLBACK_REASON "")
 
 if(ENABLE_ARM_SVE)
-    # 统一到 armv8-a+sve（纯 SVE1）。armv9-a 隐含 SVE2，GCC 会生成 SVE2 指令
-    # （如 whilewr/whilerw），而部分鲲鹏 CPU 仅支持 SVE1，运行会 SIGILL。
-    # 当前实现只用 SVE1 intrinsic，无需 SVE2。
-    
-    message(STATUS "Enabling ARM SVE acceleration (-march=armv8-a+sve)")
+    include(CheckCSourceCompiles)
+
+    # 1) 编译目标是否为 AArch64
+    check_c_source_compiles("
+        #if defined(__aarch64__) || defined(_M_ARM64)
+            int main(void) { return 0; }
+        #else
+            #error Not ARM64
+        #endif
+    " KADD_COMPILER_TARGETS_ARM64)
+
+    if(NOT KADD_COMPILER_TARGETS_ARM64)
+        set(KADD_SVE_FALLBACK_REASON "compiler target is not AArch64 (host: ${CMAKE_SYSTEM_PROCESSOR})")
+    else()
+        # 2) 编译器是否支持 SVE（带 -march 编译真实 SVE 代码）
+        set(CMAKE_REQUIRED_FLAGS "-march=armv8-a+sve")
+        check_c_source_compiles("
+            #include <arm_sve.h>
+            int main(void) { return (int)svcntb(); }
+        " KADD_COMPILER_SVE_SUPPORTED)
+        unset(CMAKE_REQUIRED_FLAGS)
+
+        if(KADD_COMPILER_SVE_SUPPORTED)
+            set(KADD_SVE_ENABLED TRUE)
+        else()
+            set(KADD_SVE_FALLBACK_REASON "compiler cannot compile SVE code (${CMAKE_C_COMPILER_ID} ${CMAKE_C_COMPILER_VERSION})")
+        endif()
+    endif()
+endif()
+
+if(KADD_SVE_ENABLED)
+    message(STATUS "ARM SVE acceleration enabled (-march=armv8-a+sve): using SVE native engines")
     add_compile_options(-march=armv8-a+sve)
-    add_definitions(-D__ARM_FEATURE_SVE)
+    # 注意：不要手动 add_definitions(-D__ARM_FEATURE_SVE)——该宏由编译器在
+    # -march=armv8-a+sve 生效时自动定义，手动定义只会掩盖真实能力检测
 
     # 可选：固定 SVE 向量位宽（空=自适应任意宽度，如 128/256/512 均兼容）。
     # 固定后编译器将 VL 视为编译期常量（svcntw() 折叠），可让 256 位专用路径
@@ -92,6 +146,12 @@ if(ENABLE_ARM_SVE)
             add_definitions(-DKADD_CNN_SVE256_ONLY)
         endif()
     endif()
+elseif(ENABLE_ARM_SVE)
+    message(WARNING
+        "ENABLE_ARM_SVE=ON but SVE is unavailable: ${KADD_SVE_FALLBACK_REASON}.\n"
+        "SVE acceleration is disabled and this build uses the ONNX backend.")
+else()
+    message(STATUS "ARM SVE disabled (ENABLE_ARM_SVE=OFF): using ONNX backend")
 endif()
 
 # 代码覆盖率
@@ -115,7 +175,13 @@ message(STATUS "Build shared libs: ${BUILD_SHARED_LIBS}")
 message(STATUS "Enable coverage: ${ENABLE_CODE_COVERAGE}")
 message(STATUS "Enable optimize: ${KADD_OPTIMIZE}")
     message(STATUS "Enable strip:    ${KADD_STRIP}")
-message(STATUS "Enable ARM SVE: ${ENABLE_ARM_SVE}")
+if(KADD_SVE_ENABLED)
+    message(STATUS "Enable ARM SVE: ${ENABLE_ARM_SVE} -> enabled, using SVE native engines")
+elseif(ENABLE_ARM_SVE)
+    message(STATUS "Enable ARM SVE: ON -> unavailable (${KADD_SVE_FALLBACK_REASON}), using ONNX backend")
+else()
+    message(STATUS "Enable ARM SVE: OFF -> using ONNX backend")
+endif()
 message(STATUS "Assets path: ${KADD_ASSETS_PATH} (auto-detected)")
 
 # ============================================================================
@@ -241,10 +307,16 @@ if(BUILD_TESTS)
         set(GTEST_INCLUDE_DIR "${gtest_path}/include")
         set(GTest_FOUND TRUE)
 
+        # GTest itself needs pthreads on Linux; keep the dependency on the
+        # static library so every test target inherits it automatically.
+        set(THREADS_PREFER_PTHREAD_FLAG ON)
+        find_package(Threads REQUIRED)
+
         # 创建 gtest 静态库
         add_library(gtest STATIC "${gtest_source}")
         target_include_directories(gtest PUBLIC "${GTEST_INCLUDE_DIR}")
         target_include_directories(gtest PRIVATE "${gtest_path}")  # 给 #include "src/xxx.cc" 提供路径
+        target_link_libraries(gtest PUBLIC Threads::Threads)
 
         add_library(gtest_main STATIC "${gtest_path}/src/gtest_main.cc")
         target_include_directories(gtest_main PUBLIC "${GTEST_INCLUDE_DIR}")
@@ -378,14 +450,16 @@ message(STATUS "    ONNX Runtime:  ${ONNXRUNTIME_LIBRARIES}")
 message(STATUS "    cJSON:         ${CJSON_FOUND}")
 message(STATUS "    Google Test:   ${GTest_FOUND}")
 message(STATUS "")
+message(STATUS "  Acceleration:")
+if(KADD_SVE_ENABLED)
+    message(STATUS "    ARM SVE:       enabled (-march=armv8-a+sve)")
+else()
+    message(STATUS "    ARM SVE:       disabled -> ONNX backend")
+endif()
+message(STATUS "")
 message(STATUS "  Testing:")
 message(STATUS "    Unit Tests:    ${BUILD_TESTS}")
 message(STATUS "    FUZZ Tests:    ${FUZZ_TESTS_AVAILABLE}")
-if(FUZZ_TESTS_AVAILABLE)
-	if(ENABLE_ARM_SVE)
-		message(STATUS "      ARM SVE: ${ENABLE_ARM_SVE}")
-	endif()
-endif()
 if(BUILD_TESTS)
     message(STATUS "")
     message(STATUS "  To run tests, set LD_LIBRARY_PATH:")

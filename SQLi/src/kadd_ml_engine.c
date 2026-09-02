@@ -41,8 +41,12 @@ int kadd_model_load(kadd_model_handle_t **handle, const char *model_path, int fe
     }
 
 #if KADD_HAVE_SVE
-    /* SVE 可用：优先尝试原生 RF 二进制格式（.krf） */
-    {
+    /*
+     * 先确认运行环境 CPU 真的支持 SVE（编译期宏无法证明硬件能力），
+     * 不支持则直接走 ONNX 后端，避免执行 SVE 指令触发 SIGILL。
+     */
+    if (kadd_sve_runtime_available()) {
+        /* 硬件支持 SVE：优先尝试原生 RF 二进制格式（.krf） */
         kadd_rf_model_t *rf = NULL;
         if (kadd_rf_model_load(&rf, model_path) == KADD_SUCCESS) {
             int rf_dim = kadd_rf_model_get_feature_dim(rf);
@@ -61,6 +65,9 @@ int kadd_model_load(kadd_model_handle_t **handle, const char *model_path, int fe
             return KADD_SUCCESS;
         }
         /* RF 加载失败（非原生格式），回退 ONNX */
+    } else {
+        fprintf(stderr,
+                "[kadd_ml] CPU does not support SVE, using ONNX backend\n");
     }
 #endif
 

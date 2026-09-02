@@ -15,6 +15,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <limits.h>  /* [FIX REPORT-2026-0000009] INT_MAX for overflow check */
 #include "kadd_dfa_engine.h"
 #include "kadd_feature_engine.h"
 #include "kadd_ml_engine.h"
@@ -198,7 +199,11 @@ static int create_engine_internal(kadd_sqli_engine_t **engine,
     /* Load ML model */
     if (e->engine_mode == KADD_ENGINE_MODE_ML) {
 #if KADD_HAVE_SVE
-        const char *model_path = (strlen(config->model_rf) > 0) ? config->model_rf : config->model_rf_onnx;
+        /* CPU 硬件不支持 SVE 时直接优先 ONNX 模型，避免无效的原生加载尝试 */
+        const int sve_hw_available = kadd_sve_runtime_available();
+        const char *model_path = sve_hw_available
+            ? ((strlen(config->model_rf) > 0) ? config->model_rf : config->model_rf_onnx)
+            : ((strlen(config->model_rf_onnx) > 0) ? config->model_rf_onnx : config->model_rf);
         if (kadd_model_load(&e->ml_model, model_path, e->feature_dim) != 0) {
             /* Fallback to ONNX if native failed and they are different */
             if (strlen(config->model_rf) > 0 && strlen(config->model_rf_onnx) > 0 &&
@@ -236,7 +241,11 @@ static int create_engine_internal(kadd_sqli_engine_t **engine,
     /* Load DL model */
     if (e->engine_mode == KADD_ENGINE_MODE_DL) {
 #if KADD_HAVE_SVE
-        const char *model_path = (strlen(config->model_cnn) > 0) ? config->model_cnn : config->model_cnn_onnx;
+        /* CPU 硬件不支持 SVE 时直接优先 ONNX 模型，避免无效的原生加载尝试 */
+        const int sve_hw_available = kadd_sve_runtime_available();
+        const char *model_path = sve_hw_available
+            ? ((strlen(config->model_cnn) > 0) ? config->model_cnn : config->model_cnn_onnx)
+            : ((strlen(config->model_cnn_onnx) > 0) ? config->model_cnn_onnx : config->model_cnn);
         if (kadd_dl_model_load(&e->dl_model, model_path, 0) != 0) {
             /* Fallback to ONNX if native failed and they are different */
             if (strlen(config->model_cnn) > 0 && strlen(config->model_cnn_onnx) > 0 &&
@@ -364,6 +373,12 @@ static int allocate_batch_buffers(kadd_sqli_engine_t *engine, int batch_size,
 
     int **dfa_outputs = (int **)calloc(batch_size, sizeof(int *));
     int *dfa_dims = (int *)calloc(batch_size, sizeof(int));
+    /* [FIX REPORT-2026-0000009] Check for integer overflow in batch_size * feature_dim */
+    if (engine->feature_dim > 0 && batch_size > INT_MAX / engine->feature_dim) {
+        fprintf(stderr, "[kadd_sqli] ERROR: batch_size*feature_dim overflow (batch=%d, dim=%d)\n",
+                batch_size, engine->feature_dim);
+        return KADD_ERROR_INVALID_PARAM;
+    }
     int *features = (int *)calloc(batch_size * engine->feature_dim, sizeof(int));
     float *float_features = (float *)calloc(batch_size * engine->feature_dim, sizeof(float));
 

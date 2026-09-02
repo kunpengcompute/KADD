@@ -11,6 +11,7 @@
  */
 
 #include "kadd_cnn_engine.h"
+#include "kadd_sve.h"
 #include "kadd_errors.h"
 
 #include <errno.h>
@@ -435,6 +436,21 @@ int kadd_cnn_model_load(kadd_cnn_model_t **model_out,
         return KADD_ERROR_NULL_PTR;
     }
     *model_out = NULL;
+
+#if KADD_CNN_HAVE_SVE
+    /*
+     * 纵深防护：上层分发层已做 HWCAP 检测，这里再次确认——
+     * runtime_sve_width_is_compatible() 使用的 cntb 指令本身要求硬件支持 SVE，
+     * 在无 SVE 的 CPU 上执行即 SIGILL，必须先用 HWCAP 确认硬件能力，
+     * 不支持则返回失败，由上层回退 ONNX 后端。
+     */
+    if (!kadd_sve_runtime_available()) {
+        fprintf(stderr,
+                "[kadd_cnn] ERROR: CPU does not support SVE, "
+                "native CNN backend unavailable\n");
+        return KADD_ERROR_MODEL_LOAD_FAILED;
+    }
+#endif
 
 #if KADD_CNN_HAVE_SVE && defined(KADD_CNN_EXPECTED_SVE_BITS)
     if (!runtime_sve_width_is_compatible()) {

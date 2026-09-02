@@ -50,6 +50,7 @@ struct kadd_dfa_engine_t {
     uint16_t *eod_table;
     size_t max_input_chars;   /* 最大输入SQL字符数 */
     size_t max_tokens;        /* 最大token输出数量 */
+    uint32_t num_states;        /* [FIX REPORT-2026-0000013] DFA状态总数，用于越界检查 */
 };
 
 /* ========== 内部辅助函数 ========== */
@@ -188,8 +189,27 @@ static int kadd_dfa_engine_load_tables(kadd_dfa_engine_t *engine, const kadd_dfa
         return rc;
     }
 
-    return load_u16_table(table_paths->eod_table_path, states,
-                          KADD_DFA_EOD_CEILS_PER_STATE, &states, &engine->eod_table);
+    rc = load_u16_table(table_paths->eod_table_path, states,
+                        KADD_DFA_EOD_CEILS_PER_STATE, &states, &engine->eod_table);
+    if (rc != KADD_SUCCESS) {
+        return rc;
+    }
+
+    /* [FIX REPORT-2026-0000013] Store state count for bounds checking */
+    engine->num_states = states;
+
+    /* [FIX REPORT-2026-0000010] Validate transition table state references */
+    size_t total_cells = (size_t)states * KADD_DFA_BYTE_TABLE_SIZE;
+    for (size_t ci = 0; ci < total_cells; ci++) {
+        uint16_t val = engine->transition_table[ci];
+        if (val != KADD_DFA_ID_ERROR && val >= states) {
+            fprintf(stderr, "[kadd_dfa] ERROR: Invalid state ref %u at cell %zu (max %u)\n",
+                    val, ci, states);
+            return KADD_DFA_ERROR_PARSE;
+        }
+    }
+
+    return KADD_SUCCESS;
 }
 
 int kadd_dfa_engine_create(kadd_dfa_engine_t **engine, const kadd_dfa_table_paths_t *table_paths,
@@ -252,7 +272,8 @@ void kadd_dfa_engine_free(kadd_dfa_engine_t *engine)
 static int kadd_dfa_emit_token(size_t max_output_dim, size_t input_length, size_t *pos, size_t *token_start_pos,
                                uint16_t *accept_info, int *output, size_t *count, uint16_t candidate_state,
                                uint16_t output_code, const uint16_t **trans_row, const uint16_t **out_row,
-                               const uint16_t *transition_table, const uint16_t *output_table)
+                               const uint16_t *transition_table, const uint16_t *output_table,
+                               uint32_t num_states)  /* [FIX REPORT-2026-0000013] */
 {
     uint16_t emit_token_id = (uint16_t)((output_code >> OUTPUT_EMIT_SHIFT) & OUTPUT_TOKEN_MASK);
     uint16_t edge_accept_info = (uint16_t)(output_code & OUTPUT_ACCEPT_MASK);
@@ -269,6 +290,9 @@ static int kadd_dfa_emit_token(size_t max_output_dim, size_t input_length, size_
     }
     output[(*count)++] = (int)emit_token_id;
     if (end_delta == OUTPUT_EMIT_PAIR_FLAG && edge_accept_info != 0) {
+            if (*count >= max_output_dim) {  /* [FIX REPORT-2026-0000012] EMIT_PAIR second token bounds check */
+                return KADD_DFA_ERROR_BUFFER_OVERFLOW;
+            }
         output[(*count)++] = (int)edge_accept_info;
         edge_accept_info = 0;
     }
@@ -287,6 +311,12 @@ static int kadd_dfa_emit_token(size_t max_output_dim, size_t input_length, size_
 
     *accept_info = edge_accept_info;
     *pos = scan_pos;
+    /* [FIX REPORT-2026-0000013] Validate state ID before table access */
+    if (candidate_state >= num_states) {
+        fprintf(stderr, "[kadd_dfa] ERROR: State ID %u out of range (max %u) in emit_token\n",
+                candidate_state, num_states);
+        return KADD_DFA_ERROR_PARSE;
+    }
     *trans_row = transition_table + (size_t)candidate_state * KADD_DFA_BYTE_TABLE_SIZE;
     *out_row = output_table + (size_t)candidate_state * KADD_DFA_BYTE_TABLE_SIZE;
 
@@ -321,7 +351,7 @@ static int kadd_dfa_handle_eod(const uint16_t *eod_table, uint16_t state_id, siz
 static int kadd_dfa_engine_match_next(const uint16_t *transition_table, const uint16_t *output_table,
                                       const uint16_t *eod_table, size_t max_output_dim, const char *input,
                                       size_t input_length, size_t *pos, size_t *token_start_pos, uint16_t *accept_info,
-                                      int *output, size_t *count)
+                                      int *output, size_t *count, uint32_t num_states)  /* [FIX REPORT-2026-0000013] */
 {
     uint16_t state_id = KADD_DFA_ID_ENTRY;
     const uint16_t *trans_row = transition_table;
@@ -344,6 +374,13 @@ static int kadd_dfa_engine_match_next(const uint16_t *transition_table, const ui
             break;
         }
 
+        /* [FIX REPORT-2026-0000013] Validate state ID before any table access */
+        if (candidate_state >= num_states) {
+            fprintf(stderr, "[kadd_dfa] ERROR: State ID %u out of range (max %u)\n",
+                    candidate_state, num_states);
+            return KADD_DFA_ERROR_PARSE;
+        }
+
         uint16_t output_code = out_row[byte_code];
         uint16_t edge_accept_info = (uint16_t)(output_code & OUTPUT_ACCEPT_MASK);
         uint16_t emit_token_id = (uint16_t)((output_code >> OUTPUT_EMIT_SHIFT) & OUTPUT_TOKEN_MASK);
@@ -351,7 +388,7 @@ static int kadd_dfa_engine_match_next(const uint16_t *transition_table, const ui
         if (emit_token_id != 0) {
             int rc = kadd_dfa_emit_token(max_output_dim, input_length, pos, token_start_pos, accept_info, output,
                                          count, candidate_state, output_code, &trans_row, &out_row,
-                                         transition_table, output_table);
+                                         transition_table, output_table, num_states);
             state_id = candidate_state;
             if (rc != KADD_SUCCESS) {
                 return rc;
@@ -423,7 +460,7 @@ int kadd_dfa_engine_tokenize(const kadd_dfa_engine_t *engine, const char *input,
                                         engine->output_table, engine->eod_table,
                                         engine->max_tokens, input,
                                         input_length, &pos, &token_start_pos,
-                                        &accept_info, output, &count);
+                                        &accept_info, output, &count, engine->num_states);  /* [FIX REPORT-2026-0000013] */
         if (rc != KADD_SUCCESS) {
             return rc;
         }
