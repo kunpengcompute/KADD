@@ -2,6 +2,7 @@ import base64
 from typing import List, Dict, Literal, Any
 from logging import Logger
 
+import json
 import numpy as np
 import jieba
 from datasketch import MinHash, MinHashLSH
@@ -104,20 +105,28 @@ class BlackwhitelistFilter:
 
     def add_blackwhitelist(self, blackwhitelist: Dict[Literal["whitelist", "blacklist"], List[str]]):
         succ = {list_name: 0 for list_name in blackwhitelist.keys()}
+        partial = set()
 
         for list_name in blackwhitelist.keys():
-            if self.extra_list_num[list_name] == KunpengConstant.ALLOWED_CONFIG_SIZE[list_name]:
-                self.logger.warning(f"{KunpengConstant.LOG_PREFIX}The maximum capacity "
-                                    f"{KunpengConstant.ALLOWED_CONFIG_SIZE[list_name]} of {list_name} has been reached.")
-                continue
-            for text in blackwhitelist[list_name]:
+            limit = KunpengConstant.ALLOWED_CONFIG_SIZE[list_name]
+            requested = len(blackwhitelist[list_name])
+            remaining = limit - self.extra_list_num[list_name]
+
+            added = min(requested, remaining)
+            for text in blackwhitelist[list_name][:added]:
                 self.blackwhitelist[list_name].insert(self.idx, self._build_minhash(text))
                 self.idx += 1
                 self.extra_list_num[list_name] += 1
                 succ[list_name] += 1
 
+            rejected = requested - added
+            if rejected:
+                partial.add(list_name)
+                self.logger.warning(f"{KunpengConstant.LOG_PREFIX}Blackwhitelist add failed: {list_name} add {added} "
+                                    f"of {requested}. The maximum capacity has been reached.")
+
         for k, v in succ.items():
-            if v:
+            if v and k not in partial:
                 self.logger.info(f"{KunpengConstant.LOG_PREFIX}Blackwhitelist add success: {k} add {v}.")
 
     def _save_to_blackwhitelist(
@@ -141,7 +150,6 @@ class BlackwhitelistFilter:
                 self.blackwhitelist[list_name].insert(self.idx, m)
                 self.idx += 1
 
-        import json
         with open(self.blackwhitelist_path, "w", encoding="utf-8") as f:
             json.dump(json_obj, f, ensure_ascii=False, indent=2)
 
