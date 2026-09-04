@@ -1084,28 +1084,28 @@ TEST_F(DFAEngineTest, EmitToken_BoundaryConditions)
     count = 1; pos = 0; token_start = 0; accept_info = 0;
     EXPECT_EQ(kadd_dfa_emit_token(1, 10, &pos, &token_start, &accept_info, output, &count,
                                   1, 0x0020, &trans_row, &out_row,
-                                  engine->transition_table, engine->output_table),
+                                  engine->transition_table, engine->output_table, engine->num_states),  /* [FIX] */
               KADD_DFA_ERROR_BUFFER_OVERFLOW);
 
     // 场景2: ScanPosOverflow - pos + scan_delta(3) > input_length
     count = 0; pos = 8; token_start = 0; accept_info = 0;
     EXPECT_EQ(kadd_dfa_emit_token(10, 10, &pos, &token_start, &accept_info, output, &count,
                                   1, 0x0C20, &trans_row, &out_row,
-                                  engine->transition_table, engine->output_table),
+                                  engine->transition_table, engine->output_table, engine->num_states),  /* [FIX] */
               KADD_DFA_ERROR_PARSE);
 
     // 场景3: StartDeltaUnderflow - start_delta=-1, pos=0
     count = 0; pos = 0; token_start = 0; accept_info = 0;
     EXPECT_EQ(kadd_dfa_emit_token(10, 10, &pos, &token_start, &accept_info, output, &count,
                                   1, 0x0020, &trans_row, &out_row,
-                                  engine->transition_table, engine->output_table),
+                                  engine->transition_table, engine->output_table, engine->num_states),  /* [FIX] */
               KADD_DFA_ERROR_PARSE);
 
     // 场景4: TokenStartOverflow - token_start_pos > input_length
     count = 0; pos = 9; token_start = 0; accept_info = 0;
     EXPECT_EQ(kadd_dfa_emit_token(10, 10, &pos, &token_start, &accept_info, output, &count,
                                   1, 0x3020, &trans_row, &out_row,
-                                  engine->transition_table, engine->output_table),
+                                  engine->transition_table, engine->output_table, engine->num_states),  /* [FIX] */
               KADD_DFA_ERROR_PARSE);
 }
 

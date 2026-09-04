@@ -6,7 +6,6 @@ set(KADD_PUBLIC_HEADERS
     kadd_ml_engine.h
     kadd_dl_engine.h
     kadd_errors.h
-    kadd_sve.h
     kadd_dfa_engine.h
     kadd_feature_engine.h
     kadd_config_loader.h

@@ -62,9 +62,12 @@ class Config:
     FEATURE_SO = os.path.join(SCRIPT_DIR, "libkadd_feature_engine.dll")
     # 配置文件（包含 DFA 三表路径）
     CONFIG_JSON = os.path.join(SCRIPT_DIR, "../../config.json")
-    # 原始训练数据 CSV（必须包含 Query 和 Label 列）
-    # 整体训练集：pinnacle CSV + parsed_results_fixed.json 合并（见 merge_datasets.py）
-    RAW_CSV = os.path.join(SCRIPT_DIR, "train_data", "total_training_dataset_v5_merged.csv")
+    # 训练/验证数据 CSV（必须包含 Query 和 Label 列）
+    # train_data.csv: 80% 训练集
+    # verify_data.csv: 20% 验证集，训练阶段绝不参与拟合
+    RAW_CSV = os.path.join(SCRIPT_DIR, "train_data", "train_data.csv")
+    VERIFY_CSV = os.path.join(SCRIPT_DIR, "train_data", "verify_data.csv")
+    FULL_CSV = os.path.join(SCRIPT_DIR, "train_data", "dataset_full.csv")
 
     # --- RF 共用参数 ---
     # seq_to_feature 输出维度（固定 28 种 token 类型）
@@ -74,8 +77,8 @@ class Config:
 
     # --- RF 参数 ---
     RF_PARAMS = {
-        'n_estimators': 10,        # 决策树数量
-        'max_depth': 8,            # 最大深度
+        'n_estimators': 20,        # 决策树数量
+        'max_depth': 10,           # 最大深度
         'min_samples_split': 2,    # 分裂最小样本数
         'min_samples_leaf': 1,     # 叶节点最小样本数
         'n_jobs': -1,              # 并行线程数（-1 全部）
@@ -98,8 +101,8 @@ class Config:
     BATCH = 256            # 批次大小
     LR = 1e-3              # 学习率
     WD = 1e-4              # 权重衰减（L2 正则）
-    TEST_SIZE = 0.2        # 测试集比例
-    RANDOM_STATE = 12      # 数据划分随机种子
+    TEST_SIZE = 0.2        # 验证集比例
+    RANDOM_STATE = 42      # 数据划分随机种子
 
 
 # ==================== ctypes 绑定 ====================
@@ -404,6 +407,72 @@ def load_json_data(json_path, engine, model_type, cfg):
     return X, y
 
 
+# ==================== 数据集拆分 ====================
+def split_raw_dataset(source_csv, train_csv, verify_csv,
+                      test_size=0.2, random_state=42):
+    """将原始 CSV 拆分为 80% 训练集和 20% 验证集。
+
+    拆分规则：
+    1. 先整体打乱行顺序
+    2. 按 Query 分组，保证同一 Query 不会同时出现在训练集和验证集
+    3. 按 Label 分层，保证两个文件的类别比例一致
+    4. 使用固定随机种子，保证结果可复现
+    """
+    df = pd.read_csv(source_csv, encoding='utf-8-sig')
+    lowered = {str(column).lower(): column for column in df.columns}
+    if 'query' not in lowered or 'label' not in lowered:
+        raise ValueError("source CSV must contain Query and Label columns")
+
+    query_col = lowered['query']
+    label_col = lowered['label']
+    df = df[[query_col, label_col]].copy()
+    df.columns = ['Query', 'Label']
+    df['Query'] = df['Query'].fillna('').astype(str)
+    df['Label'] = pd.to_numeric(df['Label'], errors='coerce')
+    df = df.dropna(subset=['Label'])
+    df['Label'] = df['Label'].astype(int)
+
+    if df.empty:
+        raise ValueError("source CSV has no valid rows")
+
+    # 先整体打乱行顺序，再进行拆分，保证 train/verify 文件内部顺序也是随机的
+    df = df.sample(frac=1.0, random_state=random_state).reset_index(drop=True)
+
+    label_counts = df.groupby('Query', sort=False)['Label'].nunique()
+    if (label_counts > 1).any():
+        conflicting = label_counts[label_counts > 1].index[:5].tolist()
+        raise ValueError(f"source CSV has conflicting labels for queries: {conflicting}")
+
+    group_labels = df.groupby('Query', sort=False)['Label'].first()
+    queries = group_labels.index.to_numpy()
+    labels = group_labels.to_numpy()
+
+    train_queries, verify_queries = train_test_split(
+        queries,
+        test_size=test_size,
+        random_state=random_state,
+        stratify=labels,
+    )
+
+    train_set = set(train_queries)
+    verify_set = set(verify_queries)
+    train_df = df[df['Query'].isin(train_set)].copy()
+    verify_df = df[df['Query'].isin(verify_set)].copy()
+
+    if set(train_df['Query']) & set(verify_df['Query']):
+        raise AssertionError("internal error: train/verify query leakage")
+
+    train_df.to_csv(train_csv, index=False, encoding='utf-8')
+    verify_df.to_csv(verify_csv, index=False, encoding='utf-8')
+
+    print(f"[OK] Dataset split completed")
+    print(f"  source: {source_csv}")
+    print(f"  train:  {train_csv} ({len(train_df)} rows)")
+    print(f"  verify: {verify_csv} ({len(verify_df)} rows)")
+    print(f"  train labels: {train_df['Label'].value_counts().sort_index().to_dict()}")
+    print(f"  verify labels: {verify_df['Label'].value_counts().sort_index().to_dict()}")
+
+
 # ==================== 模型定义 ====================
 class TextCNN(nn.Module):
     """DL_CNN: token 序列输入 → Embedding → 多尺度 Conv → MaxPool → FC
@@ -450,11 +519,11 @@ class TextCNN(nn.Module):
 
 
 # ==================== RF 训练 ====================
-def train_rf(X, y, cfg, output_dir, model_path):
+def train_rf(X, y, cfg, output_dir, model_path, X_val=None, y_val=None):
     """随机森林训练并导出 ONNX 和跨平台 KADD-RF
 
     流程：
-    1. 划分训练集/测试集
+    1. 划分训练集/验证集
     2. 训练 RandomForestClassifier
     3. 评估性能（准确率、分类报告、混淆矩阵）
     4. 导出 ONNX 模型（使用 skl2onnx）
@@ -472,10 +541,14 @@ def train_rf(X, y, cfg, output_dir, model_path):
     print("Training Random Forest...")
 
     # --- 划分数据集 ---
-    X_tr, X_te, y_tr, y_te = train_test_split(
-        X, y, test_size=cfg.TEST_SIZE, random_state=cfg.RANDOM_STATE, stratify=y)
+    if X_val is None or y_val is None:
+        X_tr, X_te, y_tr, y_te = train_test_split(
+            X, y, test_size=cfg.TEST_SIZE, random_state=cfg.RANDOM_STATE, stratify=y)
+    else:
+        X_tr, y_tr = X, y
+        X_te, y_te = X_val, y_val
 
-    # 保存与训练严格隔离的测试集。鲲鹏端直接读取该文件，准确率测试和
+    # 保存与训练严格隔离的验证集。鲲鹏端直接读取该文件，准确率验证和
     # 性能测试使用完全相同的 float32 输入，避免重复特征提取影响计时。
     benchmark_data_path = os.path.splitext(model_path)[0] + ".test.kds"
     export_kadd_dataset(X_te, y_te, benchmark_data_path)
@@ -487,7 +560,7 @@ def train_rf(X, y, cfg, output_dir, model_path):
 
     # --- 评估 ---
     y_pred = model.predict(X_te)
-    print(f"Test Accuracy: {accuracy_score(y_te, y_pred):.4f}")
+    print(f"Validation Accuracy: {accuracy_score(y_te, y_pred):.4f}")
     print(classification_report(y_te, y_pred, target_names=['Label 0', 'Label 1']))
     print("Confusion Matrix:\n", confusion_matrix(y_te, y_pred))
 
@@ -522,11 +595,11 @@ def train_rf(X, y, cfg, output_dir, model_path):
 
 
 # ==================== DL 训练 ====================
-def train_dl(X, y, model_type, cfg, output_dir, model_path):
+def train_dl(X, y, model_type, cfg, output_dir, model_path, X_val=None, y_val=None):
     """PyTorch 深度学习训练（TextCNN）
 
     流程：
-    1. 划分训练集/测试集
+    1. 划分训练集/验证集
     2. 创建模型（TextCNN）
     3. 训练：使用类别权重平衡、学习率调度、早停
     4. 评估：AUC、F1、准确率、混淆矩阵
@@ -545,8 +618,12 @@ def train_dl(X, y, model_type, cfg, output_dir, model_path):
     print(f"Training {model_type.upper()}...")
 
     # --- 划分数据集 ---
-    X_tr, X_te, y_tr, y_te = train_test_split(
-        X, y, test_size=cfg.TEST_SIZE, random_state=cfg.RANDOM_STATE, stratify=y)
+    if X_val is None or y_val is None:
+        X_tr, X_te, y_tr, y_te = train_test_split(
+            X, y, test_size=cfg.TEST_SIZE, random_state=cfg.RANDOM_STATE, stratify=y)
+    else:
+        X_tr, y_tr = X, y
+        X_te, y_te = X_val, y_val
     print(f"Train {len(X_tr)}, Test {len(X_te)}")
 
     if model_type == 'dl_cnn':
@@ -639,7 +716,7 @@ def train_dl(X, y, model_type, cfg, output_dir, model_path):
     pred = (probs >= 0.5).astype(int)
 
     # --- 最终评估 ---
-    print("\n=== Test ===")
+    print("\n=== Validation ===")
     print(f"Accuracy: {accuracy_score(y_te, pred):.4f}")
     print(f"AUC: {roc_auc_score(y_te, probs):.4f}")
     print(classification_report(y_te, pred, target_names=['Label 0', 'Label 1']))
@@ -695,7 +772,19 @@ def main():
     p.add_argument('--data-format', choices=['csv', 'json'], default='csv',
                    help='Data format: csv (Query, Label) or json (pre-tokenized)')
     p.add_argument('--data', default=cfg.RAW_CSV,
-                   help='Data file path (CSV or JSON)')
+                   help='Training data file path (CSV or JSON)')
+    p.add_argument('--verify-data', default=cfg.VERIFY_CSV,
+                   help='Held-out verification data file path (never used for training)')
+    p.add_argument('--source-data', default=cfg.FULL_CSV,
+                   help='Full source CSV used by --split-only')
+    p.add_argument('--split-only', action='store_true',
+                   help='Split --source-data into train_data.csv and verify_data.csv, then exit')
+    p.add_argument('--no-verify', action='store_true',
+                   help='Ignore --verify-data and split training data internally')
+    p.add_argument('--trees', type=int, default=None,
+                   help='Override RF n_estimators')
+    p.add_argument('--max-depth', type=int, default=None,
+                   help='Override RF max_depth')
     p.add_argument('--dfa-so', default=cfg.DFA_SO, help='DFA engine dll/so path')
     p.add_argument('--feature-so', default=cfg.FEATURE_SO, help='Feature engine dll/so path')
     p.add_argument('--transition', default=None, help='DFA transition table path (override config)')
@@ -709,6 +798,25 @@ def main():
     )
     p.add_argument('--epochs', type=int, default=cfg.EPOCHS, help='Training epochs (DL only)')
     args = p.parse_args()
+
+    if args.split_only:
+        split_raw_dataset(
+            args.source_data,
+            cfg.RAW_CSV,
+            cfg.VERIFY_CSV,
+            test_size=cfg.TEST_SIZE,
+            random_state=cfg.RANDOM_STATE,
+        )
+        return 0
+
+    if args.trees is not None:
+        if args.trees <= 0:
+            p.error('--trees must be positive')
+        cfg.RF_PARAMS['n_estimators'] = args.trees
+    if args.max_depth is not None:
+        if args.max_depth <= 0:
+            p.error('--max-depth must be positive')
+        cfg.RF_PARAMS['max_depth'] = args.max_depth
 
     # --- 读取 config.json ---
     with open(args.config, 'r', encoding='utf-8') as f:
@@ -790,6 +898,8 @@ def main():
     print(f"Model type: {args.model_type}")
     print(f"Data format: {args.data_format}")
     print(f"Data file: {args.data}")
+    if not args.no_verify:
+        print(f"Verify data: {args.verify_data}")
     print(f"Model output: {model_full_path}")
     if trans:
         print(f"Transition: {trans}")
@@ -811,8 +921,16 @@ def main():
         # --- 根据数据格式加载 ---
         if args.data_format == 'json':
             X, y = load_json_data(args.data, engine, args.model_type, cfg)
+            if not args.no_verify and os.path.exists(args.verify_data):
+                X_val, y_val = load_json_data(args.verify_data, engine, args.model_type, cfg)
+            else:
+                X_val, y_val = None, None
         else:
             X, y = load_raw_csv(args.data, engine, args.model_type, cfg)
+            if not args.no_verify and os.path.exists(args.verify_data):
+                X_val, y_val = load_raw_csv(args.verify_data, engine, args.model_type, cfg)
+            else:
+                X_val, y_val = None, None
     finally:
         engine.close()
 
@@ -822,10 +940,10 @@ def main():
 
     # --- 训练 ---
     if args.model_type == 'rf':
-        train_rf(X, y, cfg, output_dir, model_full_path)
+        train_rf(X, y, cfg, output_dir, model_full_path, X_val, y_val)
     else:
         cfg.EPOCHS = args.epochs
-        train_dl(X, y, args.model_type, cfg, output_dir, model_full_path)
+        train_dl(X, y, args.model_type, cfg, output_dir, model_full_path, X_val, y_val)
 
     print("\nTraining completed!")
     return 0

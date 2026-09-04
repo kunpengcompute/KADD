@@ -30,6 +30,7 @@ typedef enum {
 /**
  * @brief 推理引擎句柄（不透明指针）
  */
+#define KADD_INFERENCE_MAX_FEATURE_DIM      4096   /* [FIX REPORT-2026-0000014] */
 typedef struct kadd_inference_engine_t kadd_inference_engine_t;
 
 /**

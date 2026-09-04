@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  * @file kadd_inference_engine.c
  * @brief ONNX 推理引擎实现
@@ -30,6 +30,25 @@ struct kadd_inference_engine_t {
 static OrtEnv *g_ort_env = NULL;
 static const OrtApi *g_ort_api = NULL;
 static int g_ort_env_ref_count = 0;
+
+/* [FIX REPORT-2026-0000008] Cross-platform mutex for thread-safe init/free */
+#ifdef _WIN32
+#include <windows.h>
+static CRITICAL_SECTION g_ort_mutex;
+static volatile LONG g_ort_mutex_init_done = 0;
+static void ensure_mutex_init(void) {
+    if (InterlockedCompareExchange(&g_ort_mutex_init_done, 1, 0) == 0) {
+        InitializeCriticalSection(&g_ort_mutex);
+    }
+}
+#define LOCK_ORT()   do { ensure_mutex_init(); EnterCriticalSection(&g_ort_mutex); } while(0)
+#define UNLOCK_ORT() LeaveCriticalSection(&g_ort_mutex)
+#else
+#include <pthread.h>
+static pthread_mutex_t g_ort_mutex = PTHREAD_MUTEX_INITIALIZER;
+#define LOCK_ORT()   pthread_mutex_lock(&g_ort_mutex)
+#define UNLOCK_ORT() pthread_mutex_unlock(&g_ort_mutex)
+#endif
 
 /* ONNX Runtime 最小 API 版本（v17 对应 ONNX Runtime 1.18+） */
 #define ORT_MIN_API_VERSION 17
@@ -76,14 +95,17 @@ static int init_ort_api(kadd_inference_engine_t *e)
 
 static int init_ort_env(kadd_inference_engine_t *e)
 {
+    LOCK_ORT();  /* [FIX REPORT-2026-0000008] Thread-safe ref counting */
     if (!g_ort_env) {
         OrtStatus *status = e->api->CreateEnv(ORT_LOGGING_LEVEL_ERROR, "inference", &g_ort_env);
         if (check_ort_status(e->api, status, "CreateEnv")) {
+            UNLOCK_ORT();
             return -1;
         }
     }
     g_ort_env_ref_count++;
     e->env = g_ort_env;
+    UNLOCK_ORT();
     return 0;
 }
 
@@ -375,8 +397,19 @@ int kadd_inference_predict_batch(kadd_inference_engine_t *engine,
     for (int i = 0; i < n; i += eff_batch) {
         int cur = (i + eff_batch < n) ? eff_batch : (n - i);
 
-        for (int j = 0; j < cur * engine->feature_dim; j++) {
-            if (!isfinite(features[i * engine->feature_dim + j])) {
+        /* [FIX REPORT-2026-0000014] Integer overflow checks */
+        if (engine->feature_dim <= 0 || engine->feature_dim > KADD_INFERENCE_MAX_FEATURE_DIM) {
+            fprintf(stderr, "[kadd_inference] ERROR: Invalid feature_dim=%d\n", engine->feature_dim);
+            return KADD_ERROR_INVALID_PARAM;
+        }
+        if ((size_t)cur > SIZE_MAX / (size_t)engine->feature_dim) {
+            fprintf(stderr, "[kadd_inference] ERROR: cur*feature_dim overflow (cur=%d, dim=%d)\n",
+                    cur, engine->feature_dim);
+            return KADD_ERROR_INVALID_PARAM;
+        }
+        size_t total_elems = (size_t)cur * (size_t)engine->feature_dim;
+        for (size_t j = 0; j < total_elems; j++) {
+            if (!isfinite(features[(size_t)i * engine->feature_dim + j])) {
                 return KADD_ERROR_INVALID_PARAM;
             }
         }
@@ -384,8 +417,8 @@ int kadd_inference_predict_batch(kadd_inference_engine_t *engine,
         int64_t shape[] = {cur, engine->feature_dim};
         OrtValue *input = NULL;
         OrtStatus *status = engine->api->CreateTensorWithDataAsOrtValue(
-            engine->memory_info, (void *)(features + i * engine->feature_dim),
-            (size_t)cur * engine->feature_dim * sizeof(float),
+            engine->memory_info, (void *)(features + (size_t)i * engine->feature_dim),
+            total_elems * sizeof(float),
             shape, 2, ONNX_TENSOR_ELEMENT_DATA_TYPE_FLOAT, &input);
         if (check_ort_status(engine->api, status, "CreateTensor")) {
             return KADD_ERROR_INFERENCE_FAILED;
@@ -410,6 +443,13 @@ int kadd_inference_predict_batch(kadd_inference_engine_t *engine,
             return KADD_ERROR_INFERENCE_FAILED;
         }
 
+        /* [FIX REPORT-2026-0000011] Validate output_dim for safe column access */
+        if (engine->output_dim < 2) {
+            fprintf(stderr, "[kadd_inference] ERROR: output_dim=%d < 2, cannot access column 1\n",
+                    engine->output_dim);
+            (void)engine->api->ReleaseValue(output);
+            return KADD_ERROR_INFERENCE_FAILED;
+        }
         for (int j = 0; j < cur; j++) {
             probabilities[i + j] = data[j * engine->output_dim + 1];
         }
@@ -435,11 +475,14 @@ void kadd_inference_engine_free(kadd_inference_engine_t *engine)
 
     release_engine_resources(engine);
 
+    LOCK_ORT();  /* [FIX REPORT-2026-0000008] Thread-safe ref counting */
     g_ort_env_ref_count--;
     if (g_ort_env_ref_count == 0 && g_ort_env) {
         (void)g_ort_api->ReleaseEnv(g_ort_env);
         g_ort_env = NULL;
     }
+    UNLOCK_ORT();
 
     free(engine);
 }
+

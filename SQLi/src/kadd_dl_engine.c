@@ -49,8 +49,12 @@ int kadd_dl_model_load(kadd_dl_model_t **model_out, const char *model_path, int 
     }
 
 #if KADD_HAVE_SVE
-    /* SVE 可用：优先尝试原生 CNN 二进制格式 */
-    {
+    /*
+     * 先确认运行环境 CPU 真的支持 SVE（编译期宏无法证明硬件能力），
+     * 不支持则直接走 ONNX 后端，避免执行 SVE 指令触发 SIGILL。
+     */
+    if (kadd_sve_runtime_available()) {
+        /* 硬件支持 SVE：优先尝试原生 CNN 二进制格式 */
         kadd_cnn_model_t *cnn = NULL;
         if (kadd_cnn_model_load(&cnn, model_path) == KADD_SUCCESS) {
             int cnn_dim = kadd_cnn_model_get_feature_dim(cnn);
@@ -69,6 +73,9 @@ int kadd_dl_model_load(kadd_dl_model_t **model_out, const char *model_path, int 
             return KADD_SUCCESS;
         }
         /* CNN 加载失败（非原生格式），回退 ONNX */
+    } else {
+        fprintf(stderr,
+                "[kadd_dl] CPU does not support SVE, using ONNX backend\n");
     }
 #endif
 

@@ -5,6 +5,7 @@
  */
 
 #include "kadd_rf_engine.h"
+#include "kadd_sve.h"
 #include "kadd_errors.h"
 
 #include <errno.h>
@@ -298,6 +299,21 @@ int kadd_rf_model_load(kadd_rf_model_t **model_out, const char *model_path)
         return KADD_ERROR_NULL_PTR;
     }
     *model_out = NULL;
+
+#if KADD_RF_HAVE_SVE
+    /*
+     * 纵深防护：上层分发层已做 HWCAP 检测，这里再次确认——
+     * prepare_sve_layout() 及推理路径使用 SVE 指令，在无 SVE 的 CPU 上
+     * 执行即 SIGILL，必须先用 HWCAP 确认硬件能力，
+     * 不支持则返回失败，由上层回退 ONNX 后端。
+     */
+    if (!kadd_sve_runtime_available()) {
+        fprintf(stderr,
+                "[kadd_rf] ERROR: CPU does not support SVE, "
+                "native RF backend unavailable\n");
+        return KADD_ERROR_MODEL_LOAD_FAILED;
+    }
+#endif
 
     ret = read_entire_file(model_path, &file_bytes, &file_size);
     if (ret != KADD_SUCCESS) {
