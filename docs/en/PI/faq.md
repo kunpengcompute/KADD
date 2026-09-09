@@ -8,21 +8,11 @@ This document describes the frequently asked questions (FAQs) and solutions rela
 
 ### Q1: What Should I Do If a Dynamic Link Library Is Missing?
 
-**Question**: On Kunpeng 920 processor, after deployment, opening a new terminal and manually activating the virtual environment results in missing dynamic link library errors when running the program.
+**Question**: On Kunpeng 920 processor, after the environment is deployed, running the program in a newly opened terminal results in missing dynamic link library errors.
 
 **Solution**:
 
-Add the acceleration library to the environment variable:
-
-```bash
-export LD_LIBRARY_PATH=project_path/acceleration_library:$LD_LIBRARY_PATH
-```
-
-Or use the deployment script with `source` (it automatically configures environment variables):
-
-```bash
-source ./deploy/deploy.sh
-```
+Environment variables do not take effect automatically in a new terminal. Reconfigure the environment variables according to the [Installation Guide](installation_guide.md).
 
 ---
 
@@ -61,23 +51,19 @@ pip install onnxruntime==1.19.2
 
 ### Q4: What Should I Do If the Python Version Does Not Match?
 
-**Question**: The deployment script reports a Python version mismatch.
+**Question**: Installing the acceleration library whl package reports a Python version incompatibility (for example, `is not a supported wheel on this platform`), or Python version related errors occur at runtime.
 
 **Solution**:
 
-Different Kunpeng chip models require different Python versions:
+Different Kunpeng chip models require different Python versions, and the Python version of the runtime environment must be the same as the Python version used when compiling the acceleration library whl package:
 
 | Kunpeng Chip Model              | Required Python Version |
 | ------------------------------- | ----------------------- |
 | Kunpeng 920 processor           | 3.9                     |
 | Kunpeng 920 new model processor | 3.9                     |
-| Kunpeng 950 processor           | 3.10                    |
+| Kunpeng 950 processor           | 3.10                    |
 
-Use the `-p` parameter to specify the correct Python version:
-
-```bash
-source ./deploy/deploy.sh -p /opt/python3.9/bin/python3.9
-```
+See the compilation environment requirements in the [Installation Guide](installation_guide.md), and recompile and redeploy the environment using the corresponding Python version.
 
 ---
 

@@ -80,15 +80,7 @@ fi
 # 部署 PI
 if [ -d "${KADD_ROOT}/PI/deploy" ]; then
     echo "[2/2] 部署 PI 特性..."
-    cd "${KADD_ROOT}/PI/deploy"
-    chmod +x deploy.sh && source ./deploy.sh -s < /dev/null
-    echo "✅ PI 部署完成"
-    echo "执行功能测试: ${KADD_ROOT}/PI/function_test.py"
-    python "${KADD_ROOT}/PI/function_test.py" || {
-        echo "❌ PI 功能测试失败"
-        exit 1
-    }
-    echo "✅ PI 功能测试完成"
+    echo "✅ PI 无部署脚本"
     cd "${KADD_ROOT}"
 fi
 

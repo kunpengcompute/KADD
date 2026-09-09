@@ -49,9 +49,9 @@ python -m unittest function_test.py
 **Output example:**
 
 ```bash
-.......
+.................
 ----------------------------------------------------------------------
-Ran 7 tests in 2.456s
+Ran 17 tests in 2.456s
 
 OK
 ```

@@ -78,7 +78,7 @@
     </tr>
     <tr>
       <td style="text-align: left;">安装指南</td>
-      <td style="text-align: left;">提供KADD PI特性的环境部署、依赖包安装方法。</td>
+      <td style="text-align: left;">提供KADD PI特性的环境部署、依赖包安装及加速库编译方法。</td>
       <td style="text-align: left;">开源仓</td>
     </tr>
     <tr>

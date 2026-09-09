@@ -1,4 +1,2 @@
-PI/acceleration_library/onnxruntime-1.22.2-cp310-cp310-linux_aarch64.whl filter=lfs diff=lfs merge=lfs -text
-PI/acceleration_library/onnxruntime_acl-1.19.2-cp39-cp39-linux_aarch64.whl filter=lfs diff=lfs merge=lfs -text
 PI/algorithm/knowledge_base/model_file/clf_model.onnx filter=lfs diff=lfs merge=lfs -text
 SQLi/tools/model_train/train_data/train_data.csv filter=lfs diff=lfs merge=lfs -text

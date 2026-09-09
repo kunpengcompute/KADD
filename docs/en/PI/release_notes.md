@@ -78,7 +78,7 @@
     </tr>
     <tr>
       <td style="text-align: left;">Installation Guide</td>
-      <td style="text-align: left;">Provides the methods of installing dependencies and deploying the KADD-PI.</td>
+      <td style="text-align: left;">Provides the methods of environment deployment, dependency installation, and acceleration library compilation for the KADD-PI.</td>
       <td style="text-align: left;">Open-source repository</td>
     </tr>
     <tr>

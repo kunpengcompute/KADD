@@ -8,21 +8,11 @@
 
 ### Q1：缺少动态链接库怎么办？
 
-**问题**：在鲲鹏920处理器下，环境部署好后新开终端并手动激活虚拟环境，运行程序出现缺少动态链接库的错误。
+**问题**：在鲲鹏920处理器下，环境部署好后新开终端运行程序，出现缺少动态链接库的错误。
 
 **解决方案**：
 
-将加速库添加进环境变量：
-
-```bash
-export LD_LIBRARY_PATH=项目路径/acceleration_library:$LD_LIBRARY_PATH
-```
-
-或使用部署脚本时以 `source` 方式执行（会自动配置环境变量）：
-
-```bash
-source ./deploy/deploy.sh
-```
+环境变量在新终端中不会自动生效，需按照[安装指南](installation_guide.md)重新配置环境变量。
 
 ---
 
@@ -61,11 +51,11 @@ pip install onnxruntime==1.19.2
 
 ### Q4：Python 版本不匹配怎么办？
 
-**问题**：部署脚本提示 Python 版本不匹配。
+**问题**：安装加速库whl包时报Python版本不兼容（如 `is not a supported wheel on this platform`），或运行时报Python版本相关错误。
 
 **解决方案**：
 
-不同鲲鹏芯片型号需要不同的Python版本：
+不同鲲鹏芯片型号需要不同的Python版本，且运行环境的Python版本需与编译加速库whl包时使用的Python版本一致：
 
 | 鲲鹏芯片型号      | 所需Python版本 |
 | ----------- | ---------- |
@@ -73,11 +63,7 @@ pip install onnxruntime==1.19.2
 | 鲲鹏920新型号处理器 | 3.9        |
 | 鲲鹏950处理器    | 3.10       |
 
-使用 `-p` 参数指定正确版本的 Python：
-
-```bash
-source ./deploy/deploy.sh -p /opt/python3.9/bin/python3.9
-```
+请参考[安装指南](installation_guide.md)中的编译环境要求，使用对应版本的Python重新编译并部署环境。
 
 ---
 

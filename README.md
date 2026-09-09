@@ -93,7 +93,7 @@ PI特性的快速入门，包括快速安装、数据准备和工具使用等，
 | 文档 | 介绍|
 | -- | -- |
 | [版本说明书](docs/zh/PI/release_notes.md) | 提供KADD PI特性的版本更新说明。 |
-| [安装指南](docs/zh/PI/installation_guide.md) | 提供KADD PI特性的环境部署、依赖包安装及编译方法。 |
+| [安装指南](docs/zh/PI/installation_guide.md) | 提供KADD PI特性的环境部署、依赖包安装及加速库编译方法。 |
 | [快速入门](docs/zh/PI/quick_start.md) | 提供KADD PI特性的demo示例快速使用方法。 |
 | [API参考](docs/zh/PI/api_reference.md) | 提供KADD PI特性的初始化、检测和黑白名单更新接口的完整API说明。 |
 | [用户指南](docs/zh/PI/user_guide.md) | 提供KADD PI特性的配置说明、检测原理和代码示例。 |
