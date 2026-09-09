@@ -6,21 +6,25 @@ This document describes the frequently asked questions (FAQs) and solutions rela
 
 ## Installation & Deployment
 
-### Q1: What Should I Do If a Dynamic Link Library Is Missing?
+### Missing Dynamic Link Library
 
-**Question**: On Kunpeng 920 processor, after the environment is deployed, running the program in a newly opened terminal results in missing dynamic link library errors.
+**Question**
 
-**Solution**:
+On Kunpeng 920 processor, after the environment is deployed, running the program in a newly opened terminal results in missing dynamic link library errors.
+
+**Answer**
 
 Environment variables do not take effect automatically in a new terminal. Reconfigure the environment variables according to the [Installation Guide](installation_guide.md).
 
 ---
 
-### Q2: What Should I Do If the _ctypes Module Is Missing?
+### Missing _ctypes Module
 
-**Question**: Running the program shows `ModuleNotFoundError: No module named '_ctypes'`.
+**Question**
 
-**Solution**:
+Running the program shows `ModuleNotFoundError: No module named '_ctypes'`.
+
+**Answer**
 
 This is because the Python installation is incomplete. Check if `libffi-devel` is installed on the system, and add the `--with-system-ffi` option when compiling Python from source:
 
@@ -35,11 +39,13 @@ make && make install
 
 ---
 
-### Q3: What Should I Do If System Libraries (GLIBC) Are Missing?
+### Missing System Libraries (GLIBC)
 
-**Question**: Running the program shows `version GLIBC_XXX not found` or similar library version mismatch errors.
+**Question**
 
-**Solution**:
+Running the program shows `version GLIBC_XXX not found` or similar library version mismatch errors.
+
+**Answer**
 
 The system's `ldd` version is lower than the `ldd` version used when compiling the acceleration library. Due to the acceleration library's limitations, Kunpeng acceleration cannot be enabled. You can manually download the standard `onnxruntime` and run the non-accelerated version:
 
@@ -49,11 +55,13 @@ pip install onnxruntime==1.19.2
 
 ---
 
-### Q4: What Should I Do If the Python Version Does Not Match?
+### Python Version Mismatch
 
-**Question**: Installing the acceleration library whl package reports a Python version incompatibility (for example, `is not a supported wheel on this platform`), or Python version related errors occur at runtime.
+**Question**
 
-**Solution**:
+Installing the acceleration library whl package reports a Python version incompatibility (for example, `is not a supported wheel on this platform`), or Python version related errors occur at runtime.
+
+**Answer**
 
 Different Kunpeng chip models require different Python versions, and the Python version of the runtime environment must be the same as the Python version used when compiling the acceleration library whl package:
 
@@ -69,11 +77,13 @@ See the compilation environment requirements in the [Installation Guide](install
 
 ## Usage
 
-### Q5: How Do I Interpret the Detection Result?
+### How to Interpret the Detection Result
 
-**Question**: How do I read the result returned by `kp_detect`?
+**Question**
 
-**Solution**:
+How do I read the result returned by `kp_detect`?
+
+**Answer**
 
 The result is a dictionary. The `result` field values mean:
 
@@ -92,11 +102,13 @@ else:
 
 ---
 
-### Q6: What Are the Limits for Black/White Lists and Input Text?
+### Limits on Black/White Lists and Input Text
 
-**Question**: Are there length or count limits for black/white lists and input text?
+**Question**
 
-**Solution**:
+Are there length or count limits for black/white lists and input text?
+
+**Answer**
 
 | Limit                                | Value      | Behavior When Exceeded                     |
 | ------------------------------------ | ---------- | ------------------------------------------ |
@@ -106,21 +118,25 @@ else:
 
 ---
 
-### Q7: What Matching Method Does the Black/White List Use?
+### Black/White List Matching Method
 
-**Question**: Is the black/white list matching exact or fuzzy?
+**Question**
 
-**Solution**:
+Is the black/white list matching exact or fuzzy?
+
+**Answer**
 
 The black/white list uses the **MinHash LSH** approximate matching algorithm with a similarity threshold of 0.8. Text is first segmented using jieba Chinese word segmentation, then MinHash signatures are computed for approximate matching. This means highly similar text will also be matched.
 
 ---
 
-### Q8: Can a Detector Instance Be Used Across Threads?
+### Using Detector Instances Across Threads
 
-**Question**: Can multiple threads share the same detector instance?
+**Question**
 
-**Solution**:
+Can multiple threads share the same detector instance?
+
+**Answer**
 
 It is recommended that each thread create an independent detector instance to avoid concurrency issues:
 
@@ -130,13 +146,17 @@ logger = logging.getLogger()
 kp = kp_detector_initialization(logger)
 ```
 
+---
+
 ## Performance
 
-### Q9: How Do I Achieve the Best Detection Performance?
+### How to Achieve the Best Detection Performance
 
-**Question**: How do I reduce detection latency?
+**Question**
 
-**Solution**:
+How do I reduce detection latency?
+
+**Answer**
 
 Use `numactl` to bind the NUMA node:
 
@@ -150,11 +170,13 @@ Additionally, the detector instance performs model warmup during initialization.
 
 ## Model Training
 
-### Q10: How Do I Train a Custom Model?
+### How to Train a Custom Model
 
-**Question**: How do I train a new detection model with my own dataset?
+**Question**
 
-**Solution**:
+How do I train a new detection model with my own dataset?
+
+**Answer**
 
 1. Prepare training data in JSON format and store it in `train/dataset/train_data.json`
 2. Download the Chinese-lert-small pretrained model and place it in `train/pretrained_model/chinese-lert-small/`

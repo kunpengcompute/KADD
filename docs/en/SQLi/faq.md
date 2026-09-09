@@ -6,22 +6,24 @@ This document describes the frequently asked questions (FAQs) and solutions rela
 
 ## Installation
 
-### Q1: What Should I Do If a Message Is Displayed Indicating That the Library File Cannot Be Found During Runtime?
+### Library File Not Found at Runtime
 
-**Question**: `error while loading shared libraries: libkadd_sqli.so: cannot open shared object file`
+**Question**
 
-**Solution**:
+`error while loading shared libraries: libkadd_sqli.so: cannot open shared object file`
 
-- Temporary solution
+**Answer**
+
+Temporary solution:
 
 ```bash
-export LD_LIBRARY_PATH=/path/to/kadd-open/lib:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=/opt/KADD/SQLi/build/src:$LD_LIBRARY_PATH
 ```
 
-- Permanent solution (adding the environment variable to `~/.bashrc`) - not recommended
+Permanent solution: add the environment variable to `~/.bashrc`. This method is not recommended:
 
 ```bash
-echo 'export LD_LIBRARY_PATH=/path/to/kadd-open/lib:$LD_LIBRARY_PATH' >> ~/.bashrc
+echo 'export LD_LIBRARY_PATH=/opt/KADD/SQLi/build/src:$LD_LIBRARY_PATH' >> ~/.bashrc
 source ~/.bashrc
 ```
 
@@ -29,42 +31,105 @@ source ~/.bashrc
 
 ## Usage
 
-### Q2: How Do I Set the Detection Threshold?
+### How to Set the Detection Threshold
 
-**Question**: How do I adjust the sensitivity of SQL injection detection?
+**Question**
 
-**Solution**:
+How do I adjust the sensitivity of SQL injection detection?
+
+**Answer**
+
+The thresholds mean the following:
+
+1. If the probability is greater than or equal to `0.5f`, the input is determined as SQL injection based on the standard threshold.
+2. If the probability is greater than or equal to `0.3f` and less than `0.5f`, the input is determined as a possible SQL injection in strict mode.
+3. Other inputs are determined as secure.
 
 ```c
 float probability = 0.0f;
 kadd_sqli_detect(engine, input, &probability);
 
-// Select a threshold based on the scenario.
-if (probability >= 0.5f) {      // Standard threshold
-    // Injection is detected.
-} else if (probability >= 0.3f) {  // Strict mode
-    // Injection may occur.
-} else {
-    // Secure input
-}
+int alert_level = 0;
 
+if (probability >= 0.5f) {
+    alert_level = 2;
+} else if (probability >= 0.3f) {
+    alert_level = 1;
+} else {
+    alert_level = 0;
+}
 ```
 
-### Q3: Can an Engine Instance Be Used Across Threads?
+---
 
-**Question**: Can multiple threads share the same engine instance?
+### Using Engine Instances Across Threads
 
-**Solution**:
+**Question**
+
+Can multiple threads share the same engine instance?
+
+**Answer**
 
 No. Engine instances **are not thread-safe**. Each thread should create an independent engine instance.
 
+Each thread uses the engine in the following sequence:
+
+1. Create an independent engine instance.
+2. Use the engine to perform detection.
+3. Release resources when the thread ends.
+
 ```c
-// Each thread creates an independent instance.
 kadd_sqli_engine_t *engine = NULL;
 kadd_sqli_engine_create_from_file(&engine, "config.json");
 
-// Use the engine...
+const char *input = "id=1";
+float probability = 0.0f;
+kadd_sqli_detect(engine, input, &probability);
 
-// Clear the engine when the thread ends.
 kadd_sqli_engine_free(engine);
 ```
+
+---
+
+### Differences Between ML and DL Modes and How to Choose
+
+**Question**
+
+What are the differences between setting `engine_mode` to `ml` and `dl` in `config.json`?
+
+**Answer**
+
+| Item                 | ML Mode                                          | DL Mode                              |
+| -------------------- | ------------------------------------------------ | ------------------------------------ |
+| Model type           | Random forest                                    | Convolutional neural network (TextCNN) |
+| Input features       | 28-dimensional handcrafted features (sliding window statistics) | 300-dimensional token ID sequence |
+| Applicable scenario  | Low-latency and resource-constrained environments | Scenarios requiring higher detection accuracy |
+
+**Configuration switching**: Modify the `engine_mode` field in `config.json`, that is, set the field to `ml` or `dl`.
+
+```json
+{
+  "engine_mode": "ml"
+}
+```
+
+No recompilation is required. The setting takes effect the next time an engine is created.
+
+**Model loading strategy**: Both modes use the same strategy. When SVE is available, the native binary formats (`.krf` / `.kcn`) are loaded first. If loading fails, the system automatically falls back to ONNX Runtime to load the `.onnx` format.
+
+---
+
+### How SVE Acceleration Works
+
+**Question**
+
+`-DENABLE_ARM_SVE=ON` is enabled during compilation, but a message indicating that SVE is unavailable is displayed at runtime.
+
+**Answer**
+
+Both the ML and DL engines of KADD use the **automatic fallback** strategy:
+
+1. The SVE compilation path is enabled through `-DENABLE_ARM_SVE=ON` (enabled by default) during compilation.
+2. SVE availability is checked at runtime (through the macros in `kadd_sve.h`).
+3. When SVE is available, native binary models (`.krf` / `.kcn`) are loaded and accelerated by SVE instructions.
+4. When SVE is unavailable, the system automatically falls back to ONNX Runtime to load `.onnx` models.

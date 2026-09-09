@@ -6,11 +6,13 @@
 
 ## 安装相关
 
-### Q1：运行时提示找不到库文件怎么办？
+### 运行时提示找不到库文件
 
-**问题**：`error while loading shared libraries: libkadd_sqli.so: cannot open shared object file`
+**问题**
 
-**解决方案**：
+`error while loading shared libraries: libkadd_sqli.so: cannot open shared object file`
+
+**回答**
 
 使用临时解决方案：
 
@@ -29,11 +31,13 @@ source ~/.bashrc
 
 ## 使用相关
 
-### Q2：如何设置检测阈值？
+### 如何设置检测阈值
 
-**问题**：如何调整SQL注入检测的敏感度？
+**问题**
 
-**解决方案**：
+如何调整SQL注入检测的敏感度？
+
+**回答**
 
 阈值含义如下：
 
@@ -56,11 +60,15 @@ if (probability >= 0.5f) {
 }
 ```
 
-### Q3：引擎实例可以跨线程使用吗？
+---
 
-**问题**：多个线程能否共享同一个引擎实例？
+### 引擎实例可以跨线程使用吗
 
-**解决方案**：
+**问题**
+
+多个线程能否共享同一个引擎实例？
+
+**回答**
 
 不可以。引擎实例**不是线程安全的**。每个线程应创建独立的引擎实例：
 
@@ -81,11 +89,15 @@ kadd_sqli_detect(engine, input, &probability);
 kadd_sqli_engine_free(engine);
 ```
 
-### Q4：ML模式和DL模式有什么区别？如何选择？
+---
 
-**问题**：`config.json` 中 `engine_mode` 设为 `ml` 和 `dl` 有什么区别？
+### ML模式和DL模式的区别与选择
 
-**解决方案**：
+**问题**
+
+`config.json` 中 `engine_mode` 设为 `ml` 和 `dl` 有什么区别？
+
+**回答**
 
 | 对比项 | ML模式 | DL模式 |
 |--------|--------|--------|
@@ -106,11 +118,15 @@ kadd_sqli_engine_free(engine);
 
 **模型加载策略**：两种模式均采用相同策略。SVE可用时优先加载原生二进制格式（`.krf` / `.kcn`），失败则自动回退ONNX Runtime加载`.onnx`格式。
 
-### Q5：SVE加速如何工作？不支持SVE时怎么办？
+---
 
-**问题**：编译时启用了 `-DENABLE_ARM_SVE=ON`，但运行时提示SVE不可用。
+### SVE加速如何工作
 
-**解决方案**：
+**问题**
+
+编译时启用了 `-DENABLE_ARM_SVE=ON`，但运行时提示SVE不可用。
+
+**回答**
 
 KADD的ML和DL引擎均采用**自动回退**策略：
 
@@ -118,5 +134,3 @@ KADD的ML和DL引擎均采用**自动回退**策略：
 2. 运行时检测SVE可用性（通过 `kadd_sve.h` 中的宏判断）
 3. SVE可用时，加载原生二进制模型（`.krf` / `.kcn`），利用SVE指令加速
 4. SVE不可用时，自动回退ONNX Runtime加载`.onnx`模型
-
----
