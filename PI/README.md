@@ -6,7 +6,6 @@
 
 ```
 kunpeng_detection
-├── acceleration_library
 ├── algorithm
 │   ├── api
 │   ├── codes
@@ -29,12 +28,11 @@ kunpeng_detection
     └── utils
 ```
 
-- acceleration_library：存放预编译加速库和动态链接库
 - algorithm：提示词检测主体代码
   - api：对外接口
   - codes：检测逻辑代码
   - knowledge_base：知识库，存放黑白名单、模型文件
-- deploy：部署脚本、依赖列表
+- deploy：依赖列表
 - train：模型训练代码
   - dataset：训练数据
   - finetuned_model：存放微调后的模型文件，.bin格式
@@ -46,6 +44,10 @@ kunpeng_detection
 - 提示词检测：判断输入的prompt是否违规，result 1 为JAILBREAK，result 0 为BENIGN
 - 黑白名单机制：支持动态更新黑白名单，直接匹配拦截放行
 - 模型训练量化：支持模型二分类训练，导出为ONNX格式并FP32 → INT8动态量化，便于部署
+
+## 性能指标
+
+在标准测试集上准确率已达到99%
 
 ## 鲲鹏亲和环境要求
 
@@ -60,26 +62,17 @@ kunpeng_detection
 
 ### 1、部署
 
-支持环境一键式部署，在目标机器上运行部署脚本
+请参考[安装指南](../docs/zh/PI/installation_guide.md)完成环境部署，主要步骤如下：
+
+1. 鲲鹏920处理器、鲲鹏920新型号处理器以及鲲鹏950处理器：按照安装指南编译对应版本的onnxruntime加速库（加速库20或加速库50），并使用pip安装编译得到的whl包，配置所需的环境变量
+2. 其他处理器：直接使用pip安装非加速版三方库 `pip install onnxruntime==1.19.2`
+3. 安装python三方库依赖
 
 ```bash
-source ./deploy/deploy.sh
+pip install -r deploy/requirements.txt
 ```
 
-#### 部署选项
-
-| 指令                                                                                   | 说明                   |
-| ------------------------------------------------------------------------------------ | -------------------- |
-| source ./deploy/deploy.sh -h                                                         | 查看帮助                 |
-| source ./deploy/deploy.sh -p /opt/python3.9/bin/python3.9                            | 指定 Python 可执行文件路径或命令 |
-| source ./deploy/deploy.sh -e /opt/python_venv                                        | 指定已有虚拟环境路径           |
-| source ./deploy/deploy.sh -d /data/envs                                              | 指定虚拟环境创建目录           |
-| source ./deploy/deploy.sh --recreate-ven                                             | 如果目标虚拟环境已存在，则删除后重新创建 |
-| source ./deploy/deploy.sh --pip-index-url `https://pypi.tuna.tsinghua.edu.cn/simple` | 指定 pip 镜像源（默认阿里云）    |
-| source ./deploy/deploy.sh --proxy `http://127.0.0.1:7890`                            | 设置统一代理用于下载依赖         |
-| source ./deploy/deploy.sh -s                                                         | 部署完成后不执行功能测试         |
-
-部署完成后可直接输入`python test_kp_detect.py`进行单条文本测试
+部署完成后可通过`python function_test.py`验证功能，或直接输入`python test_kp_detect.py`进行单条文本测试
 
 ### 2、使用API
 
@@ -149,11 +142,7 @@ python train/train.py
 
 ### 1、缺少动态链接库
 
-在鲲鹏920处理器下，若在环境部署好后，新开了终端并手动激活虚拟环境，运行程序会出现缺少动态链接库的错误，此时可以通过以下命令，将加速库添加进环境变量解决
-
-```bash
-export LD_LIBRARY_PATH=项目路径/acceleration_library:$LD_LIBRARY_PATH
-```
+在鲲鹏920处理器下，若在环境部署好后新开了终端，运行程序会出现缺少动态链接库的错误，此时可以按照[安装指南](../docs/zh/PI/installation_guide.md)重新配置环境变量解决
 
 ### 2、缺少_ctypes
 
