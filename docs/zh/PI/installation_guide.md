@@ -53,57 +53,43 @@ unzip ComputeLibrary-23.08.zip && cd ComputeLibrary-23.08
 使用如下命令进行编译
 
 ```bash
-scons Werror=1 -j8 debug=0 neon=1 opencl=0 os=linux arch=armv8a build=native \
-    extra_cxx_flags="-D_FORTIFY_SOURCE=2 -ftrapv -fstack-protector-all" \
-    extra_link_flags="-Wl,-z,relro -Wl,-z,now -Wl,--strip-all"
+scons Werror=1 -j8 debug=0 neon=1 opencl=0 os=linux arch=armv8a build=native
 ```
-
-编译完成后在/ComputeLibrary-23.08/build中应包含libarm_compute.so、libarm_compute_core.so以及libarm_compute_graph.so，其中libarm_compute_core.so为空壳文件，没有栈保护，可由libarm_compute.so替换。
-``` bash
-# 在/ComputeLibrary-23.08目录下
-cd build
-rm -rf libarm_compute_core.so
-cp libarm_compute.so libarm_compute_core.so
-```
-
 
 **安装KONNX**
-按照鲲鹏社区指引，先安装[SRA_Inference](https://www.hikunpeng.com/document/detail/zh/boostsra/srainference/SRA_Inference/kunpengsra_inference_16_0006.html)，然后安装打入KONNX补丁的onnxruntime源码，[参考文档](https://www.hikunpeng.com/document/detail/zh/boostsra/srainference/SRA_Inference/kunpengsra_inference_16_0031.html)
+按照鲲鹏社区指引，先安装[SRA_Inference](https://www.hikunpeng.com/document/detail/zh/boostsra/srainference/SRA_Inference/kunpengsra_inference_16_0006.html)
+
+```bash
+wget -q https://kunpeng-repo.obs.cn-north-4.myhuaweicloud.com/Kunpeng%20BoostKit/Kunpeng%20BoostKit%2026.1.RC1/BoostKit-boostsra-inference_1.2.0_RC1.zip -O sra_inference.zip
+unzip sra_inference.zip
+rpm -ivh boostsra-inference-1.2.0-RC1.aarch64.rpm
+source /etc/profile
+```
+
+然后安装打入KONNX补丁的onnxruntime源码，具体见[参考文档](https://www.hikunpeng.com/document/detail/zh/boostsra/srainference/SRA_Inference/kunpengsra_inference_16_0031.html)
+
+```bash
+git clone -b v1.19.2 https://github.com/microsoft/onnxruntime.git
+git clone https://gitcode.com/openeuler/sra_onnxruntime_adapter.git
+cd onnxruntime
+git apply ../sra_onnxruntime_adapter/konnx.patch
+```
 
 **编译OnnxRuntime**
-在编译onnxruntime前，需要先修改源码中的部分cmake文件，以禁用动态库搜索路径，步骤如下
-进入onnxruntime目录下，执行下面命令找出cmake文件中所有使用了rpath的行，然后将其使用'#'注释
+进入onnxruntime目录下，然后开始源码编译onnxruntime，使用命令如下，其中acl的两个参数需要指定编译后的Arm Compute Library路径
 
 ```bash
-# 在/onnxruntime目录下
-grep -rn 'ORIGIN' cmake/ | grep -i rpath
-```
-
-注释示例：
-
-```bash
-cmake/onnxruntime.cmake:114        # set_property(TARGET onnxruntime APPEND_STRING PROPERTY LINK_FLAGS " -Xlinker -rpath=\\$ORIGIN")
-cmake/onnxruntime.cmake:151        # set(CMAKE_SHARED_LINKER_FLAGS "... -Wl,-rpath='$ORIGIN'")
-```
-
-然后开始源码编译onnxruntime，使用命令如下，其中acl的两个参数需要指定编译后的Arm Compute Library路径
-
-```bash
-export CFLAGS="-D_FORTIFY_SOURCE=2 -fwrapv -fstack-protector-all"
-export CXXFLAGS="-D_FORTIFY_SOURCE=2 -fwrapv -fstack-protector-all"
-export LDFLAGS="-Wl,-z,relro -Wl,-z,now -Wl,--strip-all"
-
+# 在onnxruntime目录下
 ./build.sh --config Release --build_wheel --parallel --compile_no_warning_as_error \
   --skip_submodule_sync --allow_running_as_root --skip-keras-test --skip_onnx_tests \
   --skip_tests --build_dir build --use_acl "ACL_2308" \
   --acl_home=/path/ComputeLibrary-23.08 \
-  --acl_libs=/path/ComputeLibrary-23.08/build \
-  --cmake_extra_defines CMAKE_SKIP_RPATH=ON \
-  --cmake_extra_defines CMAKE_SKIP_BUILD_RPATH=ON \
-  --cmake_extra_defines CMAKE_SKIP_INSTALL_RPATH=ON
+  --acl_libs=/path/ComputeLibrary-23.08/build
 ```
 
 编译成功后在/onnxruntime/build/Release/dist下可以得到**onnxruntime_acl-xx.whl**
+
+若遇到Eigen库下载失败，可参考[解决方法](https://www.hikunpeng.com/document/detail/zh/SRA/ecosystemEnable/ONNXRuntime/kunpengonnxruntime_02_0019.html)
 
 #### 加速库50
 
@@ -120,37 +106,17 @@ export LDFLAGS="-Wl,-z,relro -Wl,-z,now -Wl,--strip-all"
 **编译OnnxRuntime**
 
 下载onnxruntime的源码并解压进入文件夹
-``` bash
+
+```bash
 wget -q https://codeload.github.com/microsoft/onnxruntime/zip/refs/tags/v1.22.2 -O onnxruntime-1.22.2.zip
 unzip onnxruntime-1.22.2.zip && cd onnxruntime-1.22.2
 ```
-在编译onnxruntime前，需要先修改源码中的部分cmake文件，以禁用动态库搜索路径，步骤如下
-进入onnxruntime-1.22.2目录下，执行下面命令找出xx.cmake文件中所有使用了rpath的行，然后将其使用'#'注释
+
+进入onnxruntime-1.22.2目录下，然后开始源码编译onnxruntime，在/onnxruntime-1.22.2目录下使用以下命令
 
 ```bash
 # 在/onnxruntime-1.22.2目录下
-grep -rn 'ORIGIN' cmake/ | grep -i rpath
-```
-
-注释示例：
-
-```bash
-cmake/onnxruntime.cmake:114        # set_property(TARGET onnxruntime APPEND_STRING PROPERTY LINK_FLAGS " -Xlinker -rpath=\\$ORIGIN")
-cmake/onnxruntime.cmake:151        # set(CMAKE_SHARED_LINKER_FLAGS "... -Wl,-rpath='$ORIGIN'")
-```
-
-然后开始源码编译onnxruntime，在/onnxruntime-1.22.2目录下使用以下命令
-
-```bash
-# 在/onnxruntime-1.22.2目录下
-export CFLAGS="-D_FORTIFY_SOURCE=2 -fwrapv -fstack-protector-all"
-export CXXFLAGS="-D_FORTIFY_SOURCE=2 -fwrapv -fstack-protector-all"
-export LDFLAGS="-Wl,-z,relro -Wl,-z,now -Wl,--strip-all"
-
- ./build.sh --config Release --build_wheel --parallel --compile_no_warning_as_error --skip_submodule_sync --allow_running_as_root --skip-keras-test --skip_onnx_tests --skip_tests --build_dir build --cmake_extra_defines onnxruntime_USE_KLEIDIAI=ON \
-  --cmake_extra_defines CMAKE_SKIP_RPATH=ON \
-  --cmake_extra_defines CMAKE_SKIP_BUILD_RPATH=ON \
-  --cmake_extra_defines CMAKE_SKIP_INSTALL_RPATH=ON
+./build.sh --config Release --build_wheel --parallel --compile_no_warning_as_error --skip_submodule_sync --allow_running_as_root --skip-keras-test --skip_onnx_tests --skip_tests --build_dir build --cmake_extra_defines onnxruntime_USE_KLEIDIAI=ON
 ```
 
 编译好后在/onnxruntime/build/Release/dist下可以得到**onnxruntime-xx.whl**
@@ -193,11 +159,17 @@ export LDFLAGS="-Wl,-z,relro -Wl,-z,now -Wl,--strip-all"
 **安装环境**
 
 1. 确认所使用的处理器
-```bash
-lscpu #可查看BIOS Model name字段
-```
+   
+   ```bash
+   lscpu #可查看BIOS Model name字段
+   ```
 
 2. 若为鲲鹏920处理器，鲲鹏920新型号处理器，鲲鹏950处理器，则安装python以及python三方库，python版本需与步骤一中编译.whl时所使用的python版本一致
+
+   ```bash
+   # /path为PI目录的父文件夹
+   pip install -r /path/PI/deploy/requirements.txt
+   ```
 
 3. 若非上述系列处理器，则可直接使用pip install onnxruntime==1.19.2安装非加速版的三方库
 
