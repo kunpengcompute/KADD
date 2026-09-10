@@ -215,16 +215,36 @@ find_path(ONNXRUNTIME_INCLUDE_DIRS
     PATH_SUFFIXES include
     ${SEARCH_MODE}
 )
+
+set(KADD_ONNXRUNTIME_MIN_API_VERSION 28)
+
 # 验证结果
 if(NOT ONNXRUNTIME_LIBRARIES OR NOT ONNXRUNTIME_INCLUDE_DIRS)
-    message(FATAL_ERROR "ONNX Runtime not found!"
+    message(FATAL_ERROR "ONNX Runtime 1.28.0 or newer not found!"
         "\n  Solutions:"
         "\n    1. Set ONNXRUNTIME_HOME environment variable"
-        "\n    2. Install: sudo apt-get install libonnxruntime-dev")
+        "\n    2. Install: sudo apt-get install libonnxruntime-dev (1.28.0+)")
+endif()
+
+include(CheckCSourceCompiles)
+set(CMAKE_REQUIRED_INCLUDES ${ONNXRUNTIME_INCLUDE_DIRS})
+unset(ONNXRUNTIME_API_VERSION_SUPPORTED CACHE)
+check_c_source_compiles("
+#include <onnxruntime_c_api.h>
+#if ORT_API_VERSION < ${KADD_ONNXRUNTIME_MIN_API_VERSION}
+#error \"ONNX Runtime 1.28.0 or newer (C API v28+) is required\"
+#endif
+int main(void) { return 0; }
+" ONNXRUNTIME_API_VERSION_SUPPORTED)
+unset(CMAKE_REQUIRED_INCLUDES)
+
+if(NOT ONNXRUNTIME_API_VERSION_SUPPORTED)
+    message(FATAL_ERROR "ONNX Runtime 1.28.0 or newer (C API v28+) is required."
+        "\n  Found header: ${ONNXRUNTIME_INCLUDE_DIRS}/onnxruntime_c_api.h")
 endif()
 
 get_filename_component(ONNXRUNTIME_LIB_DIR ${ONNXRUNTIME_LIBRARIES} DIRECTORY)
-message(STATUS "Found ONNX Runtime: ${ONNXRUNTIME_LIBRARIES}")
+message(STATUS "Found ONNX Runtime 1.28.0+ (C API v${KADD_ONNXRUNTIME_MIN_API_VERSION}+): ${ONNXRUNTIME_LIBRARIES}")
 
 # ============================================================================
 # cJSON 依赖

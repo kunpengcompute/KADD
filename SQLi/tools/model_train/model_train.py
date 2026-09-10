@@ -17,7 +17,7 @@ DFA tokenize (libkadd_dfa_engine.dll/so) → token 序列
 └─ DL_CNN: token pad → 300 维 token 序列 (float)
 
 【依赖】
-pip install torch onnx onnxruntime pandas numpy scikit-learn skl2onnx
+pip install torch onnx "onnxruntime>=1.28.0" pandas numpy scikit-learn skl2onnx
 
 【使用】
 python model_train.py --model-type rf        # 随机森林

@@ -158,7 +158,21 @@ TEST(ConfigLoaderTest, EmptyConfigPath)
 {
     kadd_config_t config;
     int ret = kadd_config_load("", &config);
-    EXPECT_EQ(ret, KADD_ERROR_FILE_OPERATION_FAILED) << "空路径应该返回错误";
+    EXPECT_EQ(ret, KADD_ERROR_INVALID_PARAM) << "空路径应该在打开文件前返回参数错误";
+}
+
+TEST(ConfigLoaderTest, ConfigPathLengthLimit)
+{
+    kadd_config_t config;
+    const std::string max_path(KADD_CONFIG_PATH_MAX_LEN, 'a');
+    const std::string too_long_path(KADD_CONFIG_PATH_MAX_LEN + 1, 'a');
+
+    EXPECT_EQ(kadd_config_load(too_long_path.c_str(), &config),
+              KADD_ERROR_INVALID_PARAM)
+        << "配置文件路径超过长度上限时应在打开文件前拒绝";
+    EXPECT_EQ(kadd_config_load(max_path.c_str(), &config),
+              KADD_ERROR_INVALID_PARAM)
+        << "达到长度上限的路径没有 NUL 终止空间，也应拒绝";
 }
 
 TEST(ConfigLoaderTest, NonexistentFile)
@@ -234,6 +248,34 @@ TEST(ConfigLoaderTest, LongString_Truncation)
     EXPECT_EQ(ret, KADD_SUCCESS) << "长字符串应该被截断并成功加载";
     EXPECT_LE(strlen(config.model_rf), static_cast<size_t>(kMaxPathLength)) << "路径长度不应超过512";
 
+    DeleteTestFile(config_path);
+}
+
+TEST(ConfigLoaderTest, LoadConfig_SanitizesControlChars)
+{
+    /* engine_mode 与 model_rf 中放入 JSON 转义的换行 / ESC 序列，
+     * 加载后配置字段内不得残留任何原始控制字节（否则日志可被伪造） */
+    const std::string content = R"({
+        "engine_mode": "ml\n2026-09-03 12:00:01 [kadd_config] FORGED LINE",
+        "transition_table": "/path/to/transition.bin",
+        "output_table": "/path/to/output.bin",
+        "eod_table": "/path/to/eod.bin",
+        "model_rf": "/path/to/model\u001b[31m.krf"
+    })";
+
+    std::string config_path = CreateTestConfigFile(content.c_str());
+    kadd_config_t config;
+    int ret = kadd_config_load(config_path.c_str(), &config);
+    EXPECT_EQ(ret, KADD_SUCCESS) << "含转义控制字符的配置仍应加载成功";
+
+    for (const char *c = config.model_rf; *c != '\0'; ++c) {
+        EXPECT_GE(static_cast<unsigned char>(*c), 0x20u) << "model_rf 残留控制字节";
+        EXPECT_NE(static_cast<unsigned char>(*c), 0x7Fu) << "model_rf 残留 DEL";
+    }
+    EXPECT_EQ(strstr(config.model_rf, "\n"), nullptr) << "不应残留换行";
+    EXPECT_EQ(config.engine_mode, KADD_ENGINE_MODE_ML) << "无法识别的模式应回退默认 ML";
+
+    kadd_config_free(&config);
     DeleteTestFile(config_path);
 }
 
@@ -392,6 +434,54 @@ TEST(ConfigLoaderStaticTest, SafeCopy_Empty)
     safe_copy(dest, src, sizeof(dest));
 
     EXPECT_STREQ(dest, "");
+}
+
+/* [FIX REPORT-2026-0000024] 日志注入（CWE-117）回归测试：
+ * cJSON 会把 JSON 字符串中的 \n 与 \uXXXX（如 \u001b ESC）解码为原始控制字节，
+ * safe_copy / sanitize_for_log 必须把它们中和掉，
+ * 否则下游 fprintf("%s") 会输出伪造日志行或终端转义序列。 */
+TEST(ConfigLoaderStaticTest, SafeCopy_NeutralizesControlChars)
+{
+    char dest[64] = {0};
+    const char src[] = {'a', '\n', 'b', 0x1B, 'c', 0x7F, 'd', '\0'};
+
+    safe_copy(dest, src, sizeof(dest));
+
+    EXPECT_STREQ(dest, "a?b?c?d") << "控制字节应被替换为 '?'";
+    for (const char *c = dest; *c != '\0'; ++c) {
+        EXPECT_GE(static_cast<unsigned char>(*c), 0x20u) << "残留 C0 控制字节";
+        EXPECT_NE(static_cast<unsigned char>(*c), 0x7Fu) << "残留 DEL 字节";
+    }
+}
+
+TEST(ConfigLoaderStaticTest, SafeCopy_KeepsPrintableAsciiUnchanged)
+{
+    char dest[64] = {0};
+    safe_copy(dest, "/opt/KADD/SQLi/assets/model/model_tokens_rf.krf", sizeof(dest));
+    EXPECT_STREQ(dest, "/opt/KADD/SQLi/assets/model/model_tokens_rf.krf");
+}
+
+TEST(ConfigLoaderStaticTest, SanitizeForLog_NeutralizesAndTruncates)
+{
+    char dest[8] = {0};
+    const char src[] = {'x', '\n', 'F', 'O', 'R', 'G', 'E', 'D', '\0'};
+
+    sanitize_for_log(dest, sizeof(dest), src);
+
+    EXPECT_EQ(strlen(dest), 7u) << "应保留一个字节给 '\0'";
+    EXPECT_STREQ(dest, "x?FORGE");
+}
+
+TEST(ConfigLoaderStaticTest, SanitizeForLog_NullSafe)
+{
+    char dest[8] = {'a', 'b', '\0'};
+    sanitize_for_log(dest, sizeof(dest), nullptr);
+    EXPECT_STREQ(dest, "") << "src 为 NULL 时应写入空串";
+
+    sanitize_for_log(nullptr, 0, "x");   /* 不应崩溃 */
+    char zero[1] = {'a'};
+    sanitize_for_log(zero, 0, "x");      /* dest_len==0 时应直接返回，不越界写 */
+    EXPECT_EQ(zero[0], 'a');
 }
 
 /**

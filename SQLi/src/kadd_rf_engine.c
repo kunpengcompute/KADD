@@ -7,6 +7,8 @@
 #include "kadd_rf_engine.h"
 #include "kadd_sve.h"
 #include "kadd_errors.h"
+/* [FIX REPORT-2026-0000028] 模型真实性认证（HMAC-SHA256），header-only 无外部依赖 */
+#include "kadd_model_auth.h"
 
 #include <errno.h>
 #include <math.h>
@@ -34,6 +36,17 @@
 #define KADD_RF_DEFAULT_BATCH_SIZE 64
 #define KADD_RF_MAX_BATCH_SIZE 1024
 #define KADD_RF_MAX_SAMPLE_COUNT 10000000
+
+/* [FIX REPORT-2026-0000028] .krf 认证格式（强制，不再兼容未签名旧格式）
+ *   flags bit0 = 1 : 布局 header(64) || payload || HMAC-SHA256(32)，
+ *                    认证范围覆盖 header + payload，因此 feature_count /
+ *                    node_count / crc 等元数据也一并被密钥绑定
+ *   flags bit0 = 0 : 未签名的旧格式模型，一律拒绝加载
+ * 其余 flags 位仍视为非法，保持原有严格校验语义。
+ * 存量模型用 tools/rf_sign/rf_sign.py 重新签名后即可加载。 */
+/* [FIX REPORT-2026-0000028] RF 与 CNN 共用同一套认证常量与密钥 */
+#define KADD_RF_FLAG_HMAC_SHA256 KADD_MODEL_FLAG_HMAC_SHA256
+#define KADD_RF_HMAC_SIZE KADD_MODEL_HMAC_SIZE
 
 static const unsigned char g_kadd_rf_magic[8] = {
     'K', 'A', 'D', 'D', 'R', 'F', '1', '\0'
@@ -288,6 +301,25 @@ static int prepare_sve_layout(kadd_rf_model_t *model)
 }
 #endif
 
+/* ========== [FIX REPORT-2026-0000028] 模型真实性认证（RF/CNN 共用实现） ========== */
+
+/**
+ * @brief 校验 .krf 模型的真实性（强制，fail-closed）
+ *
+ * 实际实现位于 include/internal/kadd_model_auth.h，
+ * RF 与 CNN 共用同一把密钥与同一套校验逻辑。
+ */
+static int kadd_rf_verify_authenticity(const unsigned char *file_bytes,
+                                       size_t signed_region,
+                                       int is_authenticated)
+{
+    if (kadd_model_verify_authenticity(file_bytes, signed_region,
+                                       is_authenticated, "kadd_rf") != 0) {
+        return KADD_ERROR_MODEL_LOAD_FAILED;
+    }
+    return KADD_SUCCESS;
+}
+
 int kadd_rf_model_load(kadd_rf_model_t **model_out, const char *model_path)
 {
     unsigned char *file_bytes = NULL;
@@ -338,10 +370,13 @@ int kadd_rf_model_load(kadd_rf_model_t **model_out, const char *model_path)
     const uint64_t payload_size_u64 = read_u64_le(header + 44);
     const uint32_t expected_crc = read_u32_le(header + 52);
 
+    /* [FIX REPORT-2026-0000028] bit0 = 带 HMAC-SHA256 尾部；其余位仍非法 */
+    const int is_authenticated = (flags & KADD_RF_FLAG_HMAC_SHA256) != 0U;
+
     if (feature_count == 0 || feature_count > KADD_RF_MAX_FEATURE_COUNT ||
         tree_count == 0 || tree_count > KADD_RF_MAX_TREE_COUNT ||
         node_count == 0 || node_count > KADD_RF_MAX_NODE_COUNT ||
-        flags != 0U ||
+        (flags & ~KADD_RF_FLAG_HMAC_SHA256) != 0U ||
         read_u32_le(header + 56) != 0U ||
         read_u32_le(header + 60) != 0U ||
         payload_size_u64 > SIZE_MAX) {
@@ -356,11 +391,28 @@ int kadd_rf_model_load(kadd_rf_model_t **model_out, const char *model_path)
     }
     const size_t expected_payload_size =
         offsets_size + (size_t)node_count * KADD_RF_NODE_SIZE;
-    if ((size_t)payload_size_u64 != expected_payload_size ||
-        expected_payload_size > SIZE_MAX - KADD_RF_HEADER_SIZE ||
-        file_size != KADD_RF_HEADER_SIZE + expected_payload_size) {
+    /* [FIX REPORT-2026-0000028] 先预留 header 与可能的 HMAC 尾部空间再做加法，
+     * 避免 size_t 回绕；认证文件的实际大小必须恰好多出 32 字节 */
+    if (expected_payload_size > SIZE_MAX - KADD_RF_HEADER_SIZE - KADD_RF_HMAC_SIZE) {
         free(file_bytes);
         return KADD_ERROR_MODEL_LOAD_FAILED;
+    }
+    const size_t signed_region_size = KADD_RF_HEADER_SIZE + expected_payload_size;
+    const size_t expected_file_size =
+        signed_region_size + (is_authenticated ? KADD_RF_HMAC_SIZE : 0U);
+    if ((size_t)payload_size_u64 != expected_payload_size ||
+        file_size != expected_file_size) {
+        free(file_bytes);
+        return KADD_ERROR_MODEL_LOAD_FAILED;
+    }
+
+    /* [FIX REPORT-2026-0000028] 先做真实性认证，再做 CRC32 损坏检测。
+     * CRC32 多项式 0xEDB88320 公开且无需密钥，攻击者改写叶节点概率后可直接重算，
+     * 因此它只能防损坏、不能防篡改；只有 HMAC-SHA256 才提供来源认证。 */
+    ret = kadd_rf_verify_authenticity(file_bytes, signed_region_size, is_authenticated);
+    if (ret != KADD_SUCCESS) {
+        free(file_bytes);
+        return ret;
     }
 
     const unsigned char *payload = file_bytes + KADD_RF_HEADER_SIZE;
@@ -427,7 +479,16 @@ int kadd_rf_model_load(kadd_rf_model_t **model_out, const char *model_path)
     return KADD_SUCCESS;
 }
 
-// LCOV_EXCL_START: non-SVE fallback, unreachable on SVE hardware
+/*
+ * predict_tree() / kadd_rf_model_predict() 不是 SVE 回退路径：两者均无 #if
+ * 守卫，SVE ON/OFF 两种构建都会编译；且 kadd_rf_model_predict() 是
+ * kadd_rf_engine.h 导出的对外单样本接口，UT/FUZZ 均会调用并覆盖。
+ * 此处原先误加的 LCOV_EXCL_START 未配对 STOP（下一个 STOP 在
+ * predict_batch_scalar 之后），会把这段已覆盖的对外接口整段排除；
+ * 当前 coverage_all.sh 走 llvm-cov（不识别 LCOV_EXCL 标记）故未影响
+ * 数字，一旦改用 lcov 就会凭空挖掉真实覆盖。故删除，仅保留下方
+ * predict_batch_scalar 那对准确标记（它确实仅在非 SVE 构建编译）。
+ */
 static double predict_tree(const kadd_rf_model_t *model,
                            uint32_t root,
                            const float *features)
@@ -501,16 +562,32 @@ static void predict_batch_scalar(const kadd_rf_model_t *model,
  * implementation is fully width-adaptive via svcntw()/svcntd() and works
  * correctly on any SVE vector length.  No compile-time bit-width check
  * is needed.
+ *
+ * [FIX 白盒-VLA] SVE 规范向量长度上限 2048bit，故 svcntw() ≤ 64。
+ * lane_sums 原为 VLA（长度取自 svcntw() 运行时值），改为编译期
+ * 定长数组；若运行在超出规范上限的实现上（正常不可达，定长数组
+ * 放不下整条向量），防御性逐样本回退到 kadd_rf_model_predict。
  */
+#define KADD_RF_SVE_MAX_LANES 64u
+
 static void predict_batch_sve_chunk(const kadd_rf_model_t *model,
                                     const float *features,
                                     int sample_count,
                                     float *probabilities)
 {
     const double inverse_tree_count = 1.0 / (double)model->tree_count;
+    if ((uint32_t)svcntw() > KADD_RF_SVE_MAX_LANES) {
+        for (int row = 0; row < sample_count; ++row) {
+            (void)kadd_rf_model_predict(
+                model,
+                features + (size_t)row * model->feature_count,
+                &probabilities[row]);
+        }
+        return;
+    }
     const uint32_t lane_capacity = (uint32_t)svcntw();
     const uint32_t f64_lane_capacity = (uint32_t)svcntd();
-    double lane_sums[lane_capacity];
+    double lane_sums[KADD_RF_SVE_MAX_LANES];
 
     for (uint32_t row = 0; row < (uint32_t)sample_count;
          row += lane_capacity) {
@@ -536,10 +613,23 @@ static void predict_batch_sve_chunk(const kadd_rf_model_t *model,
 
             while (svptest_any(pg, active)) {
                 if (++traversal_steps > maximum_steps) {
-#if !KADD_RF_HAVE_SVE
-                    predict_batch_scalar(model, features, sample_count,
-                                         probabilities);
-#endif
+                    /*
+                     * 纵深防御，正常不可达：validate_tree() 已强制内部节点的
+                     * left/right 严格大于自身下标且落在 [begin, end) 内，
+                     * 树内不可能成环，最长路径不超过 maximum_steps - 1 步。
+                     *
+                     * 此处原为 "#if !KADD_RF_HAVE_SVE → predict_batch_scalar"，
+                     * 但本函数整体已在 #if KADD_RF_HAVE_SVE 内，取反后恒不成立、
+                     * 任何构建都编不进来；且 predict_batch_scalar 仅在
+                     * #if !KADD_RF_HAVE_SVE 内定义，SVE 构建下并不存在。
+                     * 若剔除矛盾守卫后只裸 return，本 chunk 的 probabilities
+                     * 将一个都不写，而 kadd_rf_model_predict_batch() 仍返回
+                     * KADD_SUCCESS —— 静默输出未初始化脏数据（fail-open）。
+                     * 现改为确定性写 0.0F 后返回（fail-safe），可达路径行为不变。
+                     */
+                    for (int idx = 0; idx < sample_count; ++idx) {
+                        probabilities[idx] = 0.0F;
+                    }
                     return;
                 }
 

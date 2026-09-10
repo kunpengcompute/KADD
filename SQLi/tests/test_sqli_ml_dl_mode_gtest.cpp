@@ -20,6 +20,7 @@
 #include "kadd_sqli_engine.h"
 #include "kadd_errors.h"
 #include "kadd_dl_engine.h"
+#include "test_model_hmac_key.h"   /* [FIX REPORT-2026-0000028] 注入 .krf/.kcn 共用 HMAC 开发密钥 */
 
 class SQLiModeTest : public ::testing::Test {
 protected:
@@ -67,6 +68,11 @@ protected:
         EXPECT_GE(fd, 0);
         std::string path = std::string(tmp) + ".json";
         close(fd);
+        /* [FIX REPORT-2026-0000025] 实际配置写入 path（tmp + ".json"），
+         * mkstemp 创建的 tmp 文件本身从未被删除，每次调用泄漏一个临时文件 */
+        if (fd >= 0) {
+            unlink(tmp);
+        }
 
         std::ofstream ofs(path);
         ofs << "{\n"

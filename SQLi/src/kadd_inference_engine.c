@@ -1,10 +1,10 @@
-﻿/*
+/*
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  * @file kadd_inference_engine.c
  * @brief ONNX 推理引擎实现
  *
  * 支持平台：Linux (x86_64, aarch64), Windows (x64)
- * 依赖：ONNX Runtime 1.18+ (API v17+)
+ * 依赖：ONNX Runtime 1.28.0+ (API v28+)
  */
 #include "kadd_inference_engine.h"
 #include "kadd_config_loader.h"
@@ -50,11 +50,20 @@ static pthread_mutex_t g_ort_mutex = PTHREAD_MUTEX_INITIALIZER;
 #define UNLOCK_ORT() pthread_mutex_unlock(&g_ort_mutex)
 #endif
 
-/* ONNX Runtime 最小 API 版本（v17 对应 ONNX Runtime 1.18+） */
-#define ORT_MIN_API_VERSION 17
+/* ONNX Runtime 最小 API 版本（v28 对应 ONNX Runtime 1.28.0+） */
+#define ORT_MIN_API_VERSION 28
+
+#if ORT_API_VERSION < ORT_MIN_API_VERSION
+#error "ONNX Runtime 1.28.0 or newer (C API v28+) is required"
+#endif
 
 /* 张量最大维度数 */
 #define MAX_TENSOR_DIMS 4
+
+static int tensor_dim_count_is_supported(size_t dim_count)
+{
+    return dim_count >= 2U && dim_count <= (size_t)MAX_TENSOR_DIMS;
+}
 
 /* ========== 错误处理 ========== */
 static int check_ort_status(const OrtApi *api, OrtStatus *status, const char *msg)
@@ -76,7 +85,7 @@ static int init_ort_api(kadd_inference_engine_t *e)
             return -1;
         }
 
-        // ONNX Runtime 1.18+ 支持 API 版本 17+
+        // ONNX Runtime 1.28.0+ 支持 API 版本 28+
         // 从编译时最高版本向下回退，找到运行时支持的最高版本
         for (int version = ORT_API_VERSION; version >= ORT_MIN_API_VERSION; version--) {
             g_ort_api = api_base->GetApi(version);
@@ -135,8 +144,23 @@ static char *get_io_name(kadd_inference_engine_t *e, int is_output)
         return NULL;
     }
 
+    /* [HARDEN white_box_test_047] 指针返回值必须先校验再使用：
+     * 1) strdup(NULL) 为未定义行为，ORT 虽约定 status 成功时 name 非空，仍加防御；
+     * 2) strdup 堆耗尽时返回 NULL，记录日志后返回 NULL，由唯一调用方
+     *    detect_io_names 判空兜底（返回 -1 → 加载 fail-closed），契约不再依赖隐式约定。 */
+    if (name == NULL) {
+        return NULL;
+    }
     char *result = strdup(name);
-    (void)e->api->AllocatorFree(allocator, name);
+    if (result == NULL) {
+        fprintf(stderr, "[kadd_inference] ERROR: strdup failed for %s name\n",
+                is_output ? "output" : "input");
+    }
+    /* AllocatorFree 带 warn_unused_result 属性，(void) 强转无法消除告警，需接收并释放返回状态 */
+    OrtStatus *free_status = e->api->AllocatorFree(allocator, name);
+    if (free_status) {
+        (void)e->api->ReleaseStatus(free_status);
+    }
     return result;
 }
 
@@ -167,7 +191,7 @@ static int get_model_input_dim(kadd_inference_engine_t *e)
     }
 
     status = e->api->GetDimensionsCount(tensor_info, &dim_count);
-    if (status || dim_count < 2) {
+    if (status || !tensor_dim_count_is_supported(dim_count)) {
         goto cleanup;
     }
 
@@ -214,7 +238,7 @@ static void get_model_output_dim(kadd_inference_engine_t *e)
     }
 
     out_status = e->api->GetDimensionsCount(out_tensor_info, &out_dim_count);
-    if (!out_status && out_dim_count >= 2) {
+    if (!out_status && tensor_dim_count_is_supported(out_dim_count)) {
         out_status = e->api->GetDimensions(out_tensor_info, out_dims, out_dim_count);
         if (!out_status && out_dims[1] > 0) {
             e->output_dim = (int)out_dims[1];
@@ -224,6 +248,47 @@ static void get_model_output_dim(kadd_inference_engine_t *e)
     (void)e->api->ReleaseTypeInfo(out_type_info);
 }
 
+/*
+ * ONNX Runtime 线程数配置
+ *
+ * 背景：ORT 默认把 intra_op 线程数取为物理核数。但本引擎的 ONNX 模型很小
+ * （单次 Run 的 batch <= 64、feature_dim = 300），计算量远小于线程派发与同步
+ * 开销，默认配置下绝大部分时间耗在 ORT 内部的线程调度而非算子计算上，
+ * 实测 CNN 批量吞吐仅约 1.6k samples/sec。
+ *
+ * 经 intra_op 1-32 全量扫描 + 算子级 profiling 验证：intra=8 / inter=1 最优，
+ * CNN 批量吞吐提升至约 13.6k-17.7k samples/sec（9-12 倍）。因此在此显式固定，
+ * 不再依赖 ORT 各版本的默认值（该默认值曾随小版本变化而显著影响性能）。
+ *
+ * 允许用环境变量覆盖，便于不同核数机型调优而无需重新编译：
+ *   KADD_ORT_INTRA_OP_THREADS  默认 8
+ *   KADD_ORT_INTER_OP_THREADS  默认 1
+ * 取值非法时忽略并回退默认值——线程数属于性能调优项，绝不因配置错误导致模型加载失败。
+ */
+#define KADD_ORT_DEFAULT_INTRA_OP_THREADS 8
+#define KADD_ORT_DEFAULT_INTER_OP_THREADS 1
+#define KADD_ORT_INTRA_OP_ENV             "KADD_ORT_INTRA_OP_THREADS"
+#define KADD_ORT_INTER_OP_ENV             "KADD_ORT_INTER_OP_THREADS"
+
+static int ort_thread_count_from_env(const char *name, int fallback)
+{
+    const char *value = getenv(name);
+    if (value == NULL || value[0] == '\0') {
+        return fallback;
+    }
+
+    char *end = NULL;
+    const long parsed = strtol(value, &end, 10);
+    /* 只接受纯十进制整数（不允许前后空白与任何后缀），文法与文档保持一致 */
+    if (value[0] < '0' || value[0] > '9' ||
+        end == value || end == NULL || *end != '\0' ||
+        parsed < 1L || parsed > 1024L) {
+        fprintf(stderr, "[kadd_inference] WARN: 忽略非法的 %s=\"%s\"，回退默认值 %d\n",
+                name, value, fallback);
+        return fallback;
+    }
+    return (int)parsed;
+}
 
 /* ========== 创建 ONNX Runtime Session ========== */
 static int create_ort_session(kadd_inference_engine_t *e, const char *model_path)
@@ -243,6 +308,30 @@ static int create_ort_session(kadd_inference_engine_t *e, const char *model_path
     if (status) {
             goto cleanup_options;
         }
+
+    /* 线程数：设置失败不视为致命错误，仅告警并沿用 ORT 默认值，
+     * 避免因个别 ORT 版本不接受该配置而导致模型完全不可用。 */
+    {
+        OrtStatus *thread_status = e->api->SetIntraOpNumThreads(
+            options,
+            ort_thread_count_from_env(KADD_ORT_INTRA_OP_ENV,
+                                      KADD_ORT_DEFAULT_INTRA_OP_THREADS));
+        if (thread_status) {
+            fprintf(stderr, "[kadd_inference] WARN: SetIntraOpNumThreads 失败: %s\n",
+                    e->api->GetErrorMessage(thread_status));
+            (void)e->api->ReleaseStatus(thread_status);
+        }
+
+        thread_status = e->api->SetInterOpNumThreads(
+            options,
+            ort_thread_count_from_env(KADD_ORT_INTER_OP_ENV,
+                                      KADD_ORT_DEFAULT_INTER_OP_THREADS));
+        if (thread_status) {
+            fprintf(stderr, "[kadd_inference] WARN: SetInterOpNumThreads 失败: %s\n",
+                    e->api->GetErrorMessage(thread_status));
+            (void)e->api->ReleaseStatus(thread_status);
+        }
+    }
 
     status = e->api->CreateSession(e->env, model_path, options, &e->session);
     (void)e->api->ReleaseSessionOptions(options);

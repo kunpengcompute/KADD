@@ -580,7 +580,24 @@ TEST_F(FeatureEngineTest, TransformSeqLenExceedsMax)
 
 TEST_F(FeatureEngineTest, TransformLargeWindow)
 {
-    // 大窗口大小，合法序列长度（<= MAX_SEQ_LEN）
+    // 窗口取允许上限，合法序列长度（<= MAX_SEQ_LEN）
+    std::vector<int> seq(kSeqLen200);
+    for (size_t i = 0; i < seq.size(); i++) {
+        seq[i] = i % kWinSize10;
+    }
+
+    std::vector<int> feature(KADD_FEATURE_DIM, 0);
+
+    int ret = kadd_seq_to_feature(seq.data(), seq.size(), KADD_FEATURE_MAX_WINDOW_SIZE,
+                                  feature.data(), KADD_FEATURE_DIM);
+
+    EXPECT_EQ(ret, KADD_SUCCESS) << "窗口取上限应该成功";
+}
+
+TEST_F(FeatureEngineTest, TransformWindowExceedsLimit)
+{
+    // window_size 超过 KADD_FEATURE_MAX_WINDOW_SIZE 必须被拒绝
+    // （防止滑窗加权累加 seq_len*(feature_dim-1)*W*(W-1) 发生 int 溢出）
     std::vector<int> seq(kSeqLen200);
     for (size_t i = 0; i < seq.size(); i++) {
         seq[i] = i % kWinSize10;
@@ -591,7 +608,7 @@ TEST_F(FeatureEngineTest, TransformLargeWindow)
     int ret = kadd_seq_to_feature(seq.data(), seq.size(), kWinSize200,
                                   feature.data(), KADD_FEATURE_DIM);
 
-    EXPECT_EQ(ret, KADD_SUCCESS) << "大窗口大小应该成功";
+    EXPECT_EQ(ret, KADD_ERROR_INVALID_PARAM) << "超限窗口应该被拒绝";
 }
 
 // ========== 3. 性能测试 ==========

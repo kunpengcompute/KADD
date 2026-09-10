@@ -67,7 +67,14 @@ int main(int argc, char *argv[])
     printf("特征维度: %d\n\n", feature_dim);
 
     /* 3. 单样本推理 */
-    float *features = (float *)calloc(feature_dim, sizeof(float));
+    /* [FIX REPORT-2026-0000016] feature_dim 来自模型文件，calloc 可能失败或为 0 长度 */
+    float *features = (feature_dim > 0) ? (float *)calloc((size_t)feature_dim, sizeof(float)) : NULL;
+    if (features == NULL) {
+        printf("特征缓冲区分配失败\n");
+        kadd_model_free(model);
+        kadd_config_free(&config);
+        return 1;
+    }
     if (feature_dim > 12) {
         features[7]  = 100.0f;
         features[8]  = 436.0f;

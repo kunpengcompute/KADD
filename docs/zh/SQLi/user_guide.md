@@ -41,12 +41,47 @@ KADD通过 `config.json` 配置各引擎模块：
 
 - **ML模式**（默认）：使用随机森林分类器。SVE可用时优先加载原生`.krf`格式，失败则回退ONNX Runtime加载`.onnx`格式
 - **DL模式**：使用CNN深度学习模型。SVE可用时优先加载原生`.kcn`格式，失败则回退ONNX Runtime加载`.onnx`格式
+- **模型认证**：原生`.krf`/`.kcn`强制HMAC-SHA256认证，未签名、密钥缺失或不匹配一律拒绝加载（fail-closed）并回退ONNX；`.onnx`不参与认证
 
 ---
 
 ## 前提条件
 
 请参考[安装指南](installation_guide.md)完成安装。
+
+加载原生模型（`.krf`/`.kcn`）前还需注入模型HMAC密钥：
+
+```bash
+export KADD_MODEL_HMAC_KEY=74fab58d87dc235ee049b6faf21b44825dba1d9dc05bbc14aeded49cb211a1db
+```
+
+也可以直接source `build.sh`生成的环境文件（同时包含库搜索路径）：
+
+```bash
+source /opt/KADD/SQLi/build/kadd_env.sh
+```
+
+![](../../public_sys-resources/icon-note.gif) **说明：**
+
+- 上面的密钥是仓库自带的公开**开发密钥**，仅用于构建、测试与功能体验；生产部署必须用自有密钥通过`tools/rf_sign/rf_sign.py`重新签名模型，并经KMS或受限权限的env文件注入。
+- 未注入密钥时，原生模型会被拒绝加载并在stderr打印ERROR，随后回退ONNX（丢失SVE加速）；直接调用`kadd_rf_model_load()`/`kadd_cnn_model_load()`的程序则加载失败。
+
+### 性能调优：ONNX Runtime线程数
+
+回退到ONNX Runtime时，引擎在创建session时已显式设置`intra_op=8`、`inter_op=1`。原因是模型很小（batch≤64、feature_dim=300），ONNX Runtime默认按物理核数开线程，线程派发与同步开销远超算子计算本身，实测CNN批量吞吐只有约1.6千samples/sec；固定为8/1后恢复到约1.4万-1.8万samples/sec。
+
+如需按机型调优，可用环境变量覆盖，无需重新编译：
+
+```bash
+export KADD_ORT_INTRA_OP_THREADS=8   # 取值1-1024，非法值忽略并回退默认8
+export KADD_ORT_INTER_OP_THREADS=1   # 取值1-1024，非法值忽略并回退默认1
+```
+
+![](../../public_sys-resources/icon-note.gif) **说明：**
+
+- 线程数只影响性能，不影响检测结果；取值非法时仅打印WARN并沿用默认值，不会导致模型加载失败。
+- 环境变量在创建引擎实例时读取，修改后需重新创建引擎才生效。
+- `coverage_all.sh`已默认导出上述两个变量（8/1），可通过`KADD_ORT_INTRA_OP_THREADS=4 ./coverage_all.sh`临时调优。
 
 ---
 
@@ -119,10 +154,11 @@ int main() {
         -lkadd_feature_engine -lkadd_dfa_engine -lkadd_config_loader
     ```
 
-2. 设置库搜索路径并运行程序。
+2. 设置库搜索路径与模型HMAC密钥，然后运行程序。
 
     ```bash
-    export LD_LIBRARY_PATH=/opt/KADD/SQLi/build/src:/opt/KADD/SQLi/util/onnxruntime-linux-aarch64-1.18.0/lib:$LD_LIBRARY_PATH
+    export LD_LIBRARY_PATH=/opt/KADD/SQLi/build/src:/opt/KADD/SQLi/util/onnxruntime-linux-aarch64-1.28.0/lib:$LD_LIBRARY_PATH
+    export KADD_MODEL_HMAC_KEY=74fab58d87dc235ee049b6faf21b44825dba1d9dc05bbc14aeded49cb211a1db   # 开发密钥，生产环境请替换为自有密钥
     ./web_detection_app
     ```
 
@@ -200,10 +236,11 @@ int main() {
         -lkadd_feature_engine -lkadd_dfa_engine -lkadd_config_loader
     ```
 
-2. 运行前设置库搜索路径，包含KADD动态库和ONNX Runtime，然后运行程序。
+2. 运行前设置库搜索路径与模型HMAC密钥（包含KADD动态库和ONNX Runtime），然后运行程序。
 
     ```bash
-    export LD_LIBRARY_PATH=/opt/KADD/SQLi/build/src:/opt/KADD/SQLi/util/onnxruntime-linux-aarch64-1.18.0/lib:$LD_LIBRARY_PATH
+    export LD_LIBRARY_PATH=/opt/KADD/SQLi/build/src:/opt/KADD/SQLi/util/onnxruntime-linux-aarch64-1.28.0/lib:$LD_LIBRARY_PATH
+    export KADD_MODEL_HMAC_KEY=74fab58d87dc235ee049b6faf21b44825dba1d9dc05bbc14aeded49cb211a1db   # 开发密钥，生产环境请替换为自有密钥
     ./log_analysis_app
     ```
 

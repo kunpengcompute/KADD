@@ -1,6 +1,6 @@
 /**
  * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
- * @file kadd_seq_to_feature.c
+ * @file kadd_feature_engine.c
  * @brief 特征转换接口实现
  *
  * 将不定长序列转换为固定维度特征向量
@@ -138,8 +138,13 @@ int kadd_seq_to_feature(const int *seq, int seq_len, int window_size,
                 (seq ? "valid" : "NULL"), (feature ? "valid" : "NULL"));
         return KADD_ERROR_NULL_PTR;
     }
+    /* [FIX REPORT-2026-0000015] 强制 window_size 上限，消除滑窗加权累加的 int 溢出。
+     * 上界推导：seq[i] < feature_dim <= 300，故 result[i] <= (feature_dim-1)*W*(W-1)，
+     * feature[j] <= seq_len*(feature_dim-1)*W*(W-1) <= 300*299*100*99 = 888,030,000 < INT_MAX。
+     * 未限制时 W 可达 INT_MAX，300*299*W*(W-1) 必然回绕，导致特征值符号反转。 */
     if (seq_len < 0 || window_size < 0 || feature_dim <= 0 ||
-        seq_len > KADD_FEATURE_DEFAULT_MAX_INPUT_LENGTH || feature_dim > KADD_FEATURE_DEFAULT_MAX_OUTPUT_DIM) {
+        seq_len > KADD_FEATURE_DEFAULT_MAX_INPUT_LENGTH || feature_dim > KADD_FEATURE_DEFAULT_MAX_OUTPUT_DIM ||
+        window_size > KADD_FEATURE_MAX_WINDOW_SIZE) {
         fprintf(stderr, "[kadd_feature] ERROR: Invalid parameters (seq_len=%d, window_size=%d, feature_dim=%d)\n",
                 seq_len, window_size, feature_dim);
         return KADD_ERROR_INVALID_PARAM;
@@ -221,6 +226,13 @@ static int validate_feature_batch_params(const kadd_feature_batch_t *batch)
                 batch->feature_dim, KADD_FEATURE_DEFAULT_MAX_OUTPUT_DIM);
         return KADD_ERROR_INVALID_PARAM;
     }
+    /* [FIX REPORT-2026-0000015] 批量路径同样强制 window_size 上限（与单条接口一致） */
+    if (batch->window_size > KADD_FEATURE_MAX_WINDOW_SIZE) {
+        fprintf(stderr,
+                "[kadd_feature] ERROR: Window size %d exceeds limit %d\n",
+                batch->window_size, KADD_FEATURE_MAX_WINDOW_SIZE);
+        return KADD_ERROR_INVALID_PARAM;
+    }
 
     return KADD_SUCCESS;
 }
@@ -271,7 +283,11 @@ int kadd_seq_to_feature_batch(kadd_feature_batch_t *batch)
             }
 
             // 获取当前序列的特征输出位置
-            int *feature = batch->features + idx * batch->feature_dim;
+            /* [FIX 白盒-整数溢出] idx(上限 10M-1) × feature_dim(上限 300)
+             * 最大约 3e9，超过 INT_MAX 后 int 乘法回绕为 UB，导致指针
+             * 错位/越界写；与上方 total 的 size_t 口径保持一致。 */
+            int *feature = batch->features +
+                           (size_t)idx * (size_t)batch->feature_dim;
 
             // 调用单条特征提取
             int result = kadd_seq_to_feature(seq, seq_len, batch->window_size,

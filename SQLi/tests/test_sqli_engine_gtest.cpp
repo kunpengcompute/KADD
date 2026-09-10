@@ -22,6 +22,7 @@
 #include "kadd_sqli_engine.h"
 #include "kadd_ml_engine.h"
 #include "kadd_config_loader.h"
+#include "test_model_hmac_key.h"   /* [FIX REPORT-2026-0000028] 注入 .krf/.kcn 共用 HMAC 开发密钥 */
 
 // ========== 包含源文件以测试 static 函数 ==========
 #include "kadd_sqli_engine.c"

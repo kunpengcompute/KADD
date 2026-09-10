@@ -164,6 +164,17 @@ if(FUZZ_TESTS_AVAILABLE)
 
     target_compile_features(kadd_fuzzer PRIVATE cxx_std_17)
 
+    # 长稳吞吐构建开关：OFF 时去掉 fuzzer 的覆盖率插桩
+    # （-fprofile-instr-generate / -fcoverage-mapping 本身有 10~30% 开销）。
+    # kadd_fuzzer.cpp 里的 profraw flush 由 `#if defined(__llvm_profile__)` 守卫，
+    # 关闭后自动变为空操作，不需改代码。
+    # 覆盖率报告请一律用 coverage_all.sh（ENABLE_CODE_COVERAGE=ON）。
+    # 不用 option()：option() 对已存在的 -D 缓存值的行为受 CMP0077 策略影响，
+    # 这里用 NOT DEFINED 判定，保证 -DKADD_FUZZ_PROFILE=OFF 一定生效。
+    if(NOT DEFINED KADD_FUZZ_PROFILE)
+        set(KADD_FUZZ_PROFILE ON)
+    endif()
+
     # 覆盖率构建：clang -fprofile-instr-generate + libFuzzer
     if(ENABLE_CODE_COVERAGE)
         target_compile_options(kadd_fuzzer PRIVATE
@@ -174,13 +185,27 @@ if(FUZZ_TESTS_AVAILABLE)
         )
         target_link_options(kadd_fuzzer PRIVATE -fsanitize=fuzzer -fprofile-instr-generate -fcoverage-mapping)
     else()
-        target_compile_options(kadd_fuzzer PRIVATE
-            -fsanitize=fuzzer,address
-            -fprofile-instr-generate
-            -fcoverage-mapping
-            -g
-        )
-        target_link_options(kadd_fuzzer PRIVATE -fsanitize=fuzzer,address)
+        # 不再叠加 AddressSanitizer：需求为长稳高吞吐 fuzz（3000 万次量级），
+        # ASan 会带来 2-3 倍内存与速度开销且干扰多进程并行跑；
+        # 内存安全由 UT 侧专项用例与引擎内的显式边界校验保障。
+        # 如需临时排查内存问题，手工把下面两处改回 -fsanitize=fuzzer,address 即可。
+        if(KADD_FUZZ_PROFILE)
+            target_compile_options(kadd_fuzzer PRIVATE
+                -fsanitize=fuzzer
+                -fprofile-instr-generate
+                -fcoverage-mapping
+                -g
+            )
+            target_link_options(kadd_fuzzer PRIVATE
+                -fsanitize=fuzzer
+                -fprofile-instr-generate
+                -fcoverage-mapping
+            )
+        else()
+            # 长稳吞吐构建：只保留 libFuzzer，不做覆盖率插桩
+            target_compile_options(kadd_fuzzer PRIVATE -fsanitize=fuzzer)
+            target_link_options(kadd_fuzzer PRIVATE -fsanitize=fuzzer)
+        endif()
     endif()
 
     # RELRO 和 BIND_NOW 继承自 CMAKE_EXE_LINKER_FLAGS: -Wl,-z,relro,-z,now
@@ -198,7 +223,28 @@ if(FUZZ_TESTS_AVAILABLE)
         )
     endif()
 
-    target_include_directories(kadd_fuzzer PRIVATE ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/include/internal)
+    # 说明：kadd_fuzzer.cpp 位于 tests/fuzz/，而 test_model_hmac_key.h /
+    # error_paths_cases.inc / kadd_inference_fault_inject.h 位于 tests/，
+    # 引号 include 只从「包含者所在目录」开始查找，因此必须把 tests/ 本身加入搜索路径；
+    # src/ 用于 KADD_FUZZ_INFERENCE_INJECT=ON 时 #include "kadd_inference_engine.c"
+    target_include_directories(kadd_fuzzer PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+        ${CMAKE_SOURCE_DIR}/include/internal
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_CURRENT_SOURCE_DIR}
+    )
+
+    # ORT 故障注入（默认开启）：把 kadd_inference_engine.c 内联进 fuzz TU，
+    # 配合 kadd_inference_fault_inject.h 覆盖 ORT 错误状态清理分支（约 25 行，
+    # 正常模型加载永远不可达）。覆盖率构建为静态库：归档不会重复拉取
+    # kadd_inference_engine.c.o，无重复定义；动态库构建下可执行文件符号优先，
+    # 行为一致。若工具链异常导致构建失败，coverage_all.sh 会自动以
+    # -DKADD_FUZZ_INFERENCE_INJECT=OFF 重试。
+    option(KADD_FUZZ_INFERENCE_INJECT
+           "Inline inference engine into kadd_fuzzer for ORT fault injection" ON)
+    if(KADD_FUZZ_INFERENCE_INJECT)
+        target_compile_definitions(kadd_fuzzer PRIVATE KADD_FUZZ_INFERENCE_INJECT)
+    endif()
 
     # ONNX Runtime
     target_link_libraries(kadd_fuzzer PRIVATE ${ONNXRUNTIME_LIBRARIES})
@@ -332,6 +378,15 @@ set_tests_properties(rf_engine_gtest PROPERTIES
     ENVIRONMENT "LD_LIBRARY_PATH=${CMAKE_BINARY_DIR}/src:$ENV{LD_LIBRARY_PATH}"
 )
 
+# 错误路径测试（与 FUZZ 共享 tests/error_paths_cases.inc，
+# 覆盖 config/dfa/feature/rf/cnn/dl/sqli 的校验、解析、认证失败与回退分支）
+add_kadd_gtest(error_paths_test test_error_paths_gtest.cpp)
+target_link_libraries(error_paths_test PRIVATE
+    kadd_rf_engine
+    kadd_cnn_engine
+    kadd_dl_engine
+)
+
 # 统一推理引擎测试（包含源文件以测试 static 函数）
 add_kadd_gtest(inference_engine_test test_inference_engine_gtest.cpp kadd_inference_engine)
 # 链接 gmock（如果可用）
@@ -339,7 +394,7 @@ if(TARGET gmock_main)
     target_link_libraries(inference_engine_test PRIVATE gmock_main)
 endif()
 
-message(STATUS "Tests configured: dfa_engine_test, ml_engine_test, feature_engine_test, sqli_engine_test, config_loader_test, inference_engine_test, cnn_engine_gtest, rf_engine_gtest")
+message(STATUS "Tests configured: dfa_engine_test, ml_engine_test, feature_engine_test, sqli_engine_test, config_loader_test, inference_engine_test, cnn_engine_gtest, rf_engine_gtest, error_paths_test")
 message(STATUS "  To run tests: cd tests && ctest --output-on-failure")
 if(ENABLE_CODE_COVERAGE)
     message(STATUS "  Run 'make coverage' after tests to generate report")

@@ -14,11 +14,24 @@ KADD提供了6个demo程序，分别展示各个引擎的使用方法。
 
 ### 运行demo程序
 
-运行前需要设置库搜索路径：
+运行前需要设置库搜索路径，并注入模型HMAC密钥（原生`.krf`/`.kcn`模型强制HMAC-SHA256认证，未注入密钥将拒绝加载原生模型）：
 
 ```bash
-export LD_LIBRARY_PATH=/opt/KADD/SQLi/build/src:/opt/KADD/SQLi/util/onnxruntime-linux-aarch64-1.18.0/lib:$LD_LIBRARY_PATH
+export LD_LIBRARY_PATH=/opt/KADD/SQLi/build/src:/opt/KADD/SQLi/util/onnxruntime-linux-aarch64-1.28.0/lib:$LD_LIBRARY_PATH
+export KADD_MODEL_HMAC_KEY=74fab58d87dc235ee049b6faf21b44825dba1d9dc05bbc14aeded49cb211a1db
 ```
+
+也可以直接source `build.sh`生成的环境文件，等价于上面两条：
+
+```bash
+source /opt/KADD/SQLi/build/kadd_env.sh
+```
+
+![](../../public_sys-resources/icon-note.gif) **说明：**
+
+- 上面的密钥是仓库自带的**公开开发密钥**，仓库内模型正是用它签名的，仅用于构建、测试与功能体验，不具备保密性。
+- 未注入密钥时，原生模型会被拒绝加载并在stderr打印ERROR，随后回退ONNX（丢失SVE加速）；若`config.json`只配置了原生模型，或程序直接调用`kadd_rf_model_load()`/`kadd_cnn_model_load()`，则加载失败。
+- 生产部署必须用自有密钥重新签名模型（见下文《模型训练》的签名步骤），并通过KMS或受限权限的env文件注入`KADD_MODEL_HMAC_KEY`。
 
 #### 1. SQL注入检测 - kadd_sqli_demo
 
@@ -261,10 +274,25 @@ cp /opt/KADD/SQLi/build/src/libkadd_feature_engine.so /opt/KADD/SQLi/tools/model
         --eod /opt/KADD/SQLi/assets/data/eod_table.bin
     ```
 
+5. 为新生成的原生模型签名（必需）。
+
+    训练产出的`.krf`**未签名**，加载器会直接拒绝（fail-closed），必须用`rf_sign.py`追加HMAC-SHA256尾部：
+
+    ```bash
+    export KADD_MODEL_HMAC_KEY=$(openssl rand -hex 32)   # 生产环境自行生成并妥善保管
+    cd /opt/KADD/SQLi/tools/rf_sign
+    python rf_sign.py --in-place /opt/KADD/SQLi/assets/model/model_tokens_rf.krf
+    python rf_sign.py --verify /opt/KADD/SQLi/assets/model/model_tokens_rf.krf
+    ```
+
+    > **注意**
+    >
+    > 签名密钥必须与运行期的`KADD_MODEL_HMAC_KEY`一致，更换密钥后需重新签名；ONNX格式（`.onnx`）不参与HMAC认证，无需签名。
+
 #### 预期输出
 
 - `model_tokens_rf.onnx` - ONNX格式模型（回退使用）
-- `model_tokens_rf.krf` - 原生二进制格式（SVE可用时优先加载）
+- `model_tokens_rf.krf` - 原生二进制格式（SVE可用时优先加载，**须按步骤5签名后才能被加载**）
 - 准确率、分类报告、混淆矩阵等评估指标
 
 ```bash
@@ -338,10 +366,21 @@ Training completed!
         --model-output /opt/KADD/SQLi/assets/model/model_tokens_dl_cnn.onnx
     ```
 
+4. 为新生成的原生模型签名（必需）。
+
+    训练产出的`.kcn`**未签名**，加载器会直接拒绝（fail-closed）：
+
+    ```bash
+    export KADD_MODEL_HMAC_KEY=$(openssl rand -hex 32)   # 需与运行环境保持一致
+    cd /opt/KADD/SQLi/tools/rf_sign
+    python rf_sign.py --in-place /opt/KADD/SQLi/assets/model/model_tokens_dl_cnn.kcn
+    python rf_sign.py --verify /opt/KADD/SQLi/assets/model/model_tokens_dl_cnn.kcn
+    ```
+
 #### 预期输出
 
 - `model_tokens_dl_cnn.onnx` - ONNX格式模型
-- `model_tokens_dl_cnn.kcn` - 原生二进制格式（SVE可用时优先加载）
+- `model_tokens_dl_cnn.kcn` - 原生二进制格式（SVE可用时优先加载，**须按步骤4签名后才能被加载**）
 
 ```bash
 Model type: dl_cnn

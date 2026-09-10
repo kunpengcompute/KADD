@@ -18,11 +18,16 @@
 #include "kadd_inference_engine.h"
 
 #include <math.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
 /* token 词汇表大小（与 kadd_cnn_engine.c 的 KADD_CNN_VOCAB_SIZE 一致） */
 #define KADD_DL_VOCAB_SIZE 29
+
+/* [FIX REPORT-2026-0000021] 批处理样本数上限，与后端 KADD_CNN_MAX_SAMPLE_COUNT /
+ * KADD_INFERENCE_MAX_SAMPLE_COUNT 保持一致，用于在分发层先界定校验循环规模 */
+#define KADD_DL_MAX_SAMPLE_COUNT 10000000
 
 /* ========== 内部结构体 ========== */
 struct kadd_dl_model_t {
@@ -112,9 +117,20 @@ int kadd_dl_model_predict_batch(kadd_dl_model_t *model, const float *inputs,
         return KADD_ERROR_NULL_PTR;
     }
 
+    /* [FIX REPORT-2026-0000021] 原实现为 `i < n * model->feature_dim`（int 乘法）：
+     *   - n 未校验，n <= 0 时要等到后端才拒绝，分发层语义不一致；
+     *   - n * feature_dim 在 int 下回绕为负数会整段跳过 token 校验，
+     *     使非法/越界输入直接流入 SVE 或 ONNX 后端，造成越界读。
+     * 现改为：先按与后端一致的样本数上限校验 n，再用 size_t 做溢出安全的元素总数计算。 */
+    if (n <= 0 || n > KADD_DL_MAX_SAMPLE_COUNT || model->feature_dim <= 0 ||
+        (size_t)n > SIZE_MAX / (size_t)model->feature_dim) {
+        return KADD_ERROR_INVALID_PARAM;
+    }
+    const size_t total_inputs = (size_t)n * (size_t)model->feature_dim;
+
     /* 统一 token 校验（与 kadd_cnn_engine 的 decode_tokens 一致）：
      * 保证 SVE 原生后端与 ONNX 后端对非法输入的返回码一致 */
-    for (int i = 0; i < n * model->feature_dim; i++) {
+    for (size_t i = 0; i < total_inputs; i++) {
         const float value = inputs[i];
         if (!isfinite(value) ||
             value < 0.0F ||

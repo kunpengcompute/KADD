@@ -11,11 +11,13 @@
 #include "kadd_cnn_engine.h"
 #include "kadd_dfa_engine.h"
 #include "test_model_data.h"
+#include "test_model_hmac_key.h"
 
 #include <gtest/gtest.h>
 
 #include <chrono>
 #include <cstdio>
+#include <string>
 #include <vector>
 #include <algorithm>
 
@@ -24,6 +26,11 @@ namespace {
 constexpr int kSeq  = 300;
 constexpr int kVocab = 29;
 constexpr int kPad   = 28;
+
+/* 数据集最低可用样本数。低于该值说明 train_data.csv 不是真实数据
+ * （典型原因：Git LFS 未拉取，工作区里只剩约 130 字节的指针文本，
+ *   其 3 行会被解析成 2 条伪样本）。 */
+constexpr size_t kMinSamples = 10;
 
 constexpr const char* kModelPath = "assets/model/model_tokens_dl_cnn.kcn";
 constexpr const char* kCsvPath =
@@ -98,6 +105,11 @@ TEST_F(CnnEngineTest, AccuracyOnRealData) {
     ASSERT_TRUE(load_csv_samples(kCsvPath, dfa, samples))
         << "读不到训练 CSV " << kCsvPath;
 
+    /* 数据集样本不足时跳过（典型为 Git LFS 未拉取，train_data.csv 只剩指针文本）。
+     * 否则 n=2 会让下面的准确率断言退化成无意义的空转通过。 */
+    const std::string dataset_skip = check_dataset_size(kCsvPath, samples, kMinSamples);
+    if (!dataset_skip.empty()) GTEST_SKIP() << dataset_skip;
+
     Metrics m;
     for (const auto& s : samples) {
         auto seq = to_seq(s.tokens);
@@ -120,7 +132,10 @@ TEST_F(CnnEngineTest, Performance) {
      * 只算 1 个窗口而虚低——与 demo 的真实样本基准对齐。 */
     std::vector<Sample> samples;
     ASSERT_TRUE(load_csv_samples(kCsvPath, dfa, samples));
-    ASSERT_GE((int)samples.size(), kSampleCount);
+    /* 样本不足时跳过，避免 seqs 为空/过少使下面的 i % kSampleCount 取到越界元素 */
+    const std::string dataset_skip =
+        check_dataset_size(kCsvPath, samples, (size_t)kSampleCount);
+    if (!dataset_skip.empty()) GTEST_SKIP() << dataset_skip;
 
     /* 准备多条样本 */
     std::vector<std::vector<float>> seqs;
@@ -152,6 +167,12 @@ TEST_F(CnnEngineTest, PredictBatch) {
     std::vector<Sample> samples;
     ASSERT_TRUE(load_csv_samples(kCsvPath, dfa, samples));
     const int kBatchCount = 3;
+    /* 修复 SegFault：原先未校验样本数就用 samples[i]（i < kBatchCount）取值，
+     * 数据集只剩 2 条伪样本时 samples[2] 越界 -> 段错误 -> 测试进程崩溃 ->
+     * atexit 不执行 -> gcov/llvm-cov 覆盖率数据整份丢失。 */
+    const std::string dataset_skip =
+        check_dataset_size(kCsvPath, samples, (size_t)kBatchCount);
+    if (!dataset_skip.empty()) GTEST_SKIP() << dataset_skip;
     std::vector<float> batch(kBatchCount * kSeq, 0.0f);
     for (int i = 0; i < kBatchCount; ++i) {
         auto seq = to_seq(samples[i].tokens);

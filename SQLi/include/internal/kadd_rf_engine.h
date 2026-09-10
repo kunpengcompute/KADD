@@ -16,10 +16,25 @@ typedef struct kadd_rf_model_t kadd_rf_model_t;
  */
 int kadd_rf_model_load(kadd_rf_model_t **model, const char *model_path);
 
+/**
+ * Predict one sample.
+ *
+ * Buffer contract: features must point to at least
+ * kadd_rf_model_get_feature_dim(model) contiguous finite floats.
+ */
 int kadd_rf_model_predict(const kadd_rf_model_t *model,
                           const float *features,
                           float *positive_probability);
 
+/**
+ * Predict multiple samples.
+ *
+ * Buffer contract: features must contain sample_count rows, each with
+ * kadd_rf_model_get_feature_dim(model) contiguous finite floats.
+ * positive_probabilities must contain at least sample_count floats.
+ * batch_size only controls internal chunking; it does not change the total
+ * number of input or output elements.
+ */
 int kadd_rf_model_predict_batch(const kadd_rf_model_t *model,
                                 const float *features,
                                 int sample_count,

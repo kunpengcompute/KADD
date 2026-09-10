@@ -11,6 +11,12 @@
 #include <sstream>
 #include <iomanip>
 
+namespace {
+/* [FIX REPORT-2026-0000017] SQL 片段复杂度上限：complexity 源自 fuzz 字节，
+ * 不设上限时 clauses = complexity + 1 可整型溢出，或构造出超长字符串耗尽内存 */
+constexpr int kMaxSqlFragmentComplexity = 64;
+}  // namespace
+
 /* ========== 测试样本生成器 ========== */
 
 /**
@@ -220,6 +226,10 @@ std::string GenerateRandomUnicode(const uint8_t* data, size_t size, size_t lengt
     };
 
     std::string result;
+    /* [FIX REPORT-2026-0000017] size==0 时 i % size 为除零（UB），data 为空时无字节可取 */
+    if (data == nullptr || size == 0) {
+        return result;
+    }
     for (size_t i = 0; i < length; ++i) {
         result += unicode_chars[data[i % size] % unicode_chars.size()];
     }
@@ -245,6 +255,17 @@ std::string GenerateRandomSQLFragment(const uint8_t* data, size_t size, int comp
     };
 
     std::string result;
+    /* [FIX REPORT-2026-0000017] size==0 时 i % size 为除零（UB）；
+     * complexity 来自 fuzz 输入，钳制上限避免 clauses 溢出与超长字符串构造 */
+    if (data == nullptr || size == 0) {
+        return result;
+    }
+    if (complexity < 0) {
+        complexity = 0;
+    }
+    if (complexity > kMaxSqlFragmentComplexity) {
+        complexity = kMaxSqlFragmentComplexity;
+    }
     int clauses = complexity + 1;
 
     for (int i = 0; i < clauses; ++i) {
