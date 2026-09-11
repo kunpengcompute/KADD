@@ -29,3 +29,6 @@ class KpErrorCode(IntEnum):
     InitError = 10000
     DetectError = 20000
     UpdateError = 30000
+
+    def __str__(self):
+        return str(self.value)
