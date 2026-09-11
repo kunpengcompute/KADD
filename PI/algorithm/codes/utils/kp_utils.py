@@ -35,9 +35,3 @@ def load_json(file_path: Union[str, Path]):
             return json.load(f)
         except json.JSONDecodeError:
             raise ValueError("Load Json Failed: File is not JSON formatted.")
-
-
-def softmax(logits: np.ndarray, axis: int = -1) -> np.ndarray:
-    logits = logits - np.max(logits, axis=axis, keepdims=True)  # 数值稳定
-    exp_logits = np.exp(logits)
-    return exp_logits / np.sum(exp_logits, axis=axis, keepdims=True)
