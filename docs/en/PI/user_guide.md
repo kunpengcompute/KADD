@@ -1,6 +1,6 @@
 # User Guide
 
-This document describes how to configure the KADD PI (Prompt Injection, jailbreak text detection) engine and provides code examples.
+This guide describes the configuration of the KADD PI (Prompt Injection, jailbreak text detection) feature and provides specific code examples.
 
 ---
 

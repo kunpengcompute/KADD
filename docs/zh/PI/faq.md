@@ -1,6 +1,6 @@
 # 常见问题解答
 
-本文档收集了KADD PI特性使用过程中的常见问题和解决方案。
+本文档收集了KADD PI（Prompt Injection，越狱文本检测）特性使用过程中的常见问题和解决方案。
 
 ---
 
@@ -51,6 +51,41 @@ make && make install
 
 ```bash
 pip install onnxruntime==1.19.2
+```
+
+---
+
+### 编译Arm Compute Library时报错
+
+**问题**
+
+使用scons命令编译Arm Compute Library时报错
+
+**回答**
+
+可能由于gcc版本过高，导致静态检查出错，可使用下面的命令：
+
+```bash
+scons Werror=0 -j8 debug=0 neon=1 opencl=0 os=linux arch=armv8a build=native
+```
+
+---
+
+### 编译Onnxruntime源码时报错
+
+**问题**
+
+编译Onnxruntime源码时报错
+
+**回答**
+
+- 当出现缺少Python.h时，可能是机器中未安装python-devel包或未设置python的环境变量导致
+- 当出现缺少numpy等库时，可能是由于未下载python所需三方库导致
+- 当出现Eigen下载失败时，需去浏览器下载[Eigen](https://gitlab.com/libeigen/eigen/-/archive/e7248b26a1ed53fa030c5c459f7ea095dfd276ac/eigen-e7248b26a1ed53fa030c5c459f7ea095dfd276ac.zip)，手动放置到`/path/onnxruntime/build/Release/_deps/eigen-subbuild/eigen-populate-prefix/src/`目录下，并执行如下命令，注意：`/path` 为占位符，请先替换为实际工作目录
+
+```bash
+# 在 /path/onnxruntime 目录下执行
+grep -r "be8be39fdbc6e60e94fa7870b280707069b5b81a" . | cut -d: -f1 | sort -u | xargs sed -i.bak 's/be8be39fdbc6e60e94fa7870b280707069b5b81a/32b145f525a8308d7ab1c09388b2e288312d8eba/g'
 ```
 
 ---
@@ -199,3 +234,9 @@ python train/train.py
 | max_length  | 512  | 最大序列长度   |
 | warmup_rate | 0.03 | 预热比例     |
 | dropout     | 0    | Dropout率 |
+
+# 修订记录
+
+| 文档版本 | 发布日期       | 修改说明    |
+| ---- | ---------- | ------- |
+| 01   | 2026-09-30 | 第一次正式发布 |

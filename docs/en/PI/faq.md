@@ -1,6 +1,6 @@
 # FAQs
 
-This document describes the frequently asked questions (FAQs) and solutions related to the KADD PI engine.
+This document describes the frequently asked questions (FAQs) and solutions related to the KADD PI (Prompt Injection, jailbreak text detection)feature.
 
 ---
 
@@ -51,6 +51,41 @@ The system's `ldd` version is lower than the `ldd` version used when compiling t
 
 ```bash
 pip install onnxruntime==1.19.2
+```
+
+---
+
+### Error When Compiling Arm Compute Library
+
+**Question**
+
+An error occurs when compiling Arm Compute Library using the scons command.
+
+**Answer**
+
+The error may be caused by static check failures due to an excessively high gcc version. Use the following command:
+
+```bash
+scons Werror=0 -j8 debug=0 neon=1 opencl=0 os=linux arch=armv8a build=native
+```
+
+---
+
+### Error When Compiling OnnxRuntime Source Code
+
+**Question**
+
+An error occurs when compiling the OnnxRuntime source code.
+
+**Answer**
+
+- If Python.h is missing, the python-devel package may not be installed on the machine, or the python environment variables may not be set.
+- If libraries such as numpy are missing, the required Python third-party libraries may not be downloaded.
+- If the Eigen download fails, download [Eigen](https://gitlab.com/libeigen/eigen/-/archive/e7248b26a1ed53fa030c5c459f7ea095dfd276ac/eigen-e7248b26a1ed53fa030c5c459f7ea095dfd276ac.zip) using a browser, manually place it in the `/path/onnxruntime/build/Release/_deps/eigen-subbuild/eigen-populate-prefix/src/` directory, and run the following command. Note: `/path` is a placeholder. Replace it with the actual working directory first.
+
+```bash
+# Run in the /path/onnxruntime directory
+grep -r "be8be39fdbc6e60e94fa7870b280707069b5b81a" . | cut -d: -f1 | sort -u | xargs sed -i.bak 's/be8be39fdbc6e60e94fa7870b280707069b5b81a/32b145f525a8308d7ab1c09388b2e288312d8eba/g'
 ```
 
 ---
@@ -199,3 +234,9 @@ After training, the ONNX model is automatically exported and quantized to INT8. 
 | max_length  | 512     | Maximum sequence length   |
 | warmup_rate | 0.03    | Warmup ratio              |
 | dropout     | 0       | Dropout rate              |
+
+# Revision History
+
+| Document Version | Release Date | Description           |
+| ---------------- | ------------ | --------------------- |
+| 01               | 2026-09-30   | First official release |

@@ -137,6 +137,12 @@ Copy the quantized ONNX model to `algorithm/knowledge_base/model_file/` to repla
 Use `numactl` to bind the NUMA node for maximum performance:
 
 ```bash
-# example command
-numactl --cpunodebind=0 --membind=0 python example.py
+# Example command
+numactl --cpunodebind=0 --membind=0 python test_script.py
 ```
+
+# Revision History
+
+| Document Version | Release Date | Description           |
+| ---------------- | ------------ | --------------------- |
+| 01               | 2026-09-30   | First official release |

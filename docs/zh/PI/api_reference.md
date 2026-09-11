@@ -220,3 +220,9 @@ except KpDetectionException as e:
 | 模型分类   | `algorithm/codes/filter/kp_classifier_filter.py`              |
 | 黑白名单数据 | `algorithm/knowledge_base/blackwhitelist/blackwhitelist.json` |
 | 模型文件   | `algorithm/knowledge_base/model_file/clf_model.onnx`          |
+
+# 修订记录
+
+| 文档版本 | 发布日期 | 修改说明 |
+| -------- | -------- | -------- |
+| 01 | 2026-09-30 | 第一次正式发布 |
