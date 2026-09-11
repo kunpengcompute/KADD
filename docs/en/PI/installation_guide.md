@@ -17,8 +17,8 @@ lscpu   # Check the BIOS Model name field in the output to determine the process
 
 | Processor Model | onnxruntime to Use | Installation Path |
 | --------------- | ------------------ | ----------------- |
-| Kunpeng 920 processor, Kunpeng 920 new model processor | Acceleration library 20 (onnxruntime_acl) | Chapter 1 (Section 1.2) → Chapter 2 |
-| Kunpeng 950 processor | Acceleration library 50 (onnxruntime) | Chapter 1 (Section 1.3) → Chapter 2 |
+| Kunpeng 920 processor, Kunpeng 920 new model processor | Acceleration library 20 (onnxruntime_acl) | Chapter 1 (Section 1.2) then Chapter 2 |
+| Kunpeng 950 processor | Acceleration library 50 (onnxruntime) | Chapter 1 (Section 1.3) then Chapter 2 |
 | Other processors (including x86) | Standard onnxruntime==1.19.2 | **Skip Chapter 1** and start from Chapter 2 directly |
 
 ### Terminology
@@ -44,7 +44,7 @@ To avoid omissions, all command blocks containing `/path` in this document **hav
 
 ## 1. Compiling the Acceleration Libraries
 
-> Users of non-Kunpeng processors (such as x86) do not need to compile the acceleration libraries. Go to Chapter 2 directly.
+Users of non-Kunpeng processors (such as x86) do not need to compile the acceleration libraries. Go to Chapter 2 directly.
 
 This section describes the environment dependencies and compilation steps of the acceleration libraries for the PI feature. There are two versions of the acceleration library:
 
@@ -322,7 +322,7 @@ pip install -r /path/PI/deploy/requirements.txt
 
 **When using a Kunpeng 950 processor (acceleration library 50), you do not need to configure environment variables.**
 
-> **NOTE**: Environment variables configured using `export` **take effect only in the current terminal** and become invalid after you open a new terminal. To make them permanent, append the preceding export commands to the end of the `~/.bashrc` file and run `source ~/.bashrc` to make them take effect.
+Environment variables configured using `export` **take effect only in the current terminal** and become invalid after you open a new terminal. To make them permanent, append the preceding export commands to the end of the `~/.bashrc` file and run `source ~/.bashrc` to make them take effect.
 
 ### 2.3 Function Verification
 
