@@ -130,7 +130,7 @@ numactl --cpunodebind=0 --membind=0 python 脚本名称.py
 
 ### 3、训练过程
 
-将预训练模型放置在`/train/pretrained_model/chinese-lert-small`文件夹下后，即可一键式训练
+将预训练模型文件使用git clone放置在 `train/pretrained_model/Chinese-lert-small`文件夹下，即可一键式训练
 
 ```bash
 python train/train.py

@@ -1,8 +1,7 @@
 import base64
-from typing import List, Dict, Literal, Any
+from typing import List, Dict, Literal
 from logging import Logger
 
-import json
 import numpy as np
 import jieba
 from datasketch import MinHash, MinHashLSH
@@ -29,11 +28,6 @@ class BlackwhitelistFilter:
         self.idx = 0
         self.extra_list_num = {list_name: 0 for list_name in self.LIST_NAMES}
         self.blackwhitelist = self._load_blackwhitelist(self.blackwhitelist_path)
-
-    @staticmethod
-    def minhash_to_base64(m: MinHash) -> str:
-        arr = np.asarray(m.hashvalues, dtype="<u8")
-        return base64.b64encode(arr.tobytes()).decode("ascii")
 
     @staticmethod
     def base64_to_minhash(sig: str, num_perm: int = 128, seed: int = 42, schema: str = "affine32"):
@@ -128,32 +122,6 @@ class BlackwhitelistFilter:
         for k, v in succ.items():
             if v and k not in partial:
                 self.logger.info(f"{KunpengConstant.LOG_PREFIX}Blackwhitelist add success: {k} add {v}.")
-
-    def _save_to_blackwhitelist(
-        self,
-        blackwhitelist: Dict[Literal["whitelist", "blacklist"], List[str]],
-    ):
-        try:
-            json_obj = load_json(self.blackwhitelist_path)
-        except (FileNotFoundError, PermissionError, ValueError):
-            json_obj = {}
-
-        for list_name in self.LIST_NAMES:
-            json_obj.setdefault(list_name, [])
-
-            for text in blackwhitelist.get(list_name, []):
-                m = self._build_minhash(text)
-                sig = self.minhash_to_base64(m)
-
-                json_obj[list_name].append(sig)
-
-                self.blackwhitelist[list_name].insert(self.idx, m)
-                self.idx += 1
-
-        with open(self.blackwhitelist_path, "w", encoding="utf-8") as f:
-            json.dump(json_obj, f, ensure_ascii=False, indent=2)
-
-        self.logger.info(f"{KunpengConstant.LOG_PREFIX}Blackwhitelist save success.")
 
     @time_stat
     def run_filter(self, prompt: str):

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The KADD PI (Prompt Injection, jailbreak text detection) engine provides the following Python API interfaces:
+The KADD PI (Prompt Injection, jailbreak text detection) feature provides the following Python API interfaces:
 
 | Interface                           | Function                                        |
 | ----------------------------------- | ----------------------------------------------- |
@@ -220,3 +220,9 @@ except KpDetectionException as e:
 | Model classifier        | `algorithm/codes/filter/kp_classifier_filter.py`              |
 | Black/white list data   | `algorithm/knowledge_base/blackwhitelist/blackwhitelist.json` |
 | Model file              | `algorithm/knowledge_base/model_file/clf_model.onnx`          |
+
+# Revision History
+
+| Document Version | Release Date | Description           |
+| ---------------- | ------------ | --------------------- |
+| 01               | 2026-09-30   | First official release |

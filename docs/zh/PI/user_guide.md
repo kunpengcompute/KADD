@@ -223,3 +223,9 @@ except KpDetectionException as e:
 |------|------|------|
 | `result` | int | `1` = JAILBREAK（越狱），`0` = BENIGN（正常） |
 | `detect_time` | str | 检测耗时，格式为 `X.XXX ms` |
+
+# 修订记录
+
+| 文档版本 | 发布日期 | 修改说明 |
+| -------- | -------- | -------- |
+| 01 | 2026-09-30 | 第一次正式发布 |

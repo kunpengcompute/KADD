@@ -95,7 +95,7 @@ print(res)
 
 预训练模型为 **Chinese-lert-small**，取自huggingface，参数量为15.08M。
 
-将预训练模型放置在 `train/pretrained_model/chinese-lert-small` 文件夹下。
+将预训练模型文件使用git clone放置在 `train/pretrained_model/Chinese-lert-small` 文件夹下。
 
 ### 3. 训练过程
 
@@ -140,3 +140,9 @@ python train/train.py
 # 示例命令
 numactl --cpunodebind=0 --membind=0 python 测试脚本.py
 ```
+
+# 修订记录
+
+| 文档版本 | 发布日期 | 修改说明 |
+| -------- | -------- | -------- |
+| 01 | 2026-09-30 | 第一次正式发布 |
