@@ -12,13 +12,20 @@
 #include "kadd_dfa_engine.h"
 #include "kadd_feature_engine.h"
 #include "test_model_data.h"
+/* [FIX REPORT-2026-0000028] 用于在测试内构造已签名的 .krf 模型 */
+#include "kadd_hmac_sha256.h"
+#include "test_model_hmac_key.h"   /* [FIX REPORT-2026-0000028] 注入 .krf/.kcn 共用 HMAC 开发密钥 */
 
 #include <gtest/gtest.h>
 
 #include <chrono>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <fstream>
+#include <string>
 #include <vector>
 
 
@@ -27,6 +34,9 @@ namespace {
 constexpr int kSeq = 300;
 constexpr int kFeatureDim = 28;
 constexpr int kWindow = 5;
+
+/* 数据集最低可用样本数，含义同 test_cnn_engine_gtest.cpp */
+constexpr size_t kMinSamples = 10;
 
 constexpr const char* kModelPath = "assets/model/model_tokens_rf.krf";
 constexpr const char* kCsvPath =
@@ -98,6 +108,11 @@ TEST_F(RfEngineTest, AccuracyOnRealData) {
     std::vector<Sample> samples;
     ASSERT_TRUE(load_csv_samples(kCsvPath, dfa, samples))
         << "读不到训练 CSV " << kCsvPath;
+
+    /* 数据集样本不足时跳过（典型为 Git LFS 未拉取，train_data.csv 只剩指针文本）。
+     * 否则 n=2 会让下面的准确率断言退化成无意义的空转通过。 */
+    const std::string dataset_skip = check_dataset_size(kCsvPath, samples, kMinSamples);
+    if (!dataset_skip.empty()) GTEST_SKIP() << dataset_skip;
 
     Metrics m;
     for (const auto& s : samples) {
@@ -250,6 +265,246 @@ TEST_F(RfEngineTest, LoadNonExistentFile) {
     kadd_rf_model_t* m = nullptr;
     EXPECT_NE(kadd_rf_model_load(&m, "/nonexistent_model_xyz.krf"), KADD_SUCCESS);
     EXPECT_EQ(m, nullptr);
+}
+
+/* ==========================================================================
+ * [FIX REPORT-2026-0000028] .krf 模型真实性认证（HMAC-SHA256）回归测试
+ *
+ * 背景：原格式仅有 CRC32（多项式 0xEDB88320，公开且无需密钥）作为完整性控制，
+ * 只能检测意外损坏、不能抵抗蓄意篡改。持有模型文件写权限者可把叶节点
+ * positive_probability 全部置 0.0 再重算 CRC32，加载器会照单全收，从而完全绕过
+ * SQLi 检测（或全置 1.0 造成误报 DoS）。现在 HMAC-SHA256 认证是强制项，
+ * 未签名的旧格式模型一律拒绝加载。
+ *
+ * 这些用例使用独立 fixture（不复用 RfEngineTest），因为 RfEngineTest::SetUp()
+ * 会加载仓库资产，而下面多个用例需要临时改写 KADD_MODEL_HMAC_KEY。
+ * HmacKeyGuard 保证用例结束后把环境变量恢复原状（即 test_model_hmac_key.h
+ * 在 main() 之前注入的开发密钥），避免污染其它用例。
+ * ========================================================================== */
+namespace {
+
+constexpr const char* kHmacKeyEnv = "KADD_MODEL_HMAC_KEY";
+/* 与 test_model_hmac_key.h 注入的开发密钥一致：仓库资产正是用它签名的 */
+constexpr const char* kDevKeyHex = kadd_test::kModelHmacDevKeyHex;
+constexpr const char* kWrongKeyHex =
+    "ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100";
+constexpr const char* kSignedPath = "kadd_test_rf_signed.krf";
+constexpr const char* kUnsignedPath = "kadd_test_rf_unsigned.krf";
+constexpr const char* kTamperedPath = "kadd_test_rf_tampered.krf";
+constexpr uint32_t kFlagHmacSha256 = 0x00000001u;
+constexpr size_t kRfHeaderSize = 64u;
+
+class HmacKeyGuard {
+public:
+    explicit HmacKeyGuard(const char* value) {
+        const char* prev = getenv(kHmacKeyEnv);
+        had_prev_ = (prev != nullptr);
+        if (had_prev_) {
+            prev_ = prev;
+        }
+        Apply(value);
+    }
+    ~HmacKeyGuard() { Apply(had_prev_ ? prev_.c_str() : nullptr); }
+
+private:
+    static void Apply(const char* value) {
+        if (value != nullptr) {
+#ifdef _WIN32
+            const std::string entry = std::string(kHmacKeyEnv) + "=" + value;
+            _putenv(entry.c_str());
+#else
+            setenv(kHmacKeyEnv, value, 1);
+#endif
+        } else {
+#ifdef _WIN32
+            _putenv((std::string(kHmacKeyEnv) + "=").c_str());
+#else
+            unsetenv(kHmacKeyEnv);
+#endif
+        }
+    }
+    bool had_prev_ = false;
+    std::string prev_;
+};
+
+std::vector<char> ReadModel() {
+    std::ifstream in(kModelPath, std::ios::binary);
+    if (!in.good()) {
+        return {};
+    }
+    return std::vector<char>((std::istreambuf_iterator<char>(in)),
+                             std::istreambuf_iterator<char>());
+}
+
+void WriteModel(const char* path, const std::vector<char>& bytes) {
+    std::ofstream out(path, std::ios::binary | std::ios::trunc);
+    out.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+}
+
+/* .krf 头部字段为小端；逐字节组装以不依赖宿主字节序 */
+uint64_t ReadLe64(const std::vector<char>& b, size_t off) {
+    uint64_t v = 0;
+    for (int i = 7; i >= 0; --i) {
+        v = (v << 8) | static_cast<uint8_t>(b[off + static_cast<size_t>(i)]);
+    }
+    return v;
+}
+uint32_t ReadLe32(const std::vector<char>& b, size_t off) {
+    uint32_t v = 0;
+    for (int i = 3; i >= 0; --i) {
+        v = (v << 8) | static_cast<uint8_t>(b[off + static_cast<size_t>(i)]);
+    }
+    return v;
+}
+void WriteLe32(std::vector<char>& b, size_t off, uint32_t v) {
+    for (uint32_t i = 0; i < 4u; ++i) {
+        b[off + i] = static_cast<char>((v >> (8u * i)) & 0xFFu);
+    }
+}
+
+/* 被认证区域长度 = header + payload，以头部声明的 payload_size 为准 */
+size_t SignedRegionSize(const std::vector<char>& raw) {
+    return kRfHeaderSize + static_cast<size_t>(ReadLe64(raw, 44));
+}
+
+/* 构造已签名模型：flags bit0 置位，尾部追加 HMAC-SHA256(header || payload)。
+ * 仓库资产本身已是已签名格式，故先按 payload_size 剥离既有尾部再重新签名。 */
+std::vector<char> MakeSigned(const std::vector<char>& raw, const char* key_hex) {
+    std::vector<char> out = raw;
+    if (out.size() <= kRfHeaderSize) {
+        return out;
+    }
+    uint8_t key[KADD_SHA256_DIGEST_SIZE];
+    if (kadd_hex_to_bytes(key_hex, strlen(key_hex), key, sizeof(key)) != 0) {
+        return out;
+    }
+    out.resize(SignedRegionSize(raw));
+    WriteLe32(out, 40, ReadLe32(out, 40) | kFlagHmacSha256);
+
+    uint8_t mac[KADD_SHA256_DIGEST_SIZE];
+    kadd_hmac_sha256(key, sizeof(key),
+                     reinterpret_cast<const uint8_t*>(out.data()), out.size(), mac);
+    out.insert(out.end(), reinterpret_cast<const char*>(mac),
+               reinterpret_cast<const char*>(mac) + KADD_SHA256_DIGEST_SIZE);
+    return out;
+}
+
+/* 构造未签名的旧格式模型：去掉 HMAC 尾部并清掉 flags bit0，
+ * 用于验证"旧行为不再支持" */
+std::vector<char> MakeUnsigned(const std::vector<char>& raw) {
+    std::vector<char> out = raw;
+    if (out.size() <= kRfHeaderSize) {
+        return out;
+    }
+    out.resize(SignedRegionSize(raw));
+    WriteLe32(out, 40, ReadLe32(out, 40) & ~kFlagHmacSha256);
+    return out;
+}
+
+}  // namespace
+
+/* 仓库资产已由 rf_sign.py 用开发密钥签名；密钥经 test_model_hmac_key.h 注入 -> 加载成功 */
+TEST(RfHmacTest, SignedAssetLoadsWithDevKey) {
+    kadd_rf_model_t* m = nullptr;
+    ASSERT_EQ(kadd_rf_model_load(&m, kModelPath), KADD_SUCCESS)
+        << "仓库资产应已签名，且开发密钥应由 test_model_hmac_key.h 注入";
+    ASSERT_NE(m, nullptr);
+    EXPECT_GT(kadd_rf_model_get_feature_dim(m), 0);
+    kadd_rf_model_free(m);
+}
+
+/* 已签名模型 + 未配置密钥 -> 拒绝（无法验证就不加载，fail-closed） */
+TEST(RfHmacTest, SignedAssetRejectedWithoutKey) {
+    HmacKeyGuard guard(nullptr);
+    kadd_rf_model_t* m = nullptr;
+    EXPECT_NE(kadd_rf_model_load(&m, kModelPath), KADD_SUCCESS);
+    EXPECT_EQ(m, nullptr) << "加载失败时不得输出句柄";
+}
+
+/* 未签名旧格式模型 + 已配置密钥 -> 拒绝（旧行为不再支持） */
+TEST(RfHmacTest, UnsignedModelRejectedWithKey) {
+    std::vector<char> raw = ReadModel();
+    ASSERT_GT(raw.size(), kRfHeaderSize) << "读不到模型 " << kModelPath;
+    WriteModel(kUnsignedPath, MakeUnsigned(raw));
+
+    HmacKeyGuard guard(kDevKeyHex);
+    kadd_rf_model_t* m = nullptr;
+    EXPECT_NE(kadd_rf_model_load(&m, kUnsignedPath), KADD_SUCCESS);
+    EXPECT_EQ(m, nullptr);
+    std::remove(kUnsignedPath);
+}
+
+/* 未签名旧格式模型 + 未配置密钥 -> 同样拒绝（不存在任何放行未签名模型的路径） */
+TEST(RfHmacTest, UnsignedModelRejectedWithoutKey) {
+    std::vector<char> raw = ReadModel();
+    ASSERT_GT(raw.size(), kRfHeaderSize);
+    WriteModel(kUnsignedPath, MakeUnsigned(raw));
+
+    HmacKeyGuard guard(nullptr);
+    kadd_rf_model_t* m = nullptr;
+    EXPECT_NE(kadd_rf_model_load(&m, kUnsignedPath), KADD_SUCCESS);
+    EXPECT_EQ(m, nullptr);
+    std::remove(kUnsignedPath);
+}
+
+/* 已签名模型 + 错误密钥 -> 拒绝。
+ * 此时文件完好、CRC32 有效，能拒绝它的只有 HMAC，
+ * 因此本用例证明认证确实生效，而非由 CRC 顺带拦下。 */
+TEST(RfHmacTest, SignedModelRejectedWithWrongKey) {
+    std::vector<char> raw = ReadModel();
+    ASSERT_GT(raw.size(), kRfHeaderSize);
+    WriteModel(kSignedPath, MakeSigned(raw, kDevKeyHex));
+
+    HmacKeyGuard guard(kWrongKeyHex);
+    kadd_rf_model_t* m = nullptr;
+    EXPECT_NE(kadd_rf_model_load(&m, kSignedPath), KADD_SUCCESS);
+    EXPECT_EQ(m, nullptr);
+    std::remove(kSignedPath);
+}
+
+/* 密钥格式非法 -> 拒绝（配置错误不得静默降级为"无密钥"） */
+TEST(RfHmacTest, MalformedKeyRejected) {
+    HmacKeyGuard guard("not-a-valid-hex-key");
+    kadd_rf_model_t* m = nullptr;
+    EXPECT_NE(kadd_rf_model_load(&m, kModelPath), KADD_SUCCESS);
+    EXPECT_EQ(m, nullptr);
+}
+
+/* 已签名模型被篡改（复现原报告 PoC 的篡改位置）+ 正确密钥 -> 拒绝。
+ * 攻击者不知道密钥，无法在改写叶节点概率后重新生成有效 HMAC。 */
+TEST(RfHmacTest, TamperedSignedModelRejected) {
+    std::vector<char> raw = ReadModel();
+    ASSERT_GT(raw.size(), kRfHeaderSize);
+    std::vector<char> tampered = MakeSigned(raw, kDevKeyHex);
+
+    /* payload 布局为 tree_offsets((tree_count+1)*4) 之后紧跟 node 数组，
+     * 每个 node 32 字节，positive_probability 位于 node 内偏移 24 处 */
+    const uint32_t tree_count = ReadLe32(raw, 32);
+    const size_t nodes_off = kRfHeaderSize + (static_cast<size_t>(tree_count) + 1u) * 4u;
+    ASSERT_GT(tampered.size(), nodes_off + 32u);
+    tampered[nodes_off + 24] = static_cast<char>(tampered[nodes_off + 24] ^ 0x01);
+    WriteModel(kTamperedPath, tampered);
+
+    HmacKeyGuard guard(kDevKeyHex);
+    kadd_rf_model_t* m = nullptr;
+    EXPECT_NE(kadd_rf_model_load(&m, kTamperedPath), KADD_SUCCESS);
+    EXPECT_EQ(m, nullptr);
+    std::remove(kTamperedPath);
+}
+
+/* 尾部长度必须恰好 32 字节：截断 HMAC 尾部 -> 拒绝 */
+TEST(RfHmacTest, TruncatedHmacTrailerRejected) {
+    std::vector<char> raw = ReadModel();
+    ASSERT_GT(raw.size(), kRfHeaderSize);
+    std::vector<char> signed_model = MakeSigned(raw, kDevKeyHex);
+    signed_model.resize(signed_model.size() - 8);   /* 少 8 字节 */
+    WriteModel(kTamperedPath, signed_model);
+
+    HmacKeyGuard guard(kDevKeyHex);
+    kadd_rf_model_t* m = nullptr;
+    EXPECT_NE(kadd_rf_model_load(&m, kTamperedPath), KADD_SUCCESS);
+    EXPECT_EQ(m, nullptr);
+    std::remove(kTamperedPath);
 }
 
 // 覆盖 kadd_rf_model_load 文件小于 header 大小（file_size < KADD_RF_HEADER_SIZE）

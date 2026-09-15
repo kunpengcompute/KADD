@@ -10,6 +10,7 @@
 #ifndef TEST_MODEL_DATA_H
 #define TEST_MODEL_DATA_H
 
+#include <string>
 #include <vector>
 
 typedef struct kadd_dfa_engine_t kadd_dfa_engine_t;
@@ -23,5 +24,17 @@ struct Sample {
  * 返回 true 表示加载到样本；解析失败的整行跳过。 */
 bool load_csv_samples(const char* csv_path, const kadd_dfa_engine_t* dfa,
                       std::vector<Sample>& out);
+
+/* 校验数据集样本数是否满足用例最低要求。
+ * 满足 -> 返回空串；不足 -> 返回可直接喂给 GTEST_SKIP 的原因说明。
+ *
+ * 背景：train_data.csv 由 Git LFS 管理，未执行 git lfs pull 时工作区里只是一个
+ * 约 130 字节的指针文本（3 行）。load_csv_samples 会把后两行当成 2 条样本解析成功，
+ * 于是准确率用例以 n=2 "空转通过"，而按下标取样本的批量用例直接越界 -> SegFault，
+ * 崩溃进程不会执行 atexit，gcov/llvm-cov 数据整份丢失。本函数用于在两种后果之前拦截。
+ */
+std::string check_dataset_size(const char* csv_path,
+                               const std::vector<Sample>& samples,
+                               size_t required);
 
 #endif /* TEST_MODEL_DATA_H */

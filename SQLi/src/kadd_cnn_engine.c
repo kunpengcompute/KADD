@@ -13,6 +13,7 @@
 #include "kadd_cnn_engine.h"
 #include "kadd_sve.h"
 #include "kadd_errors.h"
+#include "kadd_model_auth.h"
 
 #include <errno.h>
 #include <float.h>
@@ -31,6 +32,8 @@
 #endif
 
 #define KADD_CNN_HEADER_SIZE 64U
+#define KADD_CNN_FLAG_HMAC_SHA256 KADD_MODEL_FLAG_HMAC_SHA256
+#define KADD_CNN_HMAC_SIZE KADD_MODEL_HMAC_SIZE
 #define KADD_CNN_VERSION 1U
 #define KADD_CNN_SEQUENCE_LENGTH 300U
 #define KADD_CNN_VOCAB_SIZE 29U
@@ -469,6 +472,14 @@ int kadd_cnn_model_load(kadd_cnn_model_t **model_out,
         return result;
     }
     const unsigned char *header = file_bytes;
+    const uint32_t flags = read_u32_le(header + 60U);
+    /* [FIX REPORT-2026-0000028] .kcn 认证格式（强制，不再兼容未签名旧格式）：
+     *   flags bit0 = 1 : 布局 header(64) || payload || HMAC-SHA256(32)
+     *   flags bit0 = 0 : 未签名模型，一律拒绝加载
+     * 其余 flags 位仍视为非法。 */
+    const int is_authenticated =
+        (flags & KADD_CNN_FLAG_HMAC_SHA256) != 0U;
+
     if (memcmp(header, g_kadd_cnn_magic,
                sizeof(g_kadd_cnn_magic)) != 0 ||
         read_u32_le(header + 8U) != KADD_CNN_VERSION ||
@@ -481,7 +492,8 @@ int kadd_cnn_model_load(kadd_cnn_model_t **model_out,
         read_u32_le(header + 36U) != KADD_CNN_HIDDEN_DIM ||
         read_u32_le(header + 40U) != KADD_CNN_CLASS_COUNT ||
         read_u32_le(header + 44U) != KADD_CNN_PAD_ID ||
-        read_u32_le(header + 60U) != 0U) {
+        (flags & ~KADD_CNN_FLAG_HMAC_SHA256) != 0U ||
+        !is_authenticated) {
         free(file_bytes);
         return KADD_ERROR_MODEL_LOAD_FAILED;
     }
@@ -493,11 +505,28 @@ int kadd_cnn_model_load(kadd_cnn_model_t **model_out,
         read_u64_le(header + 48U) !=
             (uint64_t)expected_payload_size ||
         expected_payload_size >
-            SIZE_MAX - KADD_CNN_HEADER_SIZE ||
-        file_size != KADD_CNN_HEADER_SIZE + expected_payload_size) {
+            SIZE_MAX - KADD_CNN_HEADER_SIZE - KADD_CNN_HMAC_SIZE) {
         free(file_bytes);
         return KADD_ERROR_MODEL_LOAD_FAILED;
     }
+    const size_t signed_region_size =
+        KADD_CNN_HEADER_SIZE + expected_payload_size;
+    const size_t expected_file_size =
+        signed_region_size + KADD_CNN_HMAC_SIZE;
+    if (file_size != expected_file_size) {
+        free(file_bytes);
+        return KADD_ERROR_MODEL_LOAD_FAILED;
+    }
+
+    /* [FIX REPORT-2026-0000028] 先做真实性认证，再做 CRC32 损坏检测。
+     * CRC32 多项式 0xEDB88320 公开且无需密钥，攻击者改写权重后可直接重算，
+     * 因此它只能防损坏、不能防篡改；只有 HMAC-SHA256 才提供来源认证。 */
+    if (kadd_model_verify_authenticity(file_bytes, signed_region_size,
+                                       is_authenticated, "kadd_cnn") != 0) {
+        free(file_bytes);
+        return KADD_ERROR_MODEL_LOAD_FAILED;
+    }
+
     const unsigned char *payload =
         file_bytes + KADD_CNN_HEADER_SIZE;
     if (crc32_bytes(payload, expected_payload_size) !=

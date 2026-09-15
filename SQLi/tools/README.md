@@ -72,7 +72,7 @@ tools/
 - **Python 依赖库**:
   ```bash
   # 模型训练（RF + DL_CNN）
-  pip install torch onnx onnxruntime pandas numpy scikit-learn skl2onnx
+  pip install torch onnx "onnxruntime>=1.28.0" pandas numpy scikit-learn skl2onnx
   # DFA 编译（可选，仅修改 DFA 规则时需要）
   pip install regex
   ```
@@ -320,7 +320,7 @@ python prepare_cnn_benchmark.py
 | 2 | SVE=ON + aarch64 + 编译器不支持 | WARNING + ONNX 回退 |
 | 3 | SVE=ON + 其他平台 (x86 等) | WARNING + ONNX 回退 |
 | 4 | SVE=OFF + 任意平台 | ONNX 后端 |
-| 5 | 任意 + ONNX Runtime 缺失 | FATAL_ERROR |
+| 5 | 任意 + ONNX Runtime 缺失或版本低于 1.28.0 | FATAL_ERROR |
 
 **使用方法**:
 ```bash
@@ -366,7 +366,7 @@ ONNXRUNTIME_HOME=/path/to/ort ./tools/verify_sve.sh
 - **问题**: 向量 CSV 缺少特征列
 - **解决**: 确保运行了 `csv_to_vector_tool` 生成正确的向量文件
 - **问题**: sklearn 或 onnx 相关库缺失
-- **解决**: `pip install torch scikit-learn skl2onnx onnx onnxruntime`
+- **解决**: `pip install torch scikit-learn skl2onnx onnx "onnxruntime>=1.28.0"`
 - **问题**: DL_CNN 训练失败
 - **解决**: 确认已安装 PyTorch (`pip install torch`) 且 CUDA/CPU 环境正常
 

@@ -27,6 +27,7 @@
 #include "kadd_errors.h"
 #include "kadd_sve.h"
 #include "cJSON.h"
+#include "test_model_hmac_key.h"   /* [FIX REPORT-2026-0000028] 注入 .krf/.kcn 共用 HMAC 开发密钥 */
 
 // ========== 包含源文件以测试 static 函数 ==========
 #include "kadd_ml_engine.c"
@@ -140,6 +141,13 @@ protected:
 #else
         const char *model_path = config.model_rf_onnx;
 #endif
+        /* [FIX REPORT-2026-0000026] SetUp() 已加载过一次模型，
+         * 直接覆盖 model 句柄会泄漏旧句柄（TearDown 只释放最后一个），
+         * 因此重复加载前必须先释放 */
+        if (model != nullptr) {
+            kadd_model_free(model);
+            model = nullptr;
+        }
         return kadd_model_load(&model, model_path, feature_dim);
     }
 

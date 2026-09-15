@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <utility>
 
 namespace {
@@ -95,4 +96,38 @@ bool load_csv_samples(const char* csv_path, const kadd_dfa_engine_t* dfa,
     }
     std::fclose(f);
     return !out.empty();
+}
+
+namespace {
+
+/* 判断文件是否为 Git LFS 指针（内容形如 "version https://git-lfs.../v1"） */
+bool is_git_lfs_pointer(const char* csv_path) {
+    if (!csv_path) return false;
+    std::FILE* f = std::fopen(csv_path, "rb");
+    if (!f) return false;
+    char head[32] = {0};
+    const size_t n = std::fread(head, 1, sizeof(head) - 1, f);
+    std::fclose(f);
+    head[n] = '\0';
+    static const char kLfsPrefix[] = "version https://git-lfs";
+    return n >= sizeof(kLfsPrefix) - 1 &&
+           std::strncmp(head, kLfsPrefix, sizeof(kLfsPrefix) - 1) == 0;
+}
+
+}  // namespace
+
+std::string check_dataset_size(const char* csv_path,
+                               const std::vector<Sample>& samples,
+                               size_t required) {
+    if (samples.size() >= required) {
+        return std::string();
+    }
+    std::string msg = "训练数据集样本不足: 需要 >= " + std::to_string(required) +
+                      " 条, 实际 " + std::to_string(samples.size()) + " 条 (" +
+                      (csv_path ? csv_path : "<null>") + "). ";
+    if (is_git_lfs_pointer(csv_path)) {
+        msg += "该文件是 Git LFS 指针而非真实数据, 请先执行 git lfs pull. ";
+    }
+    msg += "跳过本用例, 以避免下标越界或用极少样本得出无意义的准确率结论.";
+    return msg;
 }

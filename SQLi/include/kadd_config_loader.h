@@ -8,6 +8,8 @@
  * - model_rf, model_rf_onnx: RF model paths (SVE first, ONNX fallback)
  * - model_cnn, model_cnn_onnx: CNN model paths (SVE first, ONNX fallback)
  * - engine_mode: engine mode (ml/dl)
+ *
+ * config_path must be non-empty and shorter than KADD_CONFIG_PATH_MAX_LEN.
  */
 
 #ifndef KADD_CONFIG_LOADER_H

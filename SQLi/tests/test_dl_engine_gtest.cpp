@@ -24,6 +24,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <cstdint>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -31,9 +32,11 @@
 
 #include "kadd_sqli_engine.h"
 #include "kadd_dl_engine.h"
+#include "kadd_cnn_engine.h"
 #include "kadd_sve.h"
 #include "kadd_config_loader.h"
 #include "kadd_errors.h"
+#include "test_model_hmac_key.h"   /* [FIX REPORT-2026-0000028] 注入 .krf/.kcn 共用 HMAC 开发密钥 */
 
 /* ========== 资源路径（统一从 config.json 读取，避免硬编码模型格式/路径） ========== */
 
@@ -91,6 +94,20 @@ static const char *CnnModelPath()
 #else
     return (g_test_config.model_cnn_onnx[0] != '\0') ? g_test_config.model_cnn_onnx : g_test_config.model_cnn;
 #endif
+}
+
+/*
+ * CNN 原生模型路径（始终返回 .kcn，不随构建后端切换）。
+ *
+ * TC030 专测原生加载器 kadd_cnn_model_load() 的 HMAC-SHA256 认证，必须用本函数
+ * 而不是 CnnModelPath()：后者在 KADD_HAVE_SVE=0 的 ONNX 构建下返回 .onnx，把 ONNX
+ * protobuf 喂给原生加载器会因 magic/头部校验失败直接返回 -107(MODEL_LOAD_FAILED)，
+ * 结果是期望成功的用例恒失败、期望失败的用例因错误原因恒通过，
+ * HMAC 认证逻辑一行都没被真正测到。
+ */
+static const char *CnnModelNativePath()
+{
+    return (LoadTestConfig() == KADD_SUCCESS) ? g_test_config.model_cnn : nullptr;
 }
 
 /* RF 模型：SVE 优先原生 .krf，否则回退 ONNX */
@@ -790,6 +807,163 @@ TEST(DLEngineTest, TC029_CRC32TamperDetection)
         remove(f);
     }
 #endif
+}
+
+/* ========== TC030: .kcn 模型 HMAC-SHA256 认证校验 ========== */
+/*
+ * [FIX REPORT-2026-0000028] .kcn 现在与 .krf 一样强制要求 HMAC-SHA256 认证：
+ *   - 未签名旧格式模型一律拒绝加载
+ *   - 已签名但密钥不对 / 未设置 / 格式非法一律拒绝
+ *   - 已签名且密钥正确才允许加载
+ * 认证逻辑本身不依赖 SVE；仅在“编译了 SVE 代码但当前 CPU 不支持 SVE”
+ * 的组合下跳过，因为此时原生 CNN 后端会按设计拒绝加载。
+ */
+
+namespace {
+
+class CnnHmacKeyGuard {
+public:
+    explicit CnnHmacKeyGuard(const char *value) {
+        const char *prev = std::getenv("KADD_MODEL_HMAC_KEY");
+        had_prev_ = (prev != nullptr);
+        if (had_prev_) {
+            prev_ = prev;
+        }
+        Apply(value);
+    }
+    ~CnnHmacKeyGuard() { Apply(had_prev_ ? prev_.c_str() : nullptr); }
+
+private:
+    static void Apply(const char *value) {
+        if (value != nullptr) {
+#ifdef _WIN32
+            const std::string entry = std::string("KADD_MODEL_HMAC_KEY=") + value;
+            _putenv(entry.c_str());
+#else
+            setenv("KADD_MODEL_HMAC_KEY", value, 1);
+#endif
+        } else {
+#ifdef _WIN32
+            _putenv("KADD_MODEL_HMAC_KEY=");
+#else
+            unsetenv("KADD_MODEL_HMAC_KEY");
+#endif
+        }
+    }
+    bool had_prev_ = false;
+    std::string prev_;
+};
+
+std::vector<unsigned char> ReadCnnModelBytes() {
+    const char *native_path = CnnModelNativePath();
+    if (native_path == nullptr || native_path[0] == '\0') {
+        return {};
+    }
+    FILE *fp = std::fopen(native_path, "rb");
+    if (fp == nullptr) {
+        return {};
+    }
+    std::fseek(fp, 0, SEEK_END);
+    const long size = std::ftell(fp);
+    std::fseek(fp, 0, SEEK_SET);
+    std::vector<unsigned char> data(static_cast<size_t>(size));
+    const size_t read = std::fread(data.data(), 1, data.size(), fp);
+    std::fclose(fp);
+    if (read != data.size()) {
+        return {};
+    }
+    return data;
+}
+
+bool WriteTempCnnModel(const char *path,
+                       const std::vector<unsigned char> &bytes) {
+    FILE *fp = std::fopen(path, "wb");
+    if (fp == nullptr) {
+        return false;
+    }
+    const bool ok =
+        std::fwrite(bytes.data(), 1, bytes.size(), fp) == bytes.size();
+    std::fclose(fp);
+    return ok;
+}
+
+}  // namespace
+
+TEST(DLEngineTest, TC030_CnnHmacAuthentication)
+{
+#if KADD_HAVE_SVE
+    if (!kadd_sve_runtime_available()) {
+        GTEST_SKIP() << "SVE runtime not available";
+    }
+#endif
+
+    const char *native_path = CnnModelNativePath();
+    ASSERT_NE(native_path, nullptr) << "config.json 缺少 model_cnn（原生 .kcn 路径）";
+    ASSERT_NE(native_path[0], '\0') << "config.json 的 model_cnn 为空串";
+
+    const std::vector<unsigned char> signed_model = ReadCnnModelBytes();
+    ASSERT_FALSE(signed_model.empty())
+        << "cannot read signed .kcn asset: " << native_path;
+    ASSERT_GT(signed_model.size(), 64u + 32u);
+
+    /* 1. 已签名 + 开发密钥（由 test_model_hmac_key.h 注入） -> 加载成功 */
+    {
+        kadd_cnn_model_t *model = nullptr;
+        EXPECT_EQ(kadd_cnn_model_load(&model, CnnModelNativePath()), KADD_SUCCESS);
+        EXPECT_NE(model, nullptr);
+        if (model != nullptr) {
+            EXPECT_GT(kadd_cnn_model_get_feature_dim(model), 0);
+            kadd_cnn_model_free(model);
+        }
+    }
+
+    /* 2. 未签名旧格式（去掉 HMAC 尾部并清 flags bit0） -> 拒绝 */
+    {
+        std::vector<unsigned char> unsigned_model(signed_model.begin(),
+                                                  signed_model.end() - 32);
+        uint32_t flags = 0;
+        std::memcpy(&flags, unsigned_model.data() + 60, sizeof(flags));
+        flags &= ~0x00000001u;
+        std::memcpy(unsigned_model.data() + 60, &flags, sizeof(flags));
+
+        const char *path = "kadd_test_cnn_unsigned.kcn";
+        ASSERT_TRUE(WriteTempCnnModel(path, unsigned_model));
+        kadd_cnn_model_t *model = nullptr;
+        EXPECT_NE(kadd_cnn_model_load(&model, path), KADD_SUCCESS);
+        EXPECT_EQ(model, nullptr);
+        std::remove(path);
+    }
+
+    /* 3. 已签名但密钥错误 -> 拒绝 */
+    {
+        CnnHmacKeyGuard guard(
+            "ffeeddccbbaa99887766554433221100"
+            "ffeeddccbbaa99887766554433221100");
+        kadd_cnn_model_t *model = nullptr;
+        EXPECT_NE(kadd_cnn_model_load(&model, CnnModelNativePath()), KADD_SUCCESS);
+        EXPECT_EQ(model, nullptr);
+    }
+
+    /* 4. 已签名但未设置密钥 -> 拒绝（fail-closed） */
+    {
+        CnnHmacKeyGuard guard(nullptr);
+        kadd_cnn_model_t *model = nullptr;
+        EXPECT_NE(kadd_cnn_model_load(&model, CnnModelNativePath()), KADD_SUCCESS);
+        EXPECT_EQ(model, nullptr);
+    }
+
+    /* 5. 已签名但 payload 被篡改（HMAC 不重算） -> 拒绝 */
+    {
+        std::vector<unsigned char> tampered = signed_model;
+        tampered[64] ^= 0x01u;
+
+        const char *path = "kadd_test_cnn_tampered.kcn";
+        ASSERT_TRUE(WriteTempCnnModel(path, tampered));
+        kadd_cnn_model_t *model = nullptr;
+        EXPECT_NE(kadd_cnn_model_load(&model, path), KADD_SUCCESS);
+        EXPECT_EQ(model, nullptr);
+        std::remove(path);
+    }
 }
 
 /* ========== CNN 后端 feature_dim 不匹配校验 ========== */

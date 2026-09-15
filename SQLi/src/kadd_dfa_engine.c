@@ -10,6 +10,9 @@
 #include <string.h>
 
 #define KADD_DFA_ID_ERROR 65535u
+/* [FIX REPORT-2026-0000023] 状态数上限：状态 ID 为 uint16 且 65535 已保留为
+ * KADD_DFA_ID_ERROR，故合法状态数必然 <= 65535。用于阻断表头驱动的超额分配。 */
+#define KADD_DFA_MAX_STATES 65535u
 #define KADD_DFA_ID_ENTRY 0u
 
 #define OUTPUT_ACCEPT_MASK 0x1Fu
@@ -19,6 +22,8 @@
 #define OUTPUT_SCAN_DELTA_MASK 0x03u
 #define OUTPUT_START_DELTA_SHIFT 12u
 #define OUTPUT_START_DELTA_MASK 0x03u
+/* start_delta 在 output_code 中按 1-based 偏移编码：0 表示当前字节，1..3 表示回退字节数。 */
+#define KADD_DFA_START_DELTA_ENCODING_BASE 1
 #define OUTPUT_END_DELTA_SHIFT 14u
 #define OUTPUT_END_DELTA_MASK 0x03u
 #define OUTPUT_EMIT_PAIR_FLAG 3u
@@ -106,10 +111,15 @@ static int validate_table_header(const char *path, uint32_t expected_states,
     }
 
     uint32_t states = read_le32(header);
-    if (states == 0 || (expected_states != 0 && states != expected_states)) {
+    /* [FIX REPORT-2026-0000023] CWE-789：原实现只拒绝 states==0，表头中 1..0xFFFFFFFF
+     * 的任意值都会直接决定后续 calloc 规模（states=0xFFFFFFFF 时约 2.2 TiB），
+     * 且第 137 行的乘法回绕检查在 64 位 size_t 上是死代码，不构成上限。
+     * 现按 uint16 状态 ID 的架构约束加上 KADD_DFA_MAX_STATES 上限。 */
+    if (states == 0 || states > KADD_DFA_MAX_STATES ||
+        (expected_states != 0 && states != expected_states)) {
         fprintf(stderr,
-                "[kadd_dfa] ERROR: Invalid state count %u (expected %u) in: %s\n",
-                states, expected_states, path);
+                "[kadd_dfa] ERROR: Invalid state count %u (expected %u, max %u) in: %s\n",
+                states, expected_states, KADD_DFA_MAX_STATES, path);
         fclose(fp);
         return KADD_DFA_ERROR_PARSE;
     }
@@ -143,6 +153,31 @@ static int load_u16_table(const char *path, uint32_t expected_states, size_t cel
         return KADD_DFA_ERROR_PARSE;
     }
 
+    /* [FIX REPORT-2026-0000023] 分配前用文件实际剩余大小预检：
+     * 阻断"表头声明巨大状态数 + 稀疏/截断表文件"的放大攻击——
+     * 逐单元读取循环会触碰每一页，把表头数值变成真实提交的内存直至 OOM kill。
+     * states 已被限制在 65535 以内，故 ftell 的 long 结果不会溢出。 */
+    const long data_offset = ftell(fp);
+    if (data_offset < 0 || fseek(fp, 0, SEEK_END) != 0) {
+        fprintf(stderr, "[kadd_dfa] ERROR: Failed to determine size of table file: %s\n", path);
+        fclose(fp);
+        return KADD_DFA_ERROR_PARSE;
+    }
+    const long file_size = ftell(fp);
+    if (file_size < 0 || fseek(fp, data_offset, SEEK_SET) != 0) {
+        fprintf(stderr, "[kadd_dfa] ERROR: Failed to seek in table file: %s\n", path);
+        fclose(fp);
+        return KADD_DFA_ERROR_PARSE;
+    }
+    const size_t required_bytes = total_cells * sizeof(uint16_t);
+    if ((size_t)file_size - (size_t)data_offset < required_bytes) {
+        fprintf(stderr,
+                "[kadd_dfa] ERROR: Table file too small: %ld bytes available, %zu required (states=%u) in: %s\n",
+                file_size - data_offset, required_bytes, states, path);
+        fclose(fp);
+        return KADD_DFA_ERROR_PARSE;
+    }
+
     uint16_t *table = (uint16_t *)calloc(total_cells, sizeof(uint16_t));
     if (table == NULL) {
         fprintf(stderr, "[kadd_dfa] ERROR: Failed to allocate table memory (%zu cells) for: %s\n", total_cells, path);
@@ -150,15 +185,19 @@ static int load_u16_table(const char *path, uint32_t expected_states, size_t cel
         return KADD_ERROR_OUT_OF_MEMORY;
     }
 
+    /* [PERF] 整块读入后按字节解析，不再逐单元 fread。
+     * 原实现每表 2,585,600 次 fread(2 字节)，单次 kadd_dfa_engine_create 实测 ~0.5s，
+     * 生产侧每次 create_from_file 同样付这笔开销。上方 [FIX REPORT-2026-0000023]
+     * 的实际大小预检保留，故本次 fread 不会短读；read_le16 保持大小端语义不变。 */
+    if (fread(table, 1, required_bytes, fp) != required_bytes) {
+        fprintf(stderr, "[kadd_dfa] ERROR: Incomplete table data in: %s\n", path);
+        free(table);
+        fclose(fp);
+        return KADD_DFA_ERROR_PARSE;
+    }
+    const unsigned char *bytes = (const unsigned char *)table;
     for (size_t i = 0; i < total_cells; i++) {
-        unsigned char cell[2];
-        if (fread(cell, 1, sizeof(cell), fp) != sizeof(cell)) {
-            fprintf(stderr, "[kadd_dfa] ERROR: Incomplete table data at cell %zu in: %s\n", i, path);
-            free(table);
-            fclose(fp);
-            return KADD_DFA_ERROR_PARSE;
-        }
-        table[i] = read_le16(cell);
+        table[i] = read_le16(bytes + i * 2);
     }
 
     if (fclose(fp) != 0) {
@@ -278,7 +317,8 @@ static int kadd_dfa_emit_token(size_t max_output_dim, size_t input_length, size_
     uint16_t emit_token_id = (uint16_t)((output_code >> OUTPUT_EMIT_SHIFT) & OUTPUT_TOKEN_MASK);
     uint16_t edge_accept_info = (uint16_t)(output_code & OUTPUT_ACCEPT_MASK);
     uint16_t scan_delta = (uint16_t)((output_code >> OUTPUT_SCAN_DELTA_SHIFT) & OUTPUT_SCAN_DELTA_MASK);
-    int start_delta = (int)((output_code >> OUTPUT_START_DELTA_SHIFT) & OUTPUT_START_DELTA_MASK) - 1;
+    int start_delta = (int)((output_code >> OUTPUT_START_DELTA_SHIFT) & OUTPUT_START_DELTA_MASK) -
+                      KADD_DFA_START_DELTA_ENCODING_BASE;
     uint16_t end_delta = (uint16_t)((output_code >> OUTPUT_END_DELTA_SHIFT) & OUTPUT_END_DELTA_MASK);
     size_t scan_pos = *pos + (size_t)scan_delta;
 
@@ -460,7 +500,8 @@ int kadd_dfa_engine_tokenize(const kadd_dfa_engine_t *engine, const char *input,
                                         engine->output_table, engine->eod_table,
                                         engine->max_tokens, input,
                                         input_length, &pos, &token_start_pos,
-                                        &accept_info, output, &count, engine->num_states);  /* [FIX REPORT-2026-0000013] */
+                                        &accept_info, output, &count,
+                                        engine->num_states);  /* [FIX REPORT-2026-0000013] */
         if (rc != KADD_SUCCESS) {
             return rc;
         }

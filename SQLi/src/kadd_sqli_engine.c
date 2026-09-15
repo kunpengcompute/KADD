@@ -149,13 +149,18 @@ static int allocate_engine_memory_pool(kadd_sqli_engine_t *e)
 
     if (e->engine_mode == KADD_ENGINE_MODE_ML) {
         e->feature_buffer = (int *)calloc(e->feature_dim, sizeof(int));
-        if (posix_memalign((void **)&e->float_feature_buffer, KADD_ALIGN_BYTES, e->feature_dim * sizeof(float)) != 0)
+        if (posix_memalign((void **)&e->float_feature_buffer, KADD_ALIGN_BYTES,
+                           e->feature_dim * sizeof(float)) != 0)
             e->float_feature_buffer = NULL;
-        if (!e->feature_buffer || !e->float_feature_buffer) { release_engine_buffers(e); return KADD_ERROR_OUT_OF_MEMORY; }
+        if (!e->feature_buffer || !e->float_feature_buffer) {
+            release_engine_buffers(e);
+            return KADD_ERROR_OUT_OF_MEMORY;
+        }
     }
 
     if (e->engine_mode == KADD_ENGINE_MODE_DL) {
-        if (posix_memalign((void **)&e->dl_input_buffer, KADD_ALIGN_BYTES, KADD_DL_SEQUENCE_LENGTH * sizeof(float)) != 0)
+        if (posix_memalign((void **)&e->dl_input_buffer, KADD_ALIGN_BYTES,
+                           KADD_DL_SEQUENCE_LENGTH * sizeof(float)) != 0)
             e->dl_input_buffer = NULL;
         if (!e->dl_input_buffer) { release_engine_buffers(e); return KADD_ERROR_OUT_OF_MEMORY; }
     }
@@ -208,7 +213,10 @@ static int create_engine_internal(kadd_sqli_engine_t **engine,
             /* Fallback to ONNX if native failed and they are different */
             if (strlen(config->model_rf) > 0 && strlen(config->model_rf_onnx) > 0 &&
                 strcmp(config->model_rf, config->model_rf_onnx) != 0) {
-                fprintf(stdout, "[kadd_sqli] WARN: native ML model load failed, trying ONNX: %s\n", config->model_rf_onnx);
+                fprintf(stdout,
+                        "[kadd_sqli] WARN: native ML model load failed, "
+                        "trying ONNX: %s\n",
+                        config->model_rf_onnx);
                 if (kadd_model_load(&e->ml_model, config->model_rf_onnx, e->feature_dim) != 0) {
                     fprintf(stderr, "[kadd_sqli] ERROR: Failed to load ML model (both native and ONNX)\n");
                     kadd_dfa_engine_free(e->dfa_engine);
@@ -250,7 +258,10 @@ static int create_engine_internal(kadd_sqli_engine_t **engine,
             /* Fallback to ONNX if native failed and they are different */
             if (strlen(config->model_cnn) > 0 && strlen(config->model_cnn_onnx) > 0 &&
                 strcmp(config->model_cnn, config->model_cnn_onnx) != 0) {
-                fprintf(stdout, "[kadd_sqli] WARN: native DL model load failed, trying ONNX: %s\n", config->model_cnn_onnx);
+                fprintf(stdout,
+                        "[kadd_sqli] WARN: native DL model load failed, "
+                        "trying ONNX: %s\n",
+                        config->model_cnn_onnx);
                 if (kadd_dl_model_load(&e->dl_model, config->model_cnn_onnx, 0) != 0) {
                     fprintf(stderr, "[kadd_sqli] ERROR: Failed to load DL model (both native and ONNX)\n");
                     kadd_dfa_engine_free(e->dfa_engine);
@@ -371,14 +382,18 @@ static int allocate_batch_buffers(kadd_sqli_engine_t *engine, int batch_size,
         return KADD_ERROR_NULL_PTR;
     }
 
-    int **dfa_outputs = (int **)calloc(batch_size, sizeof(int *));
-    int *dfa_dims = (int *)calloc(batch_size, sizeof(int));
     /* [FIX REPORT-2026-0000009] Check for integer overflow in batch_size * feature_dim */
+    /* [FIX REPORT-2026-0000022] 溢出校验前移到任何分配之前：
+     * 原实现先 calloc(dfa_outputs)/calloc(dfa_dims) 再在此处 return，
+     * 会泄漏这两块内存（TscanCode: src/kadd_sqli_engine.c:380 memleak） */
     if (engine->feature_dim > 0 && batch_size > INT_MAX / engine->feature_dim) {
         fprintf(stderr, "[kadd_sqli] ERROR: batch_size*feature_dim overflow (batch=%d, dim=%d)\n",
                 batch_size, engine->feature_dim);
         return KADD_ERROR_INVALID_PARAM;
     }
+
+    int **dfa_outputs = (int **)calloc(batch_size, sizeof(int *));
+    int *dfa_dims = (int *)calloc(batch_size, sizeof(int));
     int *features = (int *)calloc(batch_size * engine->feature_dim, sizeof(int));
     float *float_features = (float *)calloc(batch_size * engine->feature_dim, sizeof(float));
 

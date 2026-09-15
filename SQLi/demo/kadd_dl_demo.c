@@ -67,7 +67,14 @@ int main(int argc, char *argv[])
     printf("特征维度: %d\n\n", feature_dim);
 
     /* 3. 单样本推理 */
-    float *input = (float *)calloc(feature_dim, sizeof(float));
+    /* [FIX REPORT-2026-0000016] feature_dim 来自模型文件，calloc 可能失败或为 0 长度 */
+    float *input = (feature_dim > 0) ? (float *)calloc((size_t)feature_dim, sizeof(float)) : NULL;
+    if (input == NULL) {
+        printf("输入缓冲区分配失败\n");
+        kadd_dl_model_free(model);
+        kadd_config_free(&config);
+        return 1;
+    }
     /* CNN: 填充 token ID 序列（28=PAD）; ONNX: 填充特征值 */
     if (feature_dim >= 300) {
         for (int i = 0; i < feature_dim; i++) input[i] = 28.0f;
