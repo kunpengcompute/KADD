@@ -86,8 +86,8 @@ protected:
         ASSERT_NE(dfa, nullptr) << "DFA 创建失败（assets/data 缺表？）";
     }
     void TearDown() override {
-        kadd_cnn_model_free(model);
-        kadd_dfa_engine_free(dfa);
+        kadd_cnn_model_free(&model);
+        kadd_dfa_engine_free(&dfa);
     }
 };
 

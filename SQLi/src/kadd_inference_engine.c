@@ -66,6 +66,10 @@ static int tensor_dim_count_is_supported(size_t dim_count)
 }
 
 /* ========== 错误处理 ========== */
+/*
+ * 谓词：ORT 调用是否失败。失败时打印原因并释放 status 后返回 1，成功返回 0。
+ * 具体 KADD_* 错误码由调用方按所处阶段（加载 / 推理）决定，故本函数不返回错误码。
+ */
 static int check_ort_status(const OrtApi *api, OrtStatus *status, const char *msg)
 {
     if (!status) {
@@ -73,7 +77,7 @@ static int check_ort_status(const OrtApi *api, OrtStatus *status, const char *ms
     }
     fprintf(stderr, "[kadd_inference] ERROR: %s: %s\n", msg, api->GetErrorMessage(status));
     (void)api->ReleaseStatus(status);
-    return -1;
+    return 1;
 }
 
 /* ========== 初始化 ========== */
@@ -82,7 +86,7 @@ static int init_ort_api(kadd_inference_engine_t *e)
     if (!g_ort_api) {
         const OrtApiBase *api_base = OrtGetApiBase();
         if (!api_base) {
-            return -1;
+            return KADD_ERROR_NOT_INIT;
         }
 
         // ONNX Runtime 1.28.0+ 支持 API 版本 28+
@@ -95,11 +99,11 @@ static int init_ort_api(kadd_inference_engine_t *e)
         }
 
         if (!g_ort_api) {
-            return -1;
+            return KADD_ERROR_NOT_INIT;
         }
     }
     e->api = g_ort_api;
-    return 0;
+    return KADD_SUCCESS;
 }
 
 static int init_ort_env(kadd_inference_engine_t *e)
@@ -109,13 +113,13 @@ static int init_ort_env(kadd_inference_engine_t *e)
         OrtStatus *status = e->api->CreateEnv(ORT_LOGGING_LEVEL_ERROR, "inference", &g_ort_env);
         if (check_ort_status(e->api, status, "CreateEnv")) {
             UNLOCK_ORT();
-            return -1;
+            return KADD_ERROR_NOT_INIT;
         }
     }
     g_ort_env_ref_count++;
     e->env = g_ort_env;
     UNLOCK_ORT();
-    return 0;
+    return KADD_SUCCESS;
 }
 
 /* ========== IO 名称检测 ========== */
@@ -168,7 +172,7 @@ static int detect_io_names(kadd_inference_engine_t *e)
 {
     e->input_name = get_io_name(e, 0);
     e->output_name = get_io_name(e, 1);
-    return (e->input_name && e->output_name) ? 0 : -1;
+    return (e->input_name && e->output_name) ? KADD_SUCCESS : KADD_ERROR_MODEL_LOAD_FAILED;
 }
 
 /* ========== 获取模型输入维度 ========== */
@@ -182,7 +186,7 @@ static int get_model_input_dim(kadd_inference_engine_t *e)
 
     status = e->api->SessionGetInputTypeInfo(e->session, 0, &type_info);
     if (check_ort_status(e->api, status, "GetInputTypeInfo")) {
-        return -1;
+        return KADD_ERROR_MODEL_LOAD_FAILED;
     }
 
     status = e->api->CastTypeInfoToTensorInfo(type_info, &tensor_info);
@@ -200,9 +204,20 @@ static int get_model_input_dim(kadd_inference_engine_t *e)
         goto cleanup;
     }
 
+    /* Warmup allocates feature_dim floats before predict-time validation,
+     * so the load path must reject invalid dimensions here. */
+    if (dims[1] <= 0 ||
+        dims[1] > (int64_t)KADD_INFERENCE_MAX_FEATURE_DIM) {
+        fprintf(stderr,
+                "[kadd_inference] ERROR: Invalid model input feature_dim=%lld\n",
+                (long long)dims[1]);
+        (void)e->api->ReleaseTypeInfo(type_info);
+        return KADD_ERROR_INVALID_PARAM;
+    }
+
     e->feature_dim = (int)dims[1];
     (void)e->api->ReleaseTypeInfo(type_info);
-    return 0;
+    return KADD_SUCCESS;
 
 cleanup:
     if (status) {
@@ -210,7 +225,7 @@ cleanup:
     }
     fprintf(stderr, "[kadd_inference] ERROR: Failed to cast type info to tensor info\n");
     (void)e->api->ReleaseTypeInfo(type_info);
-    return -1;
+    return KADD_ERROR_MODEL_LOAD_FAILED;
 }
 
 /* ========== 获取模型输出维度 ========== */
@@ -344,12 +359,12 @@ static int create_ort_session(kadd_inference_engine_t *e, const char *model_path
             goto cleanup_session;
         }
 
-    return 0;
+    return KADD_SUCCESS;
 
 cleanup_session:
     (void)e->api->ReleaseSession(e->session);
     e->session = NULL;
-    return -1;
+    return KADD_ERROR_MODEL_LOAD_FAILED;
 
 cleanup_options:
     (void)e->api->ReleaseSessionOptions(options);
@@ -358,7 +373,7 @@ cleanup:
         fprintf(stderr, "[kadd_inference] ERROR: %s\n", e->api->GetErrorMessage(status));
         (void)e->api->ReleaseStatus(status);
     }
-    return -1;
+    return KADD_ERROR_MODEL_LOAD_FAILED;
 }
 
 /* ========== 清理引擎资源 ========== */
@@ -392,13 +407,15 @@ static int load_engine_internal(kadd_inference_engine_t **engine,
     }
 
     /* 分步初始化：init_ort_api 不涉及全局引用计数，失败可直接释放 */
-    if (init_ort_api(e) != 0 || init_ort_env(e) != 0) {
+    if (init_ort_api(e) != KADD_SUCCESS || init_ort_env(e) != KADD_SUCCESS) {
         free(e);
         return KADD_ERROR_MODEL_LOAD_FAILED;
     }
 
-    if (create_ort_session(e, model_path) != 0 || detect_io_names(e) != 0 || get_model_input_dim(e) != 0) {
-        kadd_inference_engine_free(e);
+    if (create_ort_session(e, model_path) != KADD_SUCCESS ||
+        detect_io_names(e) != KADD_SUCCESS ||
+        get_model_input_dim(e) != KADD_SUCCESS) {
+        kadd_inference_engine_free(&e);
         return KADD_ERROR_MODEL_LOAD_FAILED;
     }
     get_model_output_dim(e);  /* 非致命，失败则使用默认值 */
@@ -412,7 +429,7 @@ static int load_engine_internal(kadd_inference_engine_t **engine,
         if (warmup_ret != KADD_SUCCESS) {
             fprintf(stderr, "[kadd_inference] ERROR: Warmup inference failed (feature_dim=%d)\n",
                     e->feature_dim);
-            kadd_inference_engine_free(e);
+            kadd_inference_engine_free(&e);
             return KADD_ERROR_MODEL_LOAD_FAILED;
         }
     }
@@ -436,7 +453,7 @@ int kadd_inference_engine_load(kadd_inference_engine_t **engine,
 
     kadd_config_t config;
     int ret = kadd_config_load(config_file, &config);
-    if (ret != 0) {
+    if (ret != KADD_SUCCESS) {
         return KADD_ERROR_CONFIG;
     }
 
@@ -556,13 +573,14 @@ int kadd_inference_engine_get_feature_dim(kadd_inference_engine_t *engine)
     return engine->feature_dim;
 }
 
-void kadd_inference_engine_free(kadd_inference_engine_t *engine)
+void kadd_inference_engine_free(kadd_inference_engine_t **engine)
 {
-    if (!engine) {
+    if (!engine || !*engine) {
         return;
     }
+    kadd_inference_engine_t *handle = *engine;
 
-    release_engine_resources(engine);
+    release_engine_resources(handle);
 
     LOCK_ORT();  /* [FIX REPORT-2026-0000008] Thread-safe ref counting */
     g_ort_env_ref_count--;
@@ -572,6 +590,8 @@ void kadd_inference_engine_free(kadd_inference_engine_t *engine)
     }
     UNLOCK_ORT();
 
-    free(engine);
+    free(handle);
+    /* 清空调用者句柄，消除悬空句柄导致的 UAF / double-free */
+    *engine = NULL;
 }
 

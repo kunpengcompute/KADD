@@ -116,7 +116,7 @@ TEST_F(SQLiModeTest, MLMode_LoadAndPredict) {
     EXPECT_LE(prob2, 1.0f);
     std::cout << "[ML mode] SQLi input prob=" << prob2 << std::endl;
 
-    kadd_sqli_engine_free(engine);
+    kadd_sqli_engine_free(&engine);
     remove_file(cfg);
 }
 
@@ -146,7 +146,7 @@ TEST_F(SQLiModeTest, MLMode_BatchPredict) {
         std::cout << "[ML batch] input[" << i << "] prob=" << probs[i] << std::endl;
     }
 
-    kadd_sqli_engine_free(engine);
+    kadd_sqli_engine_free(&engine);
     remove_file(cfg);
 }
 
@@ -172,7 +172,7 @@ TEST_F(SQLiModeTest, DLMode_LoadAndPredict) {
     EXPECT_LE(prob2, 1.0f);
     std::cout << "[DL mode] SQLi input prob=" << prob2 << std::endl;
 
-    kadd_sqli_engine_free(engine);
+    kadd_sqli_engine_free(&engine);
     remove_file(cfg);
 }
 
@@ -202,7 +202,7 @@ TEST_F(SQLiModeTest, DLMode_BatchPredict) {
         std::cout << "[DL batch] input[" << i << "] prob=" << probs[i] << std::endl;
     }
 
-    kadd_sqli_engine_free(engine);
+    kadd_sqli_engine_free(&engine);
     remove_file(cfg);
 }
 
@@ -248,8 +248,8 @@ TEST_F(SQLiModeTest, ML_vs_DL_OutputComparison) {
                   << std::setw(10) << diff << "\n";
     }
 
-    kadd_sqli_engine_free(ml_engine);
-    kadd_sqli_engine_free(dl_engine);
+    kadd_sqli_engine_free(&ml_engine);
+    kadd_sqli_engine_free(&dl_engine);
     remove_file(cfg_ml);
     remove_file(cfg_dl);
 }
@@ -288,8 +288,8 @@ TEST_F(SQLiModeTest, ML_vs_DL_Performance) {
     std::cout << "  Ratio:   " << std::setprecision(2)
               << (dl_us / ml_us) << "x\n";
 
-    kadd_sqli_engine_free(ml_engine);
-    kadd_sqli_engine_free(dl_engine);
+    kadd_sqli_engine_free(&ml_engine);
+    kadd_sqli_engine_free(&dl_engine);
     remove_file(cfg_ml);
     remove_file(cfg_dl);
 }
@@ -305,7 +305,7 @@ TEST_F(SQLiModeTest, InvalidMode_DefaultsToML) {
     ret = kadd_sqli_detect(engine, "test", &prob);
     EXPECT_EQ(ret, KADD_SUCCESS);
 
-    kadd_sqli_engine_free(engine);
+    kadd_sqli_engine_free(&engine);
     remove_file(cfg);
 }
 
@@ -351,7 +351,7 @@ TEST_F(SQLiModeTest, NullParameters) {
     EXPECT_NE(kadd_sqli_detect(eng, nullptr, &prob), KADD_SUCCESS);
     EXPECT_NE(kadd_sqli_detect(eng, "test", nullptr), KADD_SUCCESS);
 
-    kadd_sqli_engine_free(eng);
+    kadd_sqli_engine_free(&eng);
     remove_file(cfg);
 }
 
@@ -373,7 +373,7 @@ TEST_F(SQLiModeTest, MLMode_ONNXFallback) {
     ret = kadd_sqli_detect(engine, "test input", &prob);
     EXPECT_EQ(ret, KADD_SUCCESS);
 
-    kadd_sqli_engine_free(engine);
+    kadd_sqli_engine_free(&engine);
     remove_file(cfg);
 }
 
@@ -391,7 +391,7 @@ TEST_F(SQLiModeTest, DLMode_ONNXFallback) {
     ret = kadd_sqli_detect(engine, "test input", &prob);
     EXPECT_EQ(ret, KADD_SUCCESS);
 
-    kadd_sqli_engine_free(engine);
+    kadd_sqli_engine_free(&engine);
     remove_file(cfg);
 }
 
@@ -405,7 +405,7 @@ TEST_F(SQLiModeTest, DLModel_GetFeatureDim) {
     if (ret == KADD_SUCCESS && model != nullptr) {
         int dim = kadd_dl_model_get_feature_dim(model);
         EXPECT_GT(dim, 0) << "feature_dim should be positive";
-        kadd_dl_model_free(model);
+    kadd_dl_model_free(&model);
     } else {
         GTEST_SKIP() << "DL model not available, skipping";
     }

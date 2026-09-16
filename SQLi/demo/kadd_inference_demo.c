@@ -65,7 +65,7 @@ static int test_single_model(const char *config, kadd_inference_type_t type, con
         test_count = 1;
     } else {
         printf("❌ 未知的 feature_dim: %d\n", feature_dim);
-        kadd_inference_engine_free(engine);
+        kadd_inference_engine_free(&engine);
         return -1;
     }
 
@@ -76,7 +76,7 @@ static int test_single_model(const char *config, kadd_inference_type_t type, con
         ret = kadd_inference_predict(engine, features + i * feature_dim, &prob);
         if (ret != 0) {
             printf("❌ 推理失败: ret=%d\n", ret);
-            kadd_inference_engine_free(engine);
+            kadd_inference_engine_free(&engine);
             return -1;
         }
         printf("  sample[%d] -> prob=%.4f\n", i, prob);
@@ -86,7 +86,7 @@ static int test_single_model(const char *config, kadd_inference_type_t type, con
     printf("\n--- 批量推理 ---\n");
     float *probs = (float *)calloc(test_count, sizeof(float));
     if (!probs) {
-        kadd_inference_engine_free(engine);
+        kadd_inference_engine_free(&engine);
         return -1;
     }
 
@@ -94,7 +94,7 @@ static int test_single_model(const char *config, kadd_inference_type_t type, con
     if (ret != 0) {
         printf("❌ 批量推理失败: ret=%d\n", ret);
         free(probs);
-        kadd_inference_engine_free(engine);
+        kadd_inference_engine_free(&engine);
         return -1;
     }
 
@@ -103,7 +103,7 @@ static int test_single_model(const char *config, kadd_inference_type_t type, con
     }
 
     free(probs);
-    kadd_inference_engine_free(engine);
+    kadd_inference_engine_free(&engine);
     printf("✅ 引擎释放成功\n");
 
     return 0;

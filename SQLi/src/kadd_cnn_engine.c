@@ -551,7 +551,7 @@ int kadd_cnn_model_load(kadd_cnn_model_t **model_out,
     }
     free(raw);
     if (result != KADD_SUCCESS) {
-        kadd_cnn_model_free(model);
+        kadd_cnn_model_free(&model);
         return result;
     }
 
@@ -1116,12 +1116,15 @@ int kadd_cnn_model_get_feature_dim(const kadd_cnn_model_t *model)
     return KADD_CNN_SEQUENCE_LENGTH;
 }
 
-void kadd_cnn_model_free(kadd_cnn_model_t *model)
+void kadd_cnn_model_free(kadd_cnn_model_t **model)
 {
-    if (!model) {
+    if (!model || !*model) {
         return;
     }
-    free(model->token_contributions);
-    free(model->fc1_weights_input_major);
-    free(model);
+    kadd_cnn_model_t *handle = *model;
+    free(handle->token_contributions);
+    free(handle->fc1_weights_input_major);
+    free(handle);
+    /* 清空调用者句柄，消除悬空句柄导致的 UAF / double-free */
+    *model = NULL;
 }

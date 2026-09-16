@@ -304,7 +304,7 @@ static void FuzzSQLiEngineFree(const uint8_t *data, size_t size)
     // 测试2: 创建后正常释放
     kadd_sqli_engine_t *tmp_engine1 = nullptr;
     if (kadd_sqli_engine_create_from_file(&tmp_engine1, ResolveConfigPath()) == 0) {
-        kadd_sqli_engine_free(tmp_engine1);
+        kadd_sqli_engine_free(&tmp_engine1);
     }
 
     // 测试3: 使用无效配置文件路径测试错误处理路径
@@ -319,7 +319,7 @@ static void FuzzSQLiEngineFree(const uint8_t *data, size_t size)
         // 创建失败时 tmp_engine2 应保持为 nullptr
         kadd_sqli_engine_create_from_file(&tmp_engine2, fuzz_path);
         // 即使创建失败，free(nullptr) 也应该安全
-        kadd_sqli_engine_free(tmp_engine2);
+        kadd_sqli_engine_free(&tmp_engine2);
     }
 
     // 测试4: 多次创建释放循环（覆盖内存池分配/释放路径）
@@ -330,7 +330,7 @@ static void FuzzSQLiEngineFree(const uint8_t *data, size_t size)
             float prob;
             kadd_sqli_detect(tmp_engine3, "test", &prob);
             // 然后释放
-            kadd_sqli_engine_free(tmp_engine3);
+            kadd_sqli_engine_free(&tmp_engine3);
         }
     }
 
@@ -542,7 +542,7 @@ static void FuzzInitFailures(const uint8_t* data, size_t size) {
         if (kadd_model_load(&tmp_model,
                            g_fuzz_context.config.model_rf, 0) == 0) {
             // 测试后释放临时模型
-            kadd_model_free(tmp_model);
+            kadd_model_free(&tmp_model);
         }
     }
 
@@ -561,7 +561,7 @@ static void FuzzInitFailures(const uint8_t* data, size_t size) {
         };
         kadd_dfa_engine_t *bad_dfa = nullptr;
         kadd_dfa_engine_create(&bad_dfa, &bad_paths, 300, 300);
-        if (bad_dfa) kadd_dfa_engine_free(bad_dfa);
+        if (bad_dfa) kadd_dfa_engine_free(&bad_dfa);
     }
 
     // 测试4: 模拟特征维度不匹配
@@ -572,7 +572,7 @@ static void FuzzInitFailures(const uint8_t* data, size_t size) {
         int ret = kadd_model_load(&bad_model, g_fuzz_context.config.model_rf, 999);
         if (ret == KADD_SUCCESS && bad_model) {
             // 只有成功加载才需要释放
-            kadd_model_free(bad_model);
+            kadd_model_free(&bad_model);
         }
         // 失败时 bad_model 仍为 NULL，内部已清理
     }
@@ -881,7 +881,8 @@ static void FuzzNullPointers(const uint8_t* data, size_t size)
 
         case 10: // DL Engine - NULL 测试
             {
-                kadd_dl_model_free(nullptr);
+                kadd_dl_model_t *null_model = nullptr;
+                kadd_dl_model_free(&null_model);
                 float prob = 0.0f;
                 float feats[8] = {0.0f};
                 kadd_dl_model_predict(nullptr, feats, &prob);
@@ -983,7 +984,7 @@ static void FuzzDLEngine(const std::string& input) {
     kadd_dl_model_predict_batch(dl_model, dl_input.data(), 1, tprobs, 0);
     kadd_dl_model_predict_batch(dl_model, dl_input.data(), 1, tprobs, 2000);
 
-    kadd_dl_model_free(dl_model);
+    kadd_dl_model_free(&dl_model);
 }
 
 /* ========== 推理引擎 FUZZ 测试 ========== */
@@ -1031,7 +1032,7 @@ static void FuzzInferenceEngine(const uint8_t* data, size_t size) {
     kadd_inference_engine_load(&bad_engine, nullptr, KADD_INFERENCE_TYPE_RF);
     // 非法 type（< RF 或 > CNN）覆盖 INVALID_PARAM 分支
     kadd_inference_engine_load(&bad_engine, ResolveConfigPath(), (kadd_inference_type_t)99);
-    if (bad_engine) { kadd_inference_engine_free(bad_engine); bad_engine = nullptr; }
+    if (bad_engine) { kadd_inference_engine_free(&bad_engine); bad_engine = nullptr; }
     kadd_inference_engine_load(&bad_engine, ResolveConfigPath(), (kadd_inference_type_t)-1);
 
     // Test 2: 尝试加载 RF 推理引擎（先通过 config，失败则直接路径）
@@ -1090,7 +1091,7 @@ static void FuzzInferenceEngine(const uint8_t* data, size_t size) {
             kadd_inference_predict_batch(rf_engine, test_features.data(), 1, nullptr, 2);
         }
 
-        kadd_inference_engine_free(rf_engine);
+        kadd_inference_engine_free(&rf_engine);
     }
 
     // Test 3: 尝试加载 CNN 推理引擎（同样 fallback 直接路径）
@@ -1123,7 +1124,7 @@ static void FuzzInferenceEngine(const uint8_t* data, size_t size) {
             kadd_inference_predict_batch(cnn_engine, batch_features.data(), 4, cnn_batch_probs, 2);
         }
 
-        kadd_inference_engine_free(cnn_engine);
+        kadd_inference_engine_free(&cnn_engine);
     }
 
     // Test 4: 从路径加载测试（使用无效路径）
@@ -1138,7 +1139,7 @@ static void FuzzInferenceEngine(const uint8_t* data, size_t size) {
     for (const char* path : invalid_paths) {
         kadd_inference_engine_load_from_path(&path_engine, path);
         if (path_engine != nullptr) {
-            kadd_inference_engine_free(path_engine);
+            kadd_inference_engine_free(&path_engine);
             path_engine = nullptr;
         }
     }
@@ -1226,7 +1227,7 @@ static void FuzzConfigLoader(const uint8_t* data, size_t size) {
                 const char *batch_in[] = {"a", "1 OR 1=1", "x"};
                 float batch_probs[3] = {0.0f};
                 kadd_sqli_detect_batch(dl_sqli, batch_in, 3, batch_probs, 2);
-                kadd_sqli_engine_free(dl_sqli);
+                kadd_sqli_engine_free(&dl_sqli);
             }
         }
         kadd_config_free(&cfg);
@@ -1334,7 +1335,7 @@ static void FuzzConfigLoader(const uint8_t* data, size_t size) {
         WriteConfigFile("/tmp/kadd_fuzz_badtran.json", bad_tr);
         kadd_sqli_engine_t *eng = nullptr;
         kadd_sqli_engine_create_from_file(&eng, "/tmp/kadd_fuzz_badtran.json");
-        kadd_sqli_engine_free(eng);
+        kadd_sqli_engine_free(&eng);
 
         // 用真实 output_table 内容写到坏路径 → 覆盖 DFA 读取但 state count 不匹配
         // （transition_table 和 output_table 格式不同，读 output_table 当 transition 会 header 不匹配）
@@ -1348,7 +1349,7 @@ static void FuzzConfigLoader(const uint8_t* data, size_t size) {
         WriteConfigFile("/tmp/kadd_fuzz_badout.json", bad_out);
         eng = nullptr;
         kadd_sqli_engine_create_from_file(&eng, "/tmp/kadd_fuzz_badout.json");
-        kadd_sqli_engine_free(eng);
+        kadd_sqli_engine_free(&eng);
     }
 
     // 空 config 文件（覆盖 config_loader.c 的 file_size==0 校验）
@@ -1509,7 +1510,7 @@ static void FuzzMLEngineNative(const uint8_t* data, size_t size) {
     kadd_model_predict_batch(m, nullptr, 1, tprobs, 32);
     kadd_model_predict_batch(m, sample.data(), 1, nullptr, 32);
 
-    kadd_model_free(m);
+    kadd_model_free(&m);
 }
 
 /* ========== DL 原生 CNN 大批量 FUZZ 测试 ========== */
@@ -1567,7 +1568,7 @@ static void FuzzDLEngineNative(const uint8_t* data, size_t size) {
     kadd_dl_model_predict_batch(m, nullptr, 1, tprobs, 1);
     kadd_dl_model_predict_batch(m, sample.data(), 1, nullptr, 2);
 
-    kadd_dl_model_free(m);
+    kadd_dl_model_free(&m);
 }
 
 /* ========== 特征引擎批量/边界 FUZZ 测试 ========== */
@@ -1691,7 +1692,7 @@ static void FuzzInferenceEngineONNX(const uint8_t* data, size_t size) {
                 kadd_inference_predict_batch(rf, mat.data(), b, out.data(), b);
             }
         }
-        kadd_inference_engine_free(rf);
+        kadd_inference_engine_free(&rf);
     }
 
     // CNN ONNX
@@ -1715,7 +1716,7 @@ static void FuzzInferenceEngineONNX(const uint8_t* data, size_t size) {
                 kadd_inference_predict_batch(cnn, mat.data(), b, out.data(), b);
             }
         }
-        kadd_inference_engine_free(cnn);
+        kadd_inference_engine_free(&cnn);
     }
 }
 
@@ -1926,7 +1927,7 @@ static size_t FuzzWriteRfModel(const char *path, uint32_t feature_count,
 static void FuzzRfLoadAndExercise(const char *path) {
     kadd_rf_model_t *m = nullptr;
     if (kadd_rf_model_load(&m, path) != 0 || !m) {
-        if (m) kadd_rf_model_free(m);
+        if (m) kadd_rf_model_free(&m);
         return;
     }
     const int fd = kadd_rf_model_get_feature_dim(m);
@@ -1951,7 +1952,7 @@ static void FuzzRfLoadAndExercise(const char *path) {
     bad[0] = std::numeric_limits<float>::quiet_NaN();
     kadd_rf_model_predict(m, bad.data(), &prob);
     kadd_rf_model_predict_batch(m, bad.data(), 1, &prob, 1);
-    kadd_rf_model_free(m);
+    kadd_rf_model_free(&m);
 }
 
 /* 树结构 / 签名 / CRC / 长度 的非法变体：覆盖 validate_tree 与加载器的拒绝分支 */
@@ -2018,7 +2019,7 @@ static void FuzzRFModelStructureVariants() {
                          cases[i].tamper, cases[i].extra);
         kadd_rf_model_t *m = nullptr;
         (void)kadd_rf_model_load(&m, path.c_str());
-        if (m) kadd_rf_model_free(m);
+        if (m) kadd_rf_model_free(&m);
     }
     /* CRC 失配（签名合法）：必须走到 crc32_bytes 比较之后才拒绝 */
     {
@@ -2026,13 +2027,13 @@ static void FuzzRFModelStructureVariants() {
         FuzzBuildRfModel(p.c_str(), 28, o1, leaf_ok, true, true, false, false);
         kadd_rf_model_t *m = nullptr;
         (void)kadd_rf_model_load(&m, p.c_str());
-        if (m) kadd_rf_model_free(m);
+        if (m) kadd_rf_model_free(&m);
     }
     /* 目录当模型文件：fread 失败分支（read_entire_file） */
     {
         kadd_rf_model_t *m = nullptr;
         (void)kadd_rf_model_load(&m, "/tmp");
-        if (m) kadd_rf_model_free(m);
+        if (m) kadd_rf_model_free(&m);
     }
 }
 
@@ -2043,12 +2044,12 @@ static void FuzzRFEnginePristineModel() {
     kadd_rf_model_t *m = nullptr;
     int ret = kadd_rf_model_load(&m, kRfKrfPath);
     if (ret != 0 || !m) {
-        if (m) kadd_rf_model_free(m);
+        if (m) kadd_rf_model_free(&m);
         m = nullptr;
         ret = kadd_rf_model_load(&m, kRfKrfRel);
     }
     if (ret != 0 || !m) {
-        if (m) kadd_rf_model_free(m);
+        if (m) kadd_rf_model_free(&m);
         return;
     }
     const int fd = kadd_rf_model_get_feature_dim(m);
@@ -2066,7 +2067,7 @@ static void FuzzRFEnginePristineModel() {
         std::vector<float> out((size_t)b, 0.0f);
         kadd_rf_model_predict_batch(m, mat.data(), b, out.data(), b);
     }
-    kadd_rf_model_free(m);
+    kadd_rf_model_free(&m);
 }
 
 /**
@@ -2132,7 +2133,7 @@ static void FuzzMLLoadVariants(const uint8_t *data, size_t size) {
                 std::vector<float> out((b > 0 && b <= 1024) ? (size_t)b : 4, 0.0f);
                 kadd_model_predict_batch(m, mat.data(), (b > 0 && b <= 1024) ? b : 4, out.data(), b);
             }
-            kadd_model_free(m);
+            kadd_model_free(&m);
         } else {
             // 加载失败也不会泄漏
         }
@@ -2145,7 +2146,7 @@ static void FuzzMLLoadVariants(const uint8_t *data, size_t size) {
             float feats[28] = {0.5f};
             float prob = 0.0f;
             kadd_model_predict(m, feats, &prob);
-            kadd_model_free(m);
+            kadd_model_free(&m);
         }
     }
 
@@ -2154,7 +2155,7 @@ static void FuzzMLLoadVariants(const uint8_t *data, size_t size) {
         kadd_model_handle_t *m = nullptr;
         int r = kadd_model_load(&m, kRfKrfPath, 99944);
         (void)r;
-        if (m) kadd_model_free(m);
+        if (m) kadd_model_free(&m);
     }
 
     // ONNX 特征维度不匹配（line 71-79）
@@ -2162,7 +2163,7 @@ static void FuzzMLLoadVariants(const uint8_t *data, size_t size) {
         kadd_model_handle_t *m = nullptr;
         int r = kadd_model_load(&m, kRfOnnxPath, 99944);
         (void)r;
-        if (m) kadd_model_free(m);
+        if (m) kadd_model_free(&m);
     }
 
     // 加载失败路径：不存在文件 → RF 失败后 ONNX 也失败（line 66-69）
@@ -2269,9 +2270,9 @@ static void FuzzRFEngineDirect(const uint8_t *data, size_t size) {
             std::vector<float> mat2((size_t)28 * 4, 0.1f);
             float out2[4] = {0.0f};
             kadd_rf_model_predict_batch(m, mat2.data(), 4, out2, 2000);
-            kadd_rf_model_free(m);
+            kadd_rf_model_free(&m);
         } else if (m) {
-            kadd_rf_model_free(m);
+            kadd_rf_model_free(&m);
         }
     }
 
@@ -2380,7 +2381,7 @@ static void FuzzCNNEngineDirect(const uint8_t *data, size_t size) {
                 kadd_cnn_model_predict_batch(m, mat.data(), b, out, b);
             }
             kadd_cnn_model_predict_batch(m, valid.data(), 4, out, 2000);
-            kadd_cnn_model_free(m);
+            kadd_cnn_model_free(&m);
         }
         /* [FIX REPORT-2026-0000020] 移除恒假的 else if (m) 分支：
          * 上方 if (m) 已覆盖全部 m != nullptr 情形，该分支为死代码 */
@@ -2419,9 +2420,9 @@ static void FuzzDLLoadOnnxBackend(const uint8_t *data, size_t size) {
             std::vector<float> out((size_t)nb, 0.0f);
             kadd_dl_model_predict_batch(m, mat.data(), nb, out.data(), b);
         }
-        kadd_dl_model_free(m);
+        kadd_dl_model_free(&m);
     } else if (m) {
-        kadd_dl_model_free(m);
+        kadd_dl_model_free(&m);
     }
 
     // NULL 参数（load 行 37-39）
@@ -2465,12 +2466,12 @@ static void FuzzInferencePublicValidation() {
     (void)kadd_inference_engine_load(&e, "config.json", (kadd_inference_type_t)99);
     (void)kadd_inference_engine_load(&e, "/nonexistent/kadd_fz_cfg.json",
                                      KADD_INFERENCE_TYPE_RF);
-    if (e) { kadd_inference_engine_free(e); e = nullptr; }
+    if (e) { kadd_inference_engine_free(&e); e = nullptr; }
 
     /* load_from_path：NULL 参数 */
     (void)kadd_inference_engine_load_from_path(nullptr, kRfOnnxPath);
     (void)kadd_inference_engine_load_from_path(&e, nullptr);
-    if (e) { kadd_inference_engine_free(e); e = nullptr; }
+    if (e) { kadd_inference_engine_free(&e); e = nullptr; }
 
     /* predict / predict_batch：NULL 引擎与非法参数（不解引用 ORT） */
     (void)kadd_inference_predict(nullptr, feats, &prob);
@@ -2495,10 +2496,10 @@ static void FuzzInferencePublicValidation() {
             (void)kadd_inference_predict_batch(e, mat.data(), -1, out, 4);
             (void)kadd_inference_predict_batch(e, mat.data(), 10000001, out, 4);
         }
-        kadd_inference_engine_free(e);
+        kadd_inference_engine_free(&e);
         e = nullptr;
     } else if (e) {
-        kadd_inference_engine_free(e);
+        kadd_inference_engine_free(&e);
         e = nullptr;
     }
 
@@ -2513,9 +2514,9 @@ static void FuzzInferencePublicValidation() {
             float out[2] = {0.0f, 0.0f};
             (void)kadd_inference_predict_batch(e, mat.data(), 2, out, 2);
         }
-        kadd_inference_engine_free(e);
+        kadd_inference_engine_free(&e);
     } else if (e) {
-        kadd_inference_engine_free(e);
+        kadd_inference_engine_free(&e);
     }
 }
 
@@ -2908,9 +2909,9 @@ static void FzHeavyRealLifecycle(uint64_t it) {
             float out[4] = {0.0f, 0.0f, 0.0f, 0.0f};
             (void)kadd_model_predict(h, v.data(), &p1);
             (void)kadd_model_predict_batch(h, v.data(), 4, out, 4);
-            kadd_model_free(h);
+            kadd_model_free(&h);
         } else if (h) {
-            kadd_model_free(h);
+            kadd_model_free(&h);
         }
     } else if (phase == 1) {
         const char *cands[] = {kCnnKcnPath, kCnnKcnRel, kCnnOnnxPath,
@@ -2918,20 +2919,19 @@ static void FzHeavyRealLifecycle(uint64_t it) {
         kadd_dl_model_t *m = nullptr;
         for (size_t c = 0; c < sizeof(cands) / sizeof(cands[0]) && !m; ++c) {
             if (kadd_dl_model_load(&m, cands[c], 0) != 0 && m) {
-                kadd_dl_model_free(m);
-                m = nullptr;
+                kadd_dl_model_free(&m);
             }
         }
         if (!m) return;
         int dim = kadd_dl_model_get_feature_dim(m);
-        if (dim <= 0 || dim > 4096) { kadd_dl_model_free(m); return; }
+        if (dim <= 0 || dim > 4096) { kadd_dl_model_free(&m); return; }
         std::vector<float> v((size_t)dim * 4u);
         for (size_t k = 0; k < v.size(); ++k) v[k] = (float)(k % 13u);
         float p1 = 0.0f;
         float out[4] = {0.0f, 0.0f, 0.0f, 0.0f};
         (void)kadd_dl_model_predict(m, v.data(), &p1);
         (void)kadd_dl_model_predict_batch(m, v.data(), 4, out, 4);
-        kadd_dl_model_free(m);
+        kadd_dl_model_free(&m);
     } else if (phase == 2) {
         kadd_sqli_engine_t *e = nullptr;
         if (kadd_sqli_engine_create_from_file(&e, ResolveConfigPath()) == 0 && e) {
@@ -2940,9 +2940,9 @@ static void FzHeavyRealLifecycle(uint64_t it) {
             const char *ins[2] = {"id=1 OR 1=1", "plain text"};
             float ps[2] = {0.0f, 0.0f};
             (void)kadd_sqli_detect_batch(e, ins, 2, ps, 2);
-            kadd_sqli_engine_free(e);
+            kadd_sqli_engine_free(&e);
         } else if (e) {
-            kadd_sqli_engine_free(e);
+            kadd_sqli_engine_free(&e);
         }
     } else {
         /* 内部原生：真实 .krf + .kcn 生命周期 */
@@ -2960,9 +2960,9 @@ static void FzHeavyRealLifecycle(uint64_t it) {
             float out[4] = {0.0f, 0.0f, 0.0f, 0.0f};
             (void)kadd_cnn_model_predict(m, v.data(), &p1);
             (void)kadd_cnn_model_predict_batch(m, mat.data(), 4, out, 4);
-            kadd_cnn_model_free(m);
+            kadd_cnn_model_free(&m);
         } else if (m) {
-            kadd_cnn_model_free(m);
+            kadd_cnn_model_free(&m);
         }
     }
 }

@@ -301,7 +301,7 @@ int main(int argc, char *argv[])
     FILE *input_fp = fopen(input_csv_path, "r");
     if (!input_fp) {
         fprintf(stderr, "[ERROR] Cannot open input file: %s\n", input_csv_path);
-        kadd_dfa_engine_free(dfa_engine);
+        kadd_dfa_engine_free(&dfa_engine);
         return 1;
     }
 
@@ -309,7 +309,7 @@ int main(int argc, char *argv[])
     if (!output_fp) {
         fprintf(stderr, "[ERROR] Cannot open output file: %s\n", output_csv_path);
         fclose(input_fp);
-        kadd_dfa_engine_free(dfa_engine);
+        kadd_dfa_engine_free(&dfa_engine);
         return 1;
     }
 
@@ -388,7 +388,7 @@ int main(int argc, char *argv[])
     // 5. 关闭文件和清理
     fclose(input_fp);
     fclose(output_fp);
-    kadd_dfa_engine_free(dfa_engine);
+    kadd_dfa_engine_free(&dfa_engine);
     kadd_config_free(&config);
 
     // 6. 输出统计信息

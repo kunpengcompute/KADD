@@ -71,7 +71,7 @@ int main(int argc, char *argv[])
     float *features = (feature_dim > 0) ? (float *)calloc((size_t)feature_dim, sizeof(float)) : NULL;
     if (features == NULL) {
         printf("特征缓冲区分配失败\n");
-        kadd_model_free(model);
+        kadd_model_free(&model);
         kadd_config_free(&config);
         return 1;
     }
@@ -90,7 +90,7 @@ int main(int argc, char *argv[])
 
     /* 4. 清理 */
     free(features);
-    kadd_model_free(model);
+    kadd_model_free(&model);
     kadd_config_free(&config);
     return 0;
 }

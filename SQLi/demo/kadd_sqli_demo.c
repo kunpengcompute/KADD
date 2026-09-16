@@ -51,7 +51,7 @@ int main()
 
     // 3. 清理
     printf("[3] 清理资源...\n");
-    kadd_sqli_engine_free(engine);
+    kadd_sqli_engine_free(&engine);
     printf("✅ 完成\n");
 
     return 0;

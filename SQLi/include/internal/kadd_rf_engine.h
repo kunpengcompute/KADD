@@ -34,6 +34,12 @@ int kadd_rf_model_predict(const kadd_rf_model_t *model,
  * positive_probabilities must contain at least sample_count floats.
  * batch_size only controls internal chunking; it does not change the total
  * number of input or output elements.
+ *
+ * The whole input matrix is validated once on entry: a non-finite feature
+ * anywhere in the batch returns KADD_ERROR_INVALID_PARAM without writing any
+ * output, identically in SVE and non-SVE builds. Any non-KADD_SUCCESS return
+ * leaves positive_probabilities unusable, so callers must discard the entire
+ * buffer instead of consuming the rows written before the failure.
  */
 int kadd_rf_model_predict_batch(const kadd_rf_model_t *model,
                                 const float *features,
@@ -41,7 +47,16 @@ int kadd_rf_model_predict_batch(const kadd_rf_model_t *model,
                                 float *positive_probabilities,
                                 int batch_size);
 
-void kadd_rf_model_free(kadd_rf_model_t *model);
+/**
+ * Free a model and clear the caller's handle.
+ *
+ * @param model Address of the caller's handle. *model is set to NULL once the
+ *              model has been released. Passing NULL, or the address of a NULL
+ *              handle, is a no-op, so a stale handle degrades into
+ *              KADD_ERROR_NULL_PTR at the next entry point instead of a
+ *              use-after-free or a double free.
+ */
+void kadd_rf_model_free(kadd_rf_model_t **model);
 
 /**
  * Return the feature dimension of a loaded RF model.

@@ -294,7 +294,7 @@ protected:
     void TearDown() override
     {
         if (engine) {
-            kadd_sqli_engine_free(engine);
+            kadd_sqli_engine_free(&engine);
             engine = nullptr;
         }
         if (!temp_config_path_.empty()) {
@@ -1207,7 +1207,7 @@ TEST(SQLiEngineStaticTest, ProcessBatchLoop_MixedNullAndValid)
     EXPECT_NE(result, KADD_SUCCESS) << "混合 NULL 输入应该返回错误";
 
     // 按 API 约定，失败时已处理的 outputs 会被自动释放，调用者无需手动释放
-    kadd_dfa_engine_free(dfa);
+    kadd_dfa_engine_free(&dfa);
 }
 
 // ========== Instantiate for both ML and DL modes ==========
@@ -1252,7 +1252,7 @@ TEST(SQLiEngineStaticTest, CreateWithNativeFallingBackToOnnx)
         EXPECT_EQ(dret, KADD_SUCCESS) << "fallback 到 ONNX 后应能正常检测";
         EXPECT_GE(prob, 0.0f);
         EXPECT_LE(prob, 1.0f);
-        kadd_sqli_engine_free(eng);
+        kadd_sqli_engine_free(&eng);
     }
 
     kadd_config_free(&config);

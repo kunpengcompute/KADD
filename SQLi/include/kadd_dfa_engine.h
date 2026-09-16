@@ -60,11 +60,15 @@ int kadd_dfa_engine_create(kadd_dfa_engine_t **engine,
                            size_t max_tokens);
 
 /**
- * @brief 释放 DFA 引擎
+ * @brief 释放 DFA 引擎并清空调用者句柄
  *
- * @param engine DFA 引擎指针
+ * @param engine DFA 引擎句柄指针的指针；释放成功后 *engine 为 NULL
+ *
+ * @note 传入 NULL 或「指向 NULL 句柄的地址」均为空操作；句柄被释放后再次使用
+ *       会在各入口的判空处返回 KADD_ERROR_NULL_PTR，而不是 use-after-free /
+ *       double-free（原单层指针签名无法写回调用者变量）
  */
-void kadd_dfa_engine_free(kadd_dfa_engine_t *engine);
+void kadd_dfa_engine_free(kadd_dfa_engine_t **engine);
 
 /**
  * @brief 分词输入字符串

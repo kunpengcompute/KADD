@@ -343,7 +343,7 @@ FZ_MAYBE_UNUSED static void FuzzDfaErrorPaths() {
     (void)(FzDfaCreate("/tmp/fz_dfa_tr.bin", "/tmp/fz_dfa_out.bin", "/tmp/fz_no_such.bin", 300, 300, &e));
     FzDfaTable("/tmp/fz_dfa_eod.bin", 2, 2, 0, (size_t)-1, 0, (size_t)-1);
     (void)(FzDfaCreate("/tmp/fz_dfa_tr.bin", "/tmp/fz_dfa_out.bin", "/tmp/fz_dfa_eod.bin", 300, 300, &e));
-    if (e) { kadd_dfa_engine_free(e); e = NULL; }
+    if (e) { kadd_dfa_engine_free(&e); e = NULL; }
 
     /* output 表 states 与 transition 不一致 */
     FzDfaTable("/tmp/fz_dfa_out3.bin", 3, 3 * 256, 0, (size_t)-1, 0, (size_t)-1);
@@ -361,7 +361,7 @@ FZ_MAYBE_UNUSED static void FuzzDfaErrorPaths() {
     if (FzDfaCreate("/tmp/fz_dfa_tr.bin", "/tmp/fz_dfa_out.bin", "/tmp/fz_dfa_eod.bin", 300, 300, &e) == 0 && e) {
         memset(out, 0, sizeof(out));
         (void)(kadd_dfa_engine_tokenize(e, "abc", 3, out, &n));
-        kadd_dfa_engine_free(e); e = NULL;
+        kadd_dfa_engine_free(&e); e = NULL;
     }
     /* eod_table[1] = EMIT_TWO(3) | token 5<<2 | token2 7<<8 */
     {
@@ -373,26 +373,26 @@ FZ_MAYBE_UNUSED static void FuzzDfaErrorPaths() {
         if (FzDfaCreate("/tmp/fz_dfa_tr_a1.bin", "/tmp/fz_dfa_out_zero.bin", "/tmp/fz_dfa_eod_emit2.bin", 300, 300, &e) == 0 && e) {
             memset(out, 0, sizeof(out));
             (void)(kadd_dfa_engine_tokenize(e, "a", 1, out, &n));
-            kadd_dfa_engine_free(e); e = NULL;
+            kadd_dfa_engine_free(&e); e = NULL;
         }
         if (FzDfaCreate("/tmp/fz_dfa_tr_a1.bin", "/tmp/fz_dfa_out_zero.bin", "/tmp/fz_dfa_eod_emit2.bin", 300, 1, &e) == 0 && e) {
             memset(out, 0, sizeof(out));
             (void)(kadd_dfa_engine_tokenize(e, "a", 1, out, &n));
-            kadd_dfa_engine_free(e); e = NULL;
+            kadd_dfa_engine_free(&e); e = NULL;
         }
         /* eod = CLEAR(2) */
         FzDfaTable("/tmp/fz_dfa_eod_clear.bin", 2, 2, 0, 1, 2, (size_t)-1);
         if (FzDfaCreate("/tmp/fz_dfa_tr_a1.bin", "/tmp/fz_dfa_out_zero.bin", "/tmp/fz_dfa_eod_clear.bin", 300, 300, &e) == 0 && e) {
             memset(out, 0, sizeof(out));
             (void)(kadd_dfa_engine_tokenize(e, "a", 1, out, &n));
-            kadd_dfa_engine_free(e); e = NULL;
+            kadd_dfa_engine_free(&e); e = NULL;
         }
         /* eod = EMIT(1) | token<<2 */
         FzDfaTable("/tmp/fz_dfa_eod_emit1.bin", 2, 2, 0, 1, (uint16_t)(1u | (9u << 2)), (size_t)-1);
         if (FzDfaCreate("/tmp/fz_dfa_tr_a1.bin", "/tmp/fz_dfa_out_zero.bin", "/tmp/fz_dfa_eod_emit1.bin", 300, 300, &e) == 0 && e) {
             memset(out, 0, sizeof(out));
             (void)(kadd_dfa_engine_tokenize(e, "a", 1, out, &n));
-            kadd_dfa_engine_free(e); e = NULL;
+            kadd_dfa_engine_free(&e); e = NULL;
         }
     }
     /* --- emit_token 路径 --- */
@@ -404,7 +404,7 @@ FZ_MAYBE_UNUSED static void FuzzDfaErrorPaths() {
         if (FzDfaCreate("/tmp/fz_dfa_tr_a1.bin", "/tmp/fz_dfa_out_emit.bin", "/tmp/fz_dfa_eod_zero.bin", 300, 300, &e) == 0 && e) {
             memset(out, 0, sizeof(out));
             (void)(kadd_dfa_engine_tokenize(e, "aa", 2, out, &n));
-            kadd_dfa_engine_free(e); e = NULL;
+            kadd_dfa_engine_free(&e); e = NULL;
         }
         /* scan_delta=3 且输入很短 -> scan_pos > input_length */
         uint16_t oc_scan3 = (uint16_t)((1u << 5) | (3u << 10) | (1u << 12));
@@ -412,7 +412,7 @@ FZ_MAYBE_UNUSED static void FuzzDfaErrorPaths() {
         if (FzDfaCreate("/tmp/fz_dfa_tr_a1.bin", "/tmp/fz_dfa_out_scan3.bin", "/tmp/fz_dfa_eod_zero.bin", 300, 300, &e) == 0 && e) {
             memset(out, 0, sizeof(out));
             (void)(kadd_dfa_engine_tokenize(e, "a", 1, out, &n));
-            kadd_dfa_engine_free(e); e = NULL;
+            kadd_dfa_engine_free(&e); e = NULL;
         }
         /* EMIT_PAIR: end=3, accept!=0, max_tokens=1 -> 第二个 token 越界检查 */
         uint16_t oc_pair = (uint16_t)((1u << 5) | 3u | (1u << 10) | (1u << 12) | (3u << 14));
@@ -420,12 +420,12 @@ FZ_MAYBE_UNUSED static void FuzzDfaErrorPaths() {
         if (FzDfaCreate("/tmp/fz_dfa_tr_a1.bin", "/tmp/fz_dfa_out_pair.bin", "/tmp/fz_dfa_eod_zero.bin", 300, 1, &e) == 0 && e) {
             memset(out, 0, sizeof(out));
             (void)(kadd_dfa_engine_tokenize(e, "a", 1, out, &n));
-            kadd_dfa_engine_free(e); e = NULL;
+            kadd_dfa_engine_free(&e); e = NULL;
         }
         if (FzDfaCreate("/tmp/fz_dfa_tr_a1.bin", "/tmp/fz_dfa_out_pair.bin", "/tmp/fz_dfa_eod_zero.bin", 300, 300, &e) == 0 && e) {
             memset(out, 0, sizeof(out));
             (void)(kadd_dfa_engine_tokenize(e, "a", 1, out, &n));
-            kadd_dfa_engine_free(e); e = NULL;
+            kadd_dfa_engine_free(&e); e = NULL;
         }
         /* start_enc=0 -> start_delta=-1，且 pos==0 -> PARSE */
         uint16_t oc_startneg = (uint16_t)((1u << 5) | (1u << 10) | (0u << 12));
@@ -433,7 +433,7 @@ FZ_MAYBE_UNUSED static void FuzzDfaErrorPaths() {
         if (FzDfaCreate("/tmp/fz_dfa_tr_a1.bin", "/tmp/fz_dfa_out_sneg.bin", "/tmp/fz_dfa_eod_zero.bin", 300, 300, &e) == 0 && e) {
             memset(out, 0, sizeof(out));
             (void)(kadd_dfa_engine_tokenize(e, "a", 1, out, &n));
-            kadd_dfa_engine_free(e); e = NULL;
+            kadd_dfa_engine_free(&e); e = NULL;
         }
         /* start_enc=3 -> start_delta=2，token_start=pos+2 > input_length */
         uint16_t oc_startfar = (uint16_t)((1u << 5) | (1u << 10) | (3u << 12));
@@ -441,13 +441,13 @@ FZ_MAYBE_UNUSED static void FuzzDfaErrorPaths() {
         if (FzDfaCreate("/tmp/fz_dfa_tr_a1.bin", "/tmp/fz_dfa_out_sfar.bin", "/tmp/fz_dfa_eod_zero.bin", 300, 300, &e) == 0 && e) {
             memset(out, 0, sizeof(out));
             (void)(kadd_dfa_engine_tokenize(e, "a", 1, out, &n));
-            kadd_dfa_engine_free(e); e = NULL;
+            kadd_dfa_engine_free(&e); e = NULL;
         }
         /* count>=max_output_dim: max_tokens=1 且普通 emit 两次 */
         if (FzDfaCreate("/tmp/fz_dfa_tr_a1.bin", "/tmp/fz_dfa_out_emit.bin", "/tmp/fz_dfa_eod_zero.bin", 300, 1, &e) == 0 && e) {
             memset(out, 0, sizeof(out));
             (void)(kadd_dfa_engine_tokenize(e, "aa", 2, out, &n));
-            kadd_dfa_engine_free(e); e = NULL;
+            kadd_dfa_engine_free(&e); e = NULL;
         }
     }
     /* --- tokenize 入参校验 --- */
@@ -457,7 +457,7 @@ FZ_MAYBE_UNUSED static void FuzzDfaErrorPaths() {
         (void)(kadd_dfa_engine_tokenize(e, NULL, 0, o2, &n2));
         (void)(kadd_dfa_engine_tokenize(e, "abc", 3, NULL, &n2));
         (void)(kadd_dfa_engine_tokenize(e, "abc", 3, o2, NULL));
-        kadd_dfa_engine_free(e); e = NULL;
+        kadd_dfa_engine_free(&e); e = NULL;
     }
     kadd_dfa_engine_free(NULL);
 }
@@ -570,12 +570,12 @@ FZ_MAYBE_UNUSED static void FuzzDfaBatchErrorPaths()
         FzWriteBytes("/tmp/fz3_2b.bin", std::vector<unsigned char>(2, 0));
         kadd_dfa_table_paths_t q = tp; q.transition_table_path = "/tmp/fz3_2b.bin";
         (void)(kadd_dfa_engine_create(&x, &q, 64, 64));
-        if (x) { kadd_dfa_engine_free(x); x = nullptr; }
+        if (x) { kadd_dfa_engine_free(&x); x = nullptr; }
 
         FzMkTable("/tmp/fz3_s0.bin", 0, 0, (size_t)-1, 0);
         q = tp; q.transition_table_path = "/tmp/fz3_s0.bin";
         (void)(kadd_dfa_engine_create(&x, &q, 64, 64));
-        if (x) { kadd_dfa_engine_free(x); x = nullptr; }
+        if (x) { kadd_dfa_engine_free(&x); x = nullptr; }
 
         /* states 超过 65535 上限 */
         std::vector<unsigned char> v; FzPutU32LE(v, 70000u);
@@ -583,7 +583,7 @@ FZ_MAYBE_UNUSED static void FuzzDfaBatchErrorPaths()
         FzWriteBytes("/tmp/fz3_sbig.bin", v);
         q = tp; q.transition_table_path = "/tmp/fz3_sbig.bin";
         (void)(kadd_dfa_engine_create(&x, &q, 64, 64));
-        if (x) { kadd_dfa_engine_free(x); x = nullptr; }
+        if (x) { kadd_dfa_engine_free(&x); x = nullptr; }
 
         /* 表头声明 100 状态但数据不足 -> 文件过短 */
         std::vector<unsigned char> w; FzPutU32LE(w, 100u);
@@ -591,30 +591,30 @@ FZ_MAYBE_UNUSED static void FuzzDfaBatchErrorPaths()
         FzWriteBytes("/tmp/fz3_short.bin", w);
         q = tp; q.transition_table_path = "/tmp/fz3_short.bin";
         (void)(kadd_dfa_engine_create(&x, &q, 64, 64));
-        if (x) { kadd_dfa_engine_free(x); x = nullptr; }
+        if (x) { kadd_dfa_engine_free(&x); x = nullptr; }
 
         /* output 表状态数与 transition 不一致 */
         FzMkTable("/tmp/fz3_out3.bin", 3, 0, (size_t)-1, 0);
         q = tp; q.output_table_path = "/tmp/fz3_out3.bin";
         (void)(kadd_dfa_engine_create(&x, &q, 64, 64));
-        if (x) { kadd_dfa_engine_free(x); x = nullptr; }
+        if (x) { kadd_dfa_engine_free(&x); x = nullptr; }
 
         /* eod 表状态数不一致 */
         FzMkEod("/tmp/fz3_eod3.bin", 3, 0);
         q = tp; q.eod_table_path = "/tmp/fz3_eod3.bin";
         (void)(kadd_dfa_engine_create(&x, &q, 64, 64));
-        if (x) { kadd_dfa_engine_free(x); x = nullptr; }
+        if (x) { kadd_dfa_engine_free(&x); x = nullptr; }
 
         /* 转移表引用了不存在的状态（且不是 ID_ERROR） */
         FzMkTable("/tmp/fz3_badref.bin", 2, 5, (size_t)-1, 5);
         q = tp; q.transition_table_path = "/tmp/fz3_badref.bin";
         (void)(kadd_dfa_engine_create(&x, &q, 64, 64));
-        if (x) { kadd_dfa_engine_free(x); x = nullptr; }
+        if (x) { kadd_dfa_engine_free(&x); x = nullptr; }
 
         /* 文件不存在 */
         q = tp; q.transition_table_path = "/tmp/fz3_nope.bin";
         (void)(kadd_dfa_engine_create(&x, &q, 64, 64));
-        if (x) { kadd_dfa_engine_free(x); x = nullptr; }
+        if (x) { kadd_dfa_engine_free(&x); x = nullptr; }
     }
 
     /* ---------- tokenize：ID_ERROR 转移（65535）导致 break ---------- */
@@ -625,11 +625,11 @@ FZ_MAYBE_UNUSED static void FuzzDfaBatchErrorPaths()
         if (kadd_dfa_engine_create(&x, &q, 64, 64) == 0 && x) {
             int out[64]; int n = 0;
             (void)(kadd_dfa_engine_tokenize(x, "abc", 3, out, &n));
-            kadd_dfa_engine_free(x);
-        } else {  if (x) kadd_dfa_engine_free(x); }
+            kadd_dfa_engine_free(&x);
+        } else {  if (x) kadd_dfa_engine_free(&x); }
     }
 
-    kadd_dfa_engine_free(e);
+    kadd_dfa_engine_free(&e);
     kadd_dfa_engine_free(nullptr);
     
 
@@ -688,7 +688,7 @@ FZ_MAYBE_UNUSED static void FuzzRfRealModelPaths() {
     (void)(kadd_rf_model_load(nullptr, kRf));
     (void)(kadd_rf_model_load(&m, nullptr));
     kadd_rf_model_free(nullptr);
-    kadd_rf_model_free(m);
+    kadd_rf_model_free(&m);
 
     /* 损坏/篡改/未签名变体 */
     std::vector<unsigned char> raw = FzReadAll(kRf);
@@ -696,46 +696,46 @@ FZ_MAYBE_UNUSED static void FuzzRfRealModelPaths() {
         std::vector<unsigned char> t(raw.begin(), raw.begin() + 32);
         FzWriteAll("/tmp/fz4_rf_trunc.krf", t);
         kadd_rf_model_t *x = nullptr; (void)(kadd_rf_model_load(&x, "/tmp/fz4_rf_trunc.krf"));
-        if (x) kadd_rf_model_free(x);
+        if (x) kadd_rf_model_free(&x);
     }
     {   /* 短文件 10B */
         FzWriteAll("/tmp/fz4_rf_short.krf", std::vector<unsigned char>(10, 0));
         kadd_rf_model_t *x = nullptr; (void)(kadd_rf_model_load(&x, "/tmp/fz4_rf_short.krf"));
-        if (x) kadd_rf_model_free(x);
+        if (x) kadd_rf_model_free(&x);
     }
     {   /* 坏 magic */
         std::vector<unsigned char> t = raw; t[0] = 'X';
         FzWriteAll("/tmp/fz4_rf_magic.krf", t);
         kadd_rf_model_t *x = nullptr; (void)(kadd_rf_model_load(&x, "/tmp/fz4_rf_magic.krf"));
-        if (x) kadd_rf_model_free(x);
+        if (x) kadd_rf_model_free(&x);
     }
     {   /* 篡改 payload（HMAC 失配） */
         std::vector<unsigned char> t = raw; t[100] ^= 0xFF;
         FzWriteAll("/tmp/fz4_rf_tamper.krf", t);
         kadd_rf_model_t *x = nullptr; (void)(kadd_rf_model_load(&x, "/tmp/fz4_rf_tamper.krf"));
-        if (x) kadd_rf_model_free(x);
+        if (x) kadd_rf_model_free(&x);
     }
     {   /* 去掉 HMAC 尾部（截断 32B） */
         std::vector<unsigned char> t(raw.begin(), raw.end() - 32);
         FzWriteAll("/tmp/fz4_rf_nohmac.krf", t);
         kadd_rf_model_t *x = nullptr; (void)(kadd_rf_model_load(&x, "/tmp/fz4_rf_nohmac.krf"));
-        if (x) kadd_rf_model_free(x);
+        if (x) kadd_rf_model_free(&x);
     }
     {   /* flags bit0 清零 -> 未签名 */
         std::vector<unsigned char> t = raw; t[40] = 0;
         FzWriteAll("/tmp/fz4_rf_unsigned.krf", t);
         kadd_rf_model_t *x = nullptr; (void)(kadd_rf_model_load(&x, "/tmp/fz4_rf_unsigned.krf"));
-        if (x) kadd_rf_model_free(x);
+        if (x) kadd_rf_model_free(&x);
     }
     {   /* 尾部多 1 字节 */
         std::vector<unsigned char> t = raw; t.push_back(0);
         FzWriteAll("/tmp/fz4_rf_extra.krf", t);
         kadd_rf_model_t *x = nullptr; (void)(kadd_rf_model_load(&x, "/tmp/fz4_rf_extra.krf"));
-        if (x) kadd_rf_model_free(x);
+        if (x) kadd_rf_model_free(&x);
     }
     {   /* 不存在 */
         kadd_rf_model_t *x = nullptr; (void)(kadd_rf_model_load(&x, "/tmp/fz4_nope.krf"));
-        if (x) kadd_rf_model_free(x);
+        if (x) kadd_rf_model_free(&x);
     }
     {   /* 错误密钥 */
         const char *save = getenv("KADD_MODEL_HMAC_KEY");
@@ -746,7 +746,7 @@ FZ_MAYBE_UNUSED static void FuzzRfRealModelPaths() {
         setenv("KADD_MODEL_HMAC_KEY", "0000000000000000000000000000000000000000000000000000000000000000", 1);
 #endif
         kadd_rf_model_t *x = nullptr; (void)(kadd_rf_model_load(&x, kRf));
-        if (x) kadd_rf_model_free(x);
+        if (x) kadd_rf_model_free(&x);
 #ifdef _WIN32
         std::string rs = std::string("KADD_MODEL_HMAC_KEY=") + saved; _putenv(rs.c_str());
 #else
@@ -760,7 +760,7 @@ FZ_MAYBE_UNUSED static void FuzzRfRealModelPaths() {
         setenv("KADD_MODEL_HMAC_KEY", "zz", 1);
 #endif
         kadd_rf_model_t *x = nullptr; (void)(kadd_rf_model_load(&x, kRf));
-        if (x) kadd_rf_model_free(x);
+        if (x) kadd_rf_model_free(&x);
 #ifdef _WIN32
         std::string rs = std::string("KADD_MODEL_HMAC_KEY=") + FzKeyHex; _putenv(rs.c_str());
 #else
@@ -806,47 +806,47 @@ FZ_MAYBE_UNUSED static void FuzzCnnRealModelPaths() {
     (void)(kadd_cnn_model_load(nullptr, kCnn));
     (void)(kadd_cnn_model_load(&m, nullptr));
     kadd_cnn_model_free(nullptr);
-    kadd_cnn_model_free(m);
+    kadd_cnn_model_free(&m);
 
     std::vector<unsigned char> raw = FzReadAll(kCnn);
     {
         std::vector<unsigned char> t(raw.begin(), raw.begin() + 32);
         FzWriteAll("/tmp/fz4_cnn_trunc.kcn", t);
         kadd_cnn_model_t *x = nullptr; (void)(kadd_cnn_model_load(&x, "/tmp/fz4_cnn_trunc.kcn"));
-        if (x) kadd_cnn_model_free(x);
+        if (x) kadd_cnn_model_free(&x);
     }
     {
         FzWriteAll("/tmp/fz4_cnn_short.kcn", std::vector<unsigned char>(10, 0));
         kadd_cnn_model_t *x = nullptr; (void)(kadd_cnn_model_load(&x, "/tmp/fz4_cnn_short.kcn"));
-        if (x) kadd_cnn_model_free(x);
+        if (x) kadd_cnn_model_free(&x);
     }
     {
         std::vector<unsigned char> t = raw; t[0] = 'X';
         FzWriteAll("/tmp/fz4_cnn_magic.kcn", t);
         kadd_cnn_model_t *x = nullptr; (void)(kadd_cnn_model_load(&x, "/tmp/fz4_cnn_magic.kcn"));
-        if (x) kadd_cnn_model_free(x);
+        if (x) kadd_cnn_model_free(&x);
     }
     {
         std::vector<unsigned char> t = raw; t[100] ^= 0xFF;
         FzWriteAll("/tmp/fz4_cnn_tamper.kcn", t);
         kadd_cnn_model_t *x = nullptr; (void)(kadd_cnn_model_load(&x, "/tmp/fz4_cnn_tamper.kcn"));
-        if (x) kadd_cnn_model_free(x);
+        if (x) kadd_cnn_model_free(&x);
     }
     {
         std::vector<unsigned char> t = raw; t[40] = 0;
         FzWriteAll("/tmp/fz4_cnn_unsigned.kcn", t);
         kadd_cnn_model_t *x = nullptr; (void)(kadd_cnn_model_load(&x, "/tmp/fz4_cnn_unsigned.kcn"));
-        if (x) kadd_cnn_model_free(x);
+        if (x) kadd_cnn_model_free(&x);
     }
     {
         std::vector<unsigned char> t = raw; t.push_back(0);
         FzWriteAll("/tmp/fz4_cnn_extra.kcn", t);
         kadd_cnn_model_t *x = nullptr; (void)(kadd_cnn_model_load(&x, "/tmp/fz4_cnn_extra.kcn"));
-        if (x) kadd_cnn_model_free(x);
+        if (x) kadd_cnn_model_free(&x);
     }
     {
         kadd_cnn_model_t *x = nullptr; (void)(kadd_cnn_model_load(&x, "/tmp/fz4_nope.kcn"));
-        if (x) kadd_cnn_model_free(x);
+        if (x) kadd_cnn_model_free(&x);
     }
 }
 
@@ -865,20 +865,20 @@ FZ_MAYBE_UNUSED static void FuzzDlErrorPaths() {
     /* NULL 参数 */
     (void)kadd_dl_model_load(nullptr, FzCnnKcnAbs, 0);
     (void)kadd_dl_model_load(&m, nullptr, 0);
-    if (m) { kadd_dl_model_free(m); m = nullptr; }
+    kadd_dl_model_free(&m);   /* 释放后自动置 NULL */
 
     /* 路径不存在 → ONNX 加载失败分支 */
     (void)kadd_dl_model_load(&m, "/nonexistent/kadd_fz_nope.onnx", 0);
-    if (m) { kadd_dl_model_free(m); m = nullptr; }
+    kadd_dl_model_free(&m);   /* 释放后自动置 NULL */
 
     /* 真实 .kcn + 错误 feature_dim：SVE 硬件下命中原生失配分支 */
     (void)kadd_dl_model_load(&m, FzPickPath(FzCnnKcnAbs, FzCnnKcnRel), 999);
-    if (m) { kadd_dl_model_free(m); m = nullptr; }
+    kadd_dl_model_free(&m);   /* 释放后自动置 NULL */
 
     /* 真实 .onnx + 错误 feature_dim：ONNX 后端失配分支 */
     if (FzAllowRealAsset(1)) {   /* 本函数唯一会建 ONNX 会话的一行，单独降频 */
         (void)kadd_dl_model_load(&m, FzPickPath(FzCnnOnnxAbs, FzCnnOnnxRel), 999);
-        if (m) { kadd_dl_model_free(m); m = nullptr; }
+        kadd_dl_model_free(&m);   /* 释放后自动置 NULL */
     }
 
     /* n / batch 非法 + NULL（predict_batch 校验分支） */
@@ -886,13 +886,14 @@ FZ_MAYBE_UNUSED static void FuzzDlErrorPaths() {
     (void)kadd_dl_model_predict_batch(nullptr, nullptr, 0, nullptr, 0);
     (void)kadd_dl_model_get_feature_dim(nullptr);
     kadd_dl_model_free(nullptr);
+    kadd_dl_model_t *fz_null_model = nullptr;
+    kadd_dl_model_free(&fz_null_model);   /* !*model 空操作分支 */
 
     /* 正确加载 → 完整生命周期（load → predict → predict_batch → free） */
     const char *cands[] = {FzCnnKcnAbs, FzCnnKcnRel, FzCnnOnnxAbs, FzCnnOnnxRel};
     for (size_t c = 0; c < sizeof(cands) / sizeof(cands[0]) && !m; ++c) {
         if (kadd_dl_model_load(&m, cands[c], 0) != 0 && m) {
-            kadd_dl_model_free(m);
-            m = nullptr;
+            kadd_dl_model_free(&m);
         }
     }
     if (!m) {
@@ -900,7 +901,7 @@ FZ_MAYBE_UNUSED static void FuzzDlErrorPaths() {
     }
     int dim = kadd_dl_model_get_feature_dim(m);
     if (dim <= 0 || dim > 4096) {
-        kadd_dl_model_free(m);
+        kadd_dl_model_free(&m);
         return;
     }
     /* token 必须为 [0,29) 的整数值 */
@@ -938,7 +939,7 @@ FZ_MAYBE_UNUSED static void FuzzDlErrorPaths() {
     for (size_t k = 0; k < mat4.size(); ++k) mat4[k] = (float)(k % 13u);
     (void)kadd_dl_model_predict_batch(m, mat4.data(), 4, out4.data(), 0);
     (void)kadd_dl_model_predict_batch(m, mat4.data(), 4, out4.data(), 4096);
-    kadd_dl_model_free(m);
+    kadd_dl_model_free(&m);
 }
 
 /* ==========================================================================
@@ -956,17 +957,17 @@ FZ_MAYBE_UNUSED static void FuzzSqliErrorPaths() {
     (void)kadd_sqli_engine_create_from_file(nullptr, "config.json");
     kadd_sqli_engine_t *e = nullptr;
     (void)kadd_sqli_engine_create_from_file(&e, nullptr);
-    if (e) { kadd_sqli_engine_free(e); e = nullptr; }
+    if (e) { kadd_sqli_engine_free(&e); e = nullptr; }
 
     /* config 不存在 / 空文件（JSON 解析失败） */
     (void)kadd_sqli_engine_create_from_file(&e, "/nonexistent/kadd_fz_cfg.json");
-    if (e) { kadd_sqli_engine_free(e); e = nullptr; }
+    if (e) { kadd_sqli_engine_free(&e); e = nullptr; }
     FzWriteFile("/tmp/fz_sqli_empty.json", "");
     (void)kadd_sqli_engine_create_from_file(&e, "/tmp/fz_sqli_empty.json");
-    if (e) { kadd_sqli_engine_free(e); e = nullptr; }
+    if (e) { kadd_sqli_engine_free(&e); e = nullptr; }
     FzWriteFile("/tmp/fz_sqli_dirlike.json", "{ not json at all");
     (void)kadd_sqli_engine_create_from_file(&e, "/tmp/fz_sqli_dirlike.json");
-    if (e) { kadd_sqli_engine_free(e); e = nullptr; }
+    if (e) { kadd_sqli_engine_free(&e); e = nullptr; }
 
     const char *tr  = FzPickPath(FzTranAbs, FzTranRel);
     const char *ot  = FzPickPath(FzOutAbs, FzOutRel);
@@ -1019,9 +1020,9 @@ FZ_MAYBE_UNUSED static void FuzzSqliErrorPaths() {
             const char *ins[2] = {"id=1 OR 1=1", "plain text"};
             float ps[2] = {0.0f, 0.0f};
             (void)kadd_sqli_detect_batch(eng, ins, 2, ps, 2);
-            kadd_sqli_engine_free(eng);
+            kadd_sqli_engine_free(&eng);
         } else if (eng) {
-            kadd_sqli_engine_free(eng);
+            kadd_sqli_engine_free(&eng);
         }
     }
 
@@ -1044,10 +1045,10 @@ FZ_MAYBE_UNUSED static void FuzzSqliErrorPaths() {
         (void)kadd_sqli_detect(e, nullptr, &pr);
         (void)kadd_sqli_detect(e, "", &pr);
         (void)kadd_sqli_detect(e, "x", nullptr);
-        kadd_sqli_engine_free(e);
+        kadd_sqli_engine_free(&e);
         e = nullptr;
     } else if (e) {
-        kadd_sqli_engine_free(e);
+        kadd_sqli_engine_free(&e);
         e = nullptr;
     }
     kadd_sqli_engine_free(nullptr);
@@ -1116,8 +1117,7 @@ FZ_MAYBE_UNUSED static void FuzzInferenceThreadEnvBranches() {
                 float out[2] = {0.0f, 0.0f};
                 (void)kadd_dl_model_predict_batch(dm, mat.data(), 2, out, 2);
             }
-            kadd_dl_model_free(dm);
-            dm = nullptr;
+            kadd_dl_model_free(&dm);
         }
 
         /* ML 层同样经由 kadd_inference_engine_load_from_path（kadd_ml_engine.c:75），
@@ -1134,7 +1134,7 @@ FZ_MAYBE_UNUSED static void FuzzInferenceThreadEnvBranches() {
                 float out[2] = {0.0f, 0.0f};
                 (void)kadd_model_predict_batch(mm, mat.data(), 2, out, 2);
             }
-            kadd_model_free(mm);
+            kadd_model_free(&mm);
             mm = nullptr;
         }
     }

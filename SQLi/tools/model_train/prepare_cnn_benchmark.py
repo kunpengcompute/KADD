@@ -80,7 +80,9 @@ class DfaTokenizer:
             ctypes.POINTER(ctypes.c_int),
         )
         self._library.kadd_dfa_engine_tokenize.restype = ctypes.c_int
-        self._library.kadd_dfa_engine_free.argtypes = (ctypes.c_void_p,)
+        # kadd_dfa_engine_free 的签名为 (kadd_dfa_engine_t **)：需传句柄变量的地址
+        self._library.kadd_dfa_engine_free.argtypes = (
+            ctypes.POINTER(ctypes.c_void_p),)
         self._library.kadd_dfa_engine_free.restype = None
 
         # Keep the encoded path objects alive through the create call.  The C
@@ -99,7 +101,7 @@ class DfaTokenizer:
         )
         if result != 0 or not self._engine.value:
             if self._engine.value:
-                self._library.kadd_dfa_engine_free(self._engine)
+                self._library.kadd_dfa_engine_free(ctypes.byref(self._engine))
             self._engine = ctypes.c_void_p()
             raise RuntimeError(f"DFA engine create failed with error {result}")
 
@@ -138,7 +140,7 @@ class DfaTokenizer:
 
     def close(self) -> None:
         if getattr(self, "_engine", None) is not None and self._engine.value:
-            self._library.kadd_dfa_engine_free(self._engine)
+            self._library.kadd_dfa_engine_free(ctypes.byref(self._engine))
             self._engine = ctypes.c_void_p()
 
     def __enter__(self) -> "DfaTokenizer":

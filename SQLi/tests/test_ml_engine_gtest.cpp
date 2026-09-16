@@ -115,7 +115,7 @@ protected:
     void TearDown() override
     {
         if (model) {
-            kadd_model_free(model);
+            kadd_model_free(&model);
             model = nullptr;
         }
     }
@@ -145,7 +145,7 @@ protected:
          * 直接覆盖 model 句柄会泄漏旧句柄（TearDown 只释放最后一个），
          * 因此重复加载前必须先释放 */
         if (model != nullptr) {
-            kadd_model_free(model);
+            kadd_model_free(&model);
             model = nullptr;
         }
         return kadd_model_load(&model, model_path, feature_dim);
@@ -486,7 +486,7 @@ TEST_F(MLEngineTest, FreeAfterPredict)
     float probability = 0.0f;
     kadd_model_predict(model, test_features.data(), &probability);
 
-    kadd_model_free(model);
+    kadd_model_free(&model);
     model = nullptr;
 
     // 验证释放后不能再使用
@@ -498,11 +498,11 @@ TEST_F(MLEngineTest, MultipleFree)
 {
     ASSERT_EQ(CreateValidModel(), 0) << "模型加载失败";
 
-    kadd_model_free(model);
+    kadd_model_free(&model);
     model = nullptr;
 
     // 多次释放不应该崩溃
-    kadd_model_free(model);
+    kadd_model_free(&model);
     kadd_model_free(nullptr);
     SUCCEED();
 }
@@ -610,7 +610,7 @@ TEST_F(MLEngineTest, Performance_ModelLoading)
 #else
         kadd_model_load(&temp_model, config.model_rf_onnx, feature_dim);
 #endif
-        kadd_model_free(temp_model);
+        kadd_model_free(&temp_model);
     }
 
     auto end = std::chrono::high_resolution_clock::now();
@@ -1033,7 +1033,7 @@ TEST_F(MLEngineTest, ModelWarmupVerification)
     EXPECT_EQ(ret, KADD_SUCCESS) << "warmup 后首次推理应该成功";
     EXPECT_TRUE(IsValidProbability(probability)) << "warmup 后首次推理结果应该有效";
 
-    kadd_model_free(fresh_model);
+    kadd_model_free(&fresh_model);
 }
 
 TEST_F(MLEngineTest, LoadWithCorruptedModelFile)
@@ -1155,7 +1155,7 @@ int main(int argc, char **argv)
             std::cerr << "========================================\n" << std::endl;
             return 1;  // 返回失败而非跳过
         }
-        kadd_model_free(tmp);
+        kadd_model_free(&tmp);
     }
 
     std::cout << "\n========================================" << std::endl;
@@ -1238,7 +1238,7 @@ TEST_F(MLEngineTest, LoadOnnxModel_Success)
     EXPECT_EQ(ret, KADD_SUCCESS) << "ONNX 推理应该成功";
     EXPECT_TRUE(IsValidProbability(probability)) << "概率值应在 [0, 1] 范围内，实际: " << probability;
 
-    kadd_model_free(onnx_handle);
+    kadd_model_free(&onnx_handle);
     SUCCEED() << "ONNX 模型加载、推理、释放成功";
 }
 

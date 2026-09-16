@@ -284,7 +284,7 @@ int kadd_dfa_engine_create(kadd_dfa_engine_t **engine, const kadd_dfa_table_path
 
     int rc = kadd_dfa_engine_load_tables(eng, table_paths);
     if (rc != KADD_SUCCESS) {
-        kadd_dfa_engine_free(eng);
+        kadd_dfa_engine_free(&eng);
         return rc;
     }
 
@@ -292,20 +292,24 @@ int kadd_dfa_engine_create(kadd_dfa_engine_t **engine, const kadd_dfa_table_path
     return KADD_SUCCESS;
 }
 
-void kadd_dfa_engine_free(kadd_dfa_engine_t *engine)
+void kadd_dfa_engine_free(kadd_dfa_engine_t **engine)
 {
-    if (engine == NULL) {
+    if (engine == NULL || *engine == NULL) {
         return;
     }
+    kadd_dfa_engine_t *handle = *engine;
 
-    free(engine->transition_table);
-    engine->transition_table = NULL;
-    free(engine->output_table);
-    engine->output_table = NULL;
-    free(engine->eod_table);
-    engine->eod_table = NULL;
-    free(engine);
-    engine = NULL;
+    free(handle->transition_table);
+    handle->transition_table = NULL;
+    free(handle->output_table);
+    handle->output_table = NULL;
+    free(handle->eod_table);
+    handle->eod_table = NULL;
+    free(handle);
+    /* 原实现末行为 `engine = NULL;`：只改了形参副本（值传递），调用者的句柄
+     * 依旧悬空，属无效语句。改为写回调用者变量，悬空句柄再被使用时由
+     * 各入口判空返回 KADD_ERROR_NULL_PTR，而非 UAF / double-free。 */
+    *engine = NULL;
 }
 
 static int kadd_dfa_emit_token(size_t max_output_dim, size_t input_length, size_t *pos, size_t *token_start_pos,

@@ -80,11 +80,14 @@ int kadd_model_predict_batch(kadd_model_handle_t *handle, const float *features,
                              int n, float *probabilities, int batch_size);
 
 /**
- * @brief 释放模型
+ * @brief 释放模型并清空调用者句柄
  *
- * @param handle 模型句柄
+ * @param handle 模型句柄指针的指针；释放成功后 *handle 为 NULL
+ *
+ * @note 传入 NULL 或「指向 NULL 句柄的地址」均为空操作，消除悬空句柄导致的
+ *       use-after-free / double-free
  */
-void kadd_model_free(kadd_model_handle_t *handle);
+void kadd_model_free(kadd_model_handle_t **handle);
 
 /**
  * @brief 获取模型特征维度

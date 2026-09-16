@@ -45,7 +45,7 @@ typedef struct kadd_sqli_engine_t kadd_sqli_engine_t;
  *     if (kadd_sqli_detect(engine, "id=1' OR '1'='1", &probability) == KADD_SUCCESS) {
  *         printf("SQL注入概率: %.2f%%\n", probability * 100);
  *     }
- *     kadd_sqli_engine_free(engine);
+ *     kadd_sqli_engine_free(&engine);
  * }
  * @endcode
  */
@@ -109,13 +109,15 @@ int kadd_sqli_detect_batch(kadd_sqli_engine_t *engine, const char **inputs, int 
                            float *probabilities, int batch_size);
 
 /**
- * @brief 释放引擎
+ * @brief 释放引擎并清空调用者句柄
  *
- * @param engine 引擎句柄
+ * @param engine 引擎句柄指针的指针；释放成功后 *engine 为 NULL
  *
- * @note 释放后引擎句柄不可再使用
+ * @note 释放后引擎句柄不可再使用；内部的 ml_model / dl_model / dfa_engine
+ *       子句柄由各自的释放函数一并置空。传入 NULL 或「指向 NULL 句柄的地址」
+ *       均为空操作
  */
-void kadd_sqli_engine_free(kadd_sqli_engine_t *engine);
+void kadd_sqli_engine_free(kadd_sqli_engine_t **engine);
 
 #ifdef __cplusplus
 }

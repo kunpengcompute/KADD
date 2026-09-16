@@ -14,6 +14,7 @@
 #include <vector>
 #include <cmath>
 #include <chrono>
+#include <cstdint>
 #include <iostream>
 #include <algorithm>
 #include "kadd_inference_engine.h"
@@ -64,7 +65,7 @@ protected:
     void TearDown() override
     {
         if (engine_rf) {
-            kadd_inference_engine_free(engine_rf);
+            kadd_inference_engine_free(&engine_rf);
             engine_rf = nullptr;
         }
     }
@@ -101,7 +102,7 @@ TEST_F(InferenceEngineTest, LoadCNNModel)
     int dim = kadd_inference_engine_get_feature_dim(engine_cnn);
     EXPECT_GT(dim, 0);
 
-    kadd_inference_engine_free(engine_cnn);
+    kadd_inference_engine_free(&engine_cnn);
 }
 
 // ========== 2. 功能测试：单样本推理 ==========
@@ -338,8 +339,8 @@ TEST_F(InferenceEngineTest, MultipleEnginesConcurrent)
     EXPECT_TRUE(IsValidProbability(prob_cnn));
 
     // 释放
-    kadd_inference_engine_free(engine_rf_local);
-    kadd_inference_engine_free(engine_cnn);
+    kadd_inference_engine_free(&engine_rf_local);
+    kadd_inference_engine_free(&engine_cnn);
 }
 
 // ========== 11. 内存压力测试 ==========
@@ -370,7 +371,7 @@ TEST_F(InferenceEngineTest, MemoryStress_RepeatedLoadFree)
         int ret = kadd_inference_engine_load(&engine, "config.json", KADD_INFERENCE_TYPE_RF);
         ASSERT_EQ(ret, KADD_SUCCESS);
 
-        kadd_inference_engine_free(engine);
+        kadd_inference_engine_free(&engine);
     }
     SUCCEED() << "重复加载/释放未崩溃";
 }
@@ -534,7 +535,7 @@ TEST_F(InferenceEngineTest, Performance_SinglePrediction_CNN)
     std::cout << "[性能测试-CNN] 单样本推理吞吐量: " << static_cast<int>(ops_per_sec) << " ops/sec" << std::endl;
 
     EXPECT_GT(ops_per_sec, 1000.0) << "CNN 单样本推理性能应该 > 1,000 ops/sec";
-    kadd_inference_engine_free(engine_cnn);
+    kadd_inference_engine_free(&engine_cnn);
 }
 
 TEST_F(InferenceEngineTest, Performance_BatchPrediction_RF)
@@ -614,7 +615,7 @@ TEST_F(InferenceEngineTest, Performance_BatchPrediction_CNN)
      * 修复后 ONNX Runtime 1.28.0 下实测 13.6k-17.7k samples/sec。阈值取 5,000，
      * 在覆盖率插桩等较慢环境下仍有约 2.7 倍余量，用于捕获线程配置退化导致的性能崩塌。 */
     EXPECT_GT(samples_per_sec, 5000.0) << "CNN 批量推理性能应该 > 5,000 samples/sec";
-    kadd_inference_engine_free(engine_cnn);
+    kadd_inference_engine_free(&engine_cnn);
 }
 
 TEST_F(InferenceEngineTest, Performance_ModelLoading_RF)
@@ -626,7 +627,7 @@ TEST_F(InferenceEngineTest, Performance_ModelLoading_RF)
     for (int i = 0; i < iterations; i++) {
         kadd_inference_engine_t *temp_engine = nullptr;
         kadd_inference_engine_load(&temp_engine, "config.json", KADD_INFERENCE_TYPE_RF);
-        kadd_inference_engine_free(temp_engine);
+        kadd_inference_engine_free(&temp_engine);
     }
 
     auto end = std::chrono::high_resolution_clock::now();
@@ -648,7 +649,7 @@ TEST_F(InferenceEngineTest, Performance_ModelLoading_CNN)
     for (int i = 0; i < iterations; i++) {
         kadd_inference_engine_t *temp_engine = nullptr;
         kadd_inference_engine_load(&temp_engine, "config.json", KADD_INFERENCE_TYPE_CNN);
-        kadd_inference_engine_free(temp_engine);
+        kadd_inference_engine_free(&temp_engine);
     }
 
     auto end = std::chrono::high_resolution_clock::now();
@@ -723,6 +724,7 @@ namespace {
  * 桩函数必须同样带 noexcept，否则赋值给 api.XXX 会报 invalid conversion [-fpermissive]。
  * 反之 noexcept 桩函数赋给旧版无 noexcept 的成员是允许的隐式转换。 */
 int g_fake_get_dimensions_calls = 0;
+int64_t g_fake_input_second_dim = 1;
 
 OrtStatus *FakeSessionGetInputTypeInfo(const OrtSession *, size_t,
                                         OrtTypeInfo **type_info) noexcept
@@ -762,6 +764,22 @@ OrtStatus *FakeGetDimensions(const OrtTensorTypeAndShapeInfo *,
     return nullptr;
 }
 
+OrtStatus *FakeGetTwoDimensionsCount(const OrtTensorTypeAndShapeInfo *,
+                                     size_t *dim_count) noexcept
+{
+    *dim_count = 2U;
+    return nullptr;
+}
+
+OrtStatus *FakeGetDimensionsWithSecondDim(const OrtTensorTypeAndShapeInfo *,
+                                          int64_t *dims, size_t dim_count) noexcept
+{
+    for (size_t i = 0; i < dim_count; ++i) {
+        dims[i] = (i == 0U) ? 1 : g_fake_input_second_dim;
+    }
+    return nullptr;
+}
+
 void FakeReleaseTypeInfo(OrtTypeInfo *) noexcept {}
 }  // namespace
 
@@ -779,9 +797,50 @@ TEST(InferenceEngineStaticTest, GetModelInputDimRejectsTooManyDimensions)
     engine.api = &api;
     engine.session = reinterpret_cast<OrtSession *>(0x1);
 
-    EXPECT_EQ(get_model_input_dim(&engine), -1);
+    EXPECT_EQ(get_model_input_dim(&engine), KADD_ERROR_MODEL_LOAD_FAILED);
     EXPECT_EQ(g_fake_get_dimensions_calls, 0)
         << "维度数超过栈数组容量时不得调用 GetDimensions";
+}
+
+TEST(InferenceEngineStaticTest, GetModelInputDimValidatesFeatureDimBeforeWarmup)
+{
+    const int64_t invalid_dims[] = {
+        0,
+        -1,
+        static_cast<int64_t>(KADD_INFERENCE_MAX_FEATURE_DIM) + 1,
+        INT64_MAX,
+    };
+
+    for (int64_t dim : invalid_dims) {
+        g_fake_input_second_dim = dim;
+        OrtApi api = {};
+        api.SessionGetInputTypeInfo = FakeSessionGetInputTypeInfo;
+        api.CastTypeInfoToTensorInfo = FakeCastTypeInfoToTensorInfo;
+        api.GetDimensionsCount = FakeGetTwoDimensionsCount;
+        api.GetDimensions = FakeGetDimensionsWithSecondDim;
+        api.ReleaseTypeInfo = FakeReleaseTypeInfo;
+
+        kadd_inference_engine_t engine = {};
+        engine.api = &api;
+        engine.session = reinterpret_cast<OrtSession *>(0x1);
+
+        EXPECT_EQ(get_model_input_dim(&engine), KADD_ERROR_INVALID_PARAM) << "dim=" << dim;
+        EXPECT_EQ(engine.feature_dim, 0) << "非法 dim 不得写入引擎";
+    }
+
+    g_fake_input_second_dim = KADD_INFERENCE_MAX_FEATURE_DIM;
+    OrtApi api = {};
+    api.SessionGetInputTypeInfo = FakeSessionGetInputTypeInfo;
+    api.CastTypeInfoToTensorInfo = FakeCastTypeInfoToTensorInfo;
+    api.GetDimensionsCount = FakeGetTwoDimensionsCount;
+    api.GetDimensions = FakeGetDimensionsWithSecondDim;
+    api.ReleaseTypeInfo = FakeReleaseTypeInfo;
+
+    kadd_inference_engine_t engine = {};
+    engine.api = &api;
+    engine.session = reinterpret_cast<OrtSession *>(0x1);
+    EXPECT_EQ(get_model_input_dim(&engine), KADD_SUCCESS);
+    EXPECT_EQ(engine.feature_dim, KADD_INFERENCE_MAX_FEATURE_DIM);
 }
 
 TEST(InferenceEngineStaticTest, GetModelOutputDimSkipsTooManyDimensions)
@@ -820,7 +879,7 @@ TEST(InferenceEngineStaticTest, CheckOrtStatus_NullStatus)
     int result = check_ort_status(engine->api, nullptr, "test message");
     EXPECT_EQ(result, 0);
 
-    kadd_inference_engine_free(engine);
+    kadd_inference_engine_free(&engine);
 }
 
 /**
@@ -841,7 +900,7 @@ TEST(InferenceEngineStaticTest, InitOrtApi_SuccessPath)
     EXPECT_NE(engine->api->CreateSession, nullptr);
     EXPECT_NE(engine->api->Run, nullptr);
 
-    kadd_inference_engine_free(engine);
+    kadd_inference_engine_free(&engine);
 }
 
 /**
@@ -857,7 +916,7 @@ TEST(InferenceEngineStaticTest, InitOrtEnv_Success)
     // 验证环境指针有效性
     EXPECT_NE(engine->env, nullptr);
 
-    kadd_inference_engine_free(engine);
+    kadd_inference_engine_free(&engine);
 }
 
 // ========== ONNX API 错误路径测试 ==========
@@ -893,7 +952,7 @@ TEST(InferenceEngineStaticTest, Predict_NullFeatures)
     ret = kadd_inference_predict(engine, nullptr, &prob);
     EXPECT_EQ(ret, KADD_ERROR_NULL_PTR);
 
-    kadd_inference_engine_free(engine);
+    kadd_inference_engine_free(&engine);
 }
 
 TEST(InferenceEngineStaticTest, Predict_NullProbability)
@@ -907,7 +966,7 @@ TEST(InferenceEngineStaticTest, Predict_NullProbability)
     ret = kadd_inference_predict(engine, features.data(), nullptr);
     EXPECT_EQ(ret, KADD_ERROR_NULL_PTR);
 
-    kadd_inference_engine_free(engine);
+    kadd_inference_engine_free(&engine);
 }
 
 /**
@@ -939,7 +998,7 @@ TEST(InferenceEngineStaticTest, PredictBatch_InvalidSampleCount)
     ret = kadd_inference_predict_batch(engine, features.data(), KADD_INFERENCE_MAX_SAMPLE_COUNT + 1, probs.data(), 1);
     EXPECT_EQ(ret, KADD_ERROR_INVALID_PARAM);
 
-    kadd_inference_engine_free(engine);
+    kadd_inference_engine_free(&engine);
 }
 
 /**
@@ -956,7 +1015,7 @@ TEST(InferenceEngineStaticTest, CreateOrtSession_Success)
     EXPECT_NE(engine->session, nullptr);
     EXPECT_NE(engine->memory_info, nullptr);
 
-    kadd_inference_engine_free(engine);
+    kadd_inference_engine_free(&engine);
 }
 
 /**
@@ -998,7 +1057,7 @@ TEST(InferenceEngineStaticTest, ReleaseEngineResources_DirectCall)
  * check_ort_status 函数测试 - 非 NULL status 的错误路径
  * 从 ml_engine_test 迁移：原测试 check_ort_status_simple 的非 null 场景
  * 由于无法直接构造 OrtStatus*，通过故意传入错误模型路径触发 ORT 返回 error status，
- * 间接验证 check_ort_status 的错误处理路径（打印错误 + 返回 -1）。
+ * 间接验证 check_ort_status 的错误处理路径（打印错误 + 返回 1）。
  */
 TEST(InferenceEngineStaticTest, CheckOrtStatus_NonNullStatus_ErrorPath)
 {
@@ -1032,7 +1091,7 @@ TEST(InferenceEngineStaticTest, DetectIoNames_SuccessPath)
         EXPECT_GT(strlen(engine->output_name), 0U) << "output_name 不应为空";
     }
 
-    kadd_inference_engine_free(engine);
+    kadd_inference_engine_free(&engine);
 }
 
 /**
@@ -1049,7 +1108,7 @@ TEST(InferenceEngineStaticTest, DetectIoNames_CnnModel)
     EXPECT_NE(engine->input_name, nullptr);
     EXPECT_NE(engine->output_name, nullptr);
 
-    kadd_inference_engine_free(engine);
+    kadd_inference_engine_free(&engine);
 }
 
 // ========== 17. 覆盖率优化：非有限特征值与路径加载测试 ==========
@@ -1154,7 +1213,7 @@ TEST(InferenceFaultInjectTest, CheckOrtStatusErrorBranch)
     if (kadd_inject::RunScenario(KADD_INJ_CHECK_STATUS) != 0) {
         GTEST_SKIP() << "ONNX Runtime 不可用";
     }
-    SUCCEED() << "check_ort_status 的错误分支（打印 + ReleaseStatus + 返回 -1）已覆盖";
+    SUCCEED() << "check_ort_status 的错误分支（打印 + ReleaseStatus + 返回 1）已覆盖";
 }
 
 TEST(InferenceFaultInjectTest, GetModelInputDimErrorBranches)
@@ -1352,7 +1411,11 @@ public:
         }
         Apply(value);
     }
-    ~ScopedEnvVar() { Apply(had_ ? saved_ : nullptr); }
+    /* [FIX 编译修复] saved_ 是 std::string，三元表达式 had_ ? saved_ : nullptr
+     * 的公共类型为 std::string（nullptr 先转 const char* 再构造 string），
+     * 无法隐式转回 Apply(const char*) —— 任何符合标准的编译器都会报错。
+     * 显式取 c_str() 恢复原意（had_ 为 false 时传 nullptr 表示删除环境变量）。 */
+    ~ScopedEnvVar() { Apply(had_ ? saved_.c_str() : nullptr); }
     ScopedEnvVar(const ScopedEnvVar &) = delete;
     ScopedEnvVar &operator=(const ScopedEnvVar &) = delete;
 
@@ -1438,7 +1501,7 @@ TEST(InferenceEnvConfigTest, LoadModelWithEnvUnsetAndInvalid)
         ASSERT_EQ(kadd_inference_engine_load(&e, cfg, KADD_INFERENCE_TYPE_RF), KADD_SUCCESS)
             << "环境变量未设置时应回退默认线程数并成功加载";
         EXPECT_GT(kadd_inference_engine_get_feature_dim(e), 0);
-        kadd_inference_engine_free(e);
+        kadd_inference_engine_free(&e);
     }
     {
         ScopedEnvVar intra(KADD_ORT_INTRA_OP_ENV, "not_a_number");
@@ -1447,7 +1510,7 @@ TEST(InferenceEnvConfigTest, LoadModelWithEnvUnsetAndInvalid)
         ASSERT_EQ(kadd_inference_engine_load(&e, cfg, KADD_INFERENCE_TYPE_RF), KADD_SUCCESS)
             << "环境变量非法时应告警回退并成功加载";
         EXPECT_GT(kadd_inference_engine_get_feature_dim(e), 0);
-        kadd_inference_engine_free(e);
+        kadd_inference_engine_free(&e);
     }
 }
 
