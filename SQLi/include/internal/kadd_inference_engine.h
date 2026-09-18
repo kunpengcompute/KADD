@@ -43,7 +43,7 @@ typedef struct kadd_inference_engine_t kadd_inference_engine_t;
  * @return 0 成功，<0 失败（错误码）
  *
  * @note 加载完成后会执行一次预热推理
- * @note feature_dim 从模型文件自动读取
+ * @note feature_dim 从模型文件自动读取，加载期要求 1..4096
  *
  * @example
  * kadd_inference_engine_t *engine = NULL;
@@ -51,7 +51,7 @@ typedef struct kadd_inference_engine_t kadd_inference_engine_t;
  *     float features[28] = {...};
  *     float prob = 0.0f;
  *     kadd_inference_predict(engine, features, &prob);
- *     kadd_inference_engine_free(engine);
+ *     kadd_inference_engine_free(&engine);
  * }
  */
 int kadd_inference_engine_load(kadd_inference_engine_t **engine,
@@ -103,16 +103,19 @@ int kadd_inference_predict_batch(kadd_inference_engine_t *engine,
  * @brief 获取模型输入维度
  *
  * @param engine 推理引擎句柄
- * @return 输入维度，失败返回 -1
+ * @return 输入维度（>0）；engine 为 NULL 时返回 KADD_ERROR_NULL_PTR
  */
 int kadd_inference_engine_get_feature_dim(kadd_inference_engine_t *engine);
 
 /**
- * @brief 释放推理引擎
+ * @brief 释放推理引擎并清空调用者句柄
  *
- * @param engine 推理引擎句柄
+ * @param engine 推理引擎句柄指针的指针；释放成功后 *engine 为 NULL
+ *
+ * @note 传入 NULL 或「指向 NULL 句柄的地址」均为空操作，消除悬空句柄导致的
+ *       use-after-free / double-free
  */
-void kadd_inference_engine_free(kadd_inference_engine_t *engine);
+void kadd_inference_engine_free(kadd_inference_engine_t **engine);
 
 #ifdef __cplusplus
 }

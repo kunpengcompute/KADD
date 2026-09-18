@@ -54,7 +54,7 @@ int kadd_model_load(kadd_model_handle_t **handle, const char *model_path, int fe
                 fprintf(stderr,
                         "[kadd_ml] ERROR: feature_dim mismatch: user=%d, model=%d\n",
                         feature_dim, rf_dim);
-                kadd_rf_model_free(rf);
+                kadd_rf_model_free(&rf);
                 free(h);
                 return KADD_ERROR_INVALID_PARAM;
             }
@@ -82,7 +82,7 @@ int kadd_model_load(kadd_model_handle_t **handle, const char *model_path, int fe
         fprintf(stderr,
                 "[kadd_ml] ERROR: feature_dim mismatch: user=%d, model=%d\n",
                 feature_dim, onnx_dim);
-        kadd_inference_engine_free(h->onnx_engine);
+        kadd_inference_engine_free(&h->onnx_engine);
         free(h);
         return KADD_ERROR_INVALID_PARAM;
     }
@@ -122,18 +122,22 @@ int kadd_model_get_feature_dim(kadd_model_handle_t *handle)
     return handle->feature_dim;  /* load 时已设置，两种后端统一 */
 }
 
-void kadd_model_free(kadd_model_handle_t *handle)
+void kadd_model_free(kadd_model_handle_t **handle)
 {
-    if (!handle) return;
+    if (!handle || !*handle) return;
+
+    kadd_model_handle_t *h = *handle;
 
 #if KADD_HAVE_SVE
-    if (handle->backend == 1) {
-        kadd_rf_model_free(handle->rf_model);
-        free(handle);
+    if (h->backend == 1) {
+        kadd_rf_model_free(&h->rf_model);
+        free(h);
+        *handle = NULL;   /* 清空调用者句柄，消除 UAF / double-free */
         return;
     }
 #endif
 
-    kadd_inference_engine_free(handle->onnx_engine);
-    free(handle);
+    kadd_inference_engine_free(&h->onnx_engine);
+    free(h);
+    *handle = NULL;
 }

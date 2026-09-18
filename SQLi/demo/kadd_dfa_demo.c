@@ -65,7 +65,7 @@ int main()
 
     // 4. 清理
     printf("\n[4] 清理资源...\n");
-    kadd_dfa_engine_free(engine);
+    kadd_dfa_engine_free(&engine);
     kadd_config_free(&config);
     printf("✅ 完成\n");
 

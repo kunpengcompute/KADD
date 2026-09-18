@@ -92,8 +92,8 @@ protected:
         feat = to_features(tokens);
     }
     void TearDown() override {
-        kadd_rf_model_free(model);
-        kadd_dfa_engine_free(dfa);
+        kadd_rf_model_free(&model);
+        kadd_dfa_engine_free(&dfa);
     }
 };
 
@@ -183,6 +183,30 @@ TEST_F(RfEngineTest, PredictWithInfFeature) {
     f[0] = INFINITY;
     float prob = -1.0f;
     EXPECT_EQ(kadd_rf_model_predict(model, f.data(), &prob), KADD_ERROR_INVALID_PARAM);
+}
+
+// 覆盖 kadd_rf_model_predict_batch 非有限特征值检查
+// （SVE 原生后端与非 SVE 回退后端的返回码必须一致，且失败时不得写输出）
+TEST_F(RfEngineTest, PredictBatchWithNaNFeature) {
+    std::vector<float> features(3 * kFeatureDim, 0.5f);
+    std::vector<float> probs(3, -1.0f);          // 哨兵：校验失败时不得被覆盖
+    features[2 * kFeatureDim] = NAN;             // 非法值放在最后一个分片（batch_size=2）
+    EXPECT_EQ(kadd_rf_model_predict_batch(model, features.data(), 3,
+                                          probs.data(), 2), KADD_ERROR_INVALID_PARAM);
+    for (int i = 0; i < 3; ++i) {
+        EXPECT_EQ(probs[i], -1.0f) << "非法输入时不得写出任何概率";
+    }
+}
+
+TEST_F(RfEngineTest, PredictBatchWithInfFeature) {
+    std::vector<float> features(3 * kFeatureDim, 0.5f);
+    std::vector<float> probs(3, -1.0f);
+    features[kFeatureDim + 1] = INFINITY;        // 非法值放在第 2 行
+    EXPECT_EQ(kadd_rf_model_predict_batch(model, features.data(), 3,
+                                          probs.data(), 2), KADD_ERROR_INVALID_PARAM);
+    for (int i = 0; i < 3; ++i) {
+        EXPECT_EQ(probs[i], -1.0f) << "非法输入时不得写出任何概率";
+    }
 }
 
 // 覆盖 kadd_rf_model_predict_batch 无效样本数检查
@@ -410,7 +434,7 @@ TEST(RfHmacTest, SignedAssetLoadsWithDevKey) {
         << "仓库资产应已签名，且开发密钥应由 test_model_hmac_key.h 注入";
     ASSERT_NE(m, nullptr);
     EXPECT_GT(kadd_rf_model_get_feature_dim(m), 0);
-    kadd_rf_model_free(m);
+    kadd_rf_model_free(&m);
 }
 
 /* 已签名模型 + 未配置密钥 -> 拒绝（无法验证就不加载，fail-closed） */

@@ -433,7 +433,7 @@ int kadd_rf_model_load(kadd_rf_model_t **model_out, const char *model_path)
     model->tree_offsets = (uint32_t *)malloc(offsets_size);
     model->nodes = (kadd_rf_node_t *)malloc((size_t)node_count * sizeof(kadd_rf_node_t));
     if (!model->tree_offsets || !model->nodes) {
-        kadd_rf_model_free(model);
+        kadd_rf_model_free(&model);
         free(file_bytes);
         return KADD_ERROR_OUT_OF_MEMORY;
     }
@@ -443,7 +443,7 @@ int kadd_rf_model_load(kadd_rf_model_t **model_out, const char *model_path)
     }
     if (model->tree_offsets[0] != 0U ||
         model->tree_offsets[tree_count] != node_count) {
-        kadd_rf_model_free(model);
+        kadd_rf_model_free(&model);
         free(file_bytes);
         return KADD_ERROR_MODEL_LOAD_FAILED;
     }
@@ -463,14 +463,14 @@ int kadd_rf_model_load(kadd_rf_model_t **model_out, const char *model_path)
 
     for (uint32_t tree = 0; tree < tree_count; ++tree) {
         if (validate_tree(model, tree) != KADD_SUCCESS) {
-            kadd_rf_model_free(model);
+            kadd_rf_model_free(&model);
             return KADD_ERROR_MODEL_LOAD_FAILED;
         }
     }
 
 #if KADD_RF_HAVE_SVE
     if (prepare_sve_layout(model) != KADD_SUCCESS) {
-        kadd_rf_model_free(model);
+        kadd_rf_model_free(&model);
         return KADD_ERROR_OUT_OF_MEMORY;
     }
 #endif
@@ -489,20 +489,107 @@ int kadd_rf_model_load(kadd_rf_model_t **model_out, const char *model_path)
  * 数字，一旦改用 lcov 就会凭空挖掉真实覆盖。故删除，仅保留下方
  * predict_batch_scalar 那对准确标记（它确实仅在非 SVE 构建编译）。
  */
-static double predict_tree(const kadd_rf_model_t *model,
-                           uint32_t root,
-                           const float *features)
+static int predict_tree(const kadd_rf_model_t *model,
+                        uint32_t begin,
+                        uint32_t end,
+                        const float *features,
+                        double *positive_probability)
 {
-    uint32_t index = root;
-    for (;;) {
+    if (!model || !features || !positive_probability ||
+        begin >= end || end > model->node_count) {
+        return KADD_ERROR_MODEL_LOAD_FAILED;
+    }
+
+    uint32_t index = begin;
+    const uint32_t maximum_steps = end - begin;
+    for (uint32_t steps = 0U; steps < maximum_steps; ++steps) {
         const kadd_rf_node_t *node = &model->nodes[index];
         if (node->feature < 0) {
-            return node->positive_probability;
+            if (node->feature != -1 ||
+                !isfinite(node->positive_probability) ||
+                node->positive_probability < 0.0 ||
+                node->positive_probability > 1.0) {
+                return KADD_ERROR_MODEL_LOAD_FAILED;
+            }
+            *positive_probability = node->positive_probability;
+            return KADD_SUCCESS;
         }
-        index = ((double)features[node->feature] <= node->threshold)
-                    ? node->left
-                    : node->right;
+        if ((uint32_t)node->feature >= model->feature_count ||
+            !isfinite(node->threshold)) {
+            return KADD_ERROR_MODEL_LOAD_FAILED;
+        }
+
+        const uint32_t next_index =
+            ((double)features[node->feature] <= node->threshold)
+                ? node->left
+                : node->right;
+        if (next_index < begin || next_index >= end) {
+            return KADD_ERROR_MODEL_LOAD_FAILED;
+        }
+        index = next_index;
     }
+
+    /* 纵深防御：validate_tree() 已保证拓扑有序，正常模型不会到达这里。 */
+    return KADD_ERROR_MODEL_LOAD_FAILED;
+}
+
+/*
+ * 单样本树平均，不含输入校验。
+ * 调用方必须保证 features 的 feature_count 个元素均为有限值：
+ *   - kadd_rf_model_predict()（对外单样本接口）自带逐特征 isfinite 校验；
+ *   - predict_batch_scalar() / predict_batch_sve_chunk() 由批量入口
+ *     validate_batch_features() 统一校验，故无需逐行重复扫描。
+ */
+static int predict_sample(const kadd_rf_model_t *model,
+                          const float *features,
+                          float *positive_probability)
+{
+    double sum = 0.0;
+    for (uint32_t tree = 0; tree < model->tree_count; ++tree) {
+        double tree_probability = 0.0;
+        const int ret = predict_tree(model,
+                                     model->tree_offsets[tree],
+                                     model->tree_offsets[tree + 1U],
+                                     features,
+                                     &tree_probability);
+        if (ret != KADD_SUCCESS) {
+            return ret;
+        }
+        sum += tree_probability;
+    }
+    double probability = sum / (double)model->tree_count;
+    if (probability < 0.0) {
+        probability = 0.0;
+    } else if (probability > 1.0) {
+        probability = 1.0;
+    }
+    *positive_probability = (float)probability;
+    return KADD_SUCCESS;
+}
+
+/*
+ * 批量推理的特征有限性校验，与 kadd_dl_model_predict_batch() /
+ * kadd_inference_predict_batch() 同一约定：非法输入返回 INVALID_PARAM 且不写输出，
+ * SVE 与非 SVE 构建行为一致。先做溢出安全判断——feature_count 为 0 会除零，
+ * 32 位 size_t 上 sample_count * feature_count 回绕后只会扫描极小一段输入，
+ * 其余非法值将直接流入推理内核。加载路径已拒绝 feature_count == 0，此处为纵深防御。
+ */
+static int validate_batch_features(const kadd_rf_model_t *model,
+                                   const float *features,
+                                   int sample_count)
+{
+    const size_t feature_count = (size_t)model->feature_count;
+    if (feature_count == 0U ||
+        (size_t)sample_count > SIZE_MAX / feature_count) {
+        return KADD_ERROR_INVALID_PARAM;
+    }
+    const size_t total_features = (size_t)sample_count * feature_count;
+    for (size_t i = 0; i < total_features; ++i) {
+        if (!isfinite(features[i])) {
+            return KADD_ERROR_INVALID_PARAM;
+        }
+    }
+    return KADD_SUCCESS;
 }
 
 int kadd_rf_model_predict(const kadd_rf_model_t *model,
@@ -517,33 +604,31 @@ int kadd_rf_model_predict(const kadd_rf_model_t *model,
             return KADD_ERROR_INVALID_PARAM;
         }
     }
-    double sum = 0.0;
-    for (uint32_t tree = 0; tree < model->tree_count; ++tree) {
-        sum += predict_tree(model, model->tree_offsets[tree], features);
-    }
-    double probability = sum / (double)model->tree_count;
-    if (probability < 0.0) {
-        probability = 0.0;
-    } else if (probability > 1.0) {
-        probability = 1.0;
-    }
-    *positive_probability = (float)probability;
-    return KADD_SUCCESS;
+    return predict_sample(model, features, positive_probability);
 }
 
 // LCOV_EXCL_START: scalar fallback, only compiled when SVE is unavailable
 // (kept out of SVE builds so it does not appear as uncovered in coverage)
 #if !KADD_RF_HAVE_SVE
-static void predict_batch_scalar(const kadd_rf_model_t *model,
-                                 const float *features,
-                                 int sample_count,
-                                 float *probabilities)
+static int predict_batch_scalar(const kadd_rf_model_t *model,
+                                const float *features,
+                                int sample_count,
+                                float *probabilities)
 {
     for (int row = 0; row < sample_count; ++row) {
-        (void)kadd_rf_model_predict(model,
-                                    features + (size_t)row * model->feature_count,
-                                    &probabilities[row]);
+        /*
+         * 特征有限性已在批量入口统一校验，此处调用不含校验的 predict_sample()
+         * 避免逐行重复扫描；模型/拓扑错误须透传，不得丢弃。
+         */
+        const int ret = predict_sample(
+            model,
+            features + (size_t)row * model->feature_count,
+            &probabilities[row]);
+        if (ret != KADD_SUCCESS) {
+            return ret;
+        }
     }
+    return KADD_SUCCESS;
 }
 #endif  // !KADD_RF_HAVE_SVE
 // LCOV_EXCL_STOP
@@ -566,11 +651,11 @@ static void predict_batch_scalar(const kadd_rf_model_t *model,
  * [FIX 白盒-VLA] SVE 规范向量长度上限 2048bit，故 svcntw() ≤ 64。
  * lane_sums 原为 VLA（长度取自 svcntw() 运行时值），改为编译期
  * 定长数组；若运行在超出规范上限的实现上（正常不可达，定长数组
- * 放不下整条向量），防御性逐样本回退到 kadd_rf_model_predict。
+ * 放不下整条向量），防御性逐样本回退到 predict_sample()（错误码同样透传）。
  */
 #define KADD_RF_SVE_MAX_LANES 64u
 
-static void predict_batch_sve_chunk(const kadd_rf_model_t *model,
+static int predict_batch_sve_chunk(const kadd_rf_model_t *model,
                                     const float *features,
                                     int sample_count,
                                     float *probabilities)
@@ -578,12 +663,16 @@ static void predict_batch_sve_chunk(const kadd_rf_model_t *model,
     const double inverse_tree_count = 1.0 / (double)model->tree_count;
     if ((uint32_t)svcntw() > KADD_RF_SVE_MAX_LANES) {
         for (int row = 0; row < sample_count; ++row) {
-            (void)kadd_rf_model_predict(
+            /* 有限性已在批量入口统一校验，此处只透传模型/拓扑错误。 */
+            const int ret = predict_sample(
                 model,
                 features + (size_t)row * model->feature_count,
                 &probabilities[row]);
+            if (ret != KADD_SUCCESS) {
+                return ret;
+            }
         }
-        return;
+        return KADD_SUCCESS;
     }
     const uint32_t lane_capacity = (uint32_t)svcntw();
     const uint32_t f64_lane_capacity = (uint32_t)svcntd();
@@ -615,22 +704,11 @@ static void predict_batch_sve_chunk(const kadd_rf_model_t *model,
                 if (++traversal_steps > maximum_steps) {
                     /*
                      * 纵深防御，正常不可达：validate_tree() 已强制内部节点的
-                     * left/right 严格大于自身下标且落在 [begin, end) 内，
-                     * 树内不可能成环，最长路径不超过 maximum_steps - 1 步。
-                     *
-                     * 此处原为 "#if !KADD_RF_HAVE_SVE → predict_batch_scalar"，
-                     * 但本函数整体已在 #if KADD_RF_HAVE_SVE 内，取反后恒不成立、
-                     * 任何构建都编不进来；且 predict_batch_scalar 仅在
-                     * #if !KADD_RF_HAVE_SVE 内定义，SVE 构建下并不存在。
-                     * 若剔除矛盾守卫后只裸 return，本 chunk 的 probabilities
-                     * 将一个都不写，而 kadd_rf_model_predict_batch() 仍返回
-                     * KADD_SUCCESS —— 静默输出未初始化脏数据（fail-open）。
-                     * 现改为确定性写 0.0F 后返回（fail-safe），可达路径行为不变。
+                     * left/right 严格大于自身下标且落在 [begin, end) 内，树内不可能
+                     * 成环。返回 MODEL_LOAD_FAILED 并由批量入口透传（fail-closed），
+                     * 调用方须丢弃整个输出缓冲区。
                      */
-                    for (int idx = 0; idx < sample_count; ++idx) {
-                        probabilities[idx] = 0.0F;
-                    }
-                    return;
+                    return KADD_ERROR_MODEL_LOAD_FAILED;
                 }
 
                 const svuint32_t feature =
@@ -699,6 +777,8 @@ static void predict_batch_sve_chunk(const kadd_rf_model_t *model,
             probabilities[row + lane] = (float)probability;
         }
     }
+
+    return KADD_SUCCESS;
 }
 #endif
 
@@ -715,6 +795,15 @@ int kadd_rf_model_predict_batch(const kadd_rf_model_t *model,
         sample_count > KADD_RF_MAX_SAMPLE_COUNT ) {
         return KADD_ERROR_INVALID_PARAM;
     }
+    /*
+     * 入口统一校验整批特征的有限性：非有限特征返回 INVALID_PARAM 且不写任何输出，
+     * 两种构建行为一致。
+     */
+    const int validation =
+        validate_batch_features(model, features, sample_count);
+    if (validation != KADD_SUCCESS) {
+        return validation;
+    }
     int effective_batch = batch_size;
     if (effective_batch <= 0 || effective_batch > KADD_RF_MAX_BATCH_SIZE) {
         effective_batch = KADD_RF_DEFAULT_BATCH_SIZE;
@@ -726,35 +815,43 @@ int kadd_rf_model_predict_batch(const kadd_rf_model_t *model,
         const float *chunk_features =
             features + (size_t)begin * model->feature_count;
 #if KADD_RF_HAVE_SVE
-        predict_batch_sve_chunk(model,
-                                chunk_features,
-                                count,
-                                positive_probabilities + begin);
+        const int ret = predict_batch_sve_chunk(model,
+                                                chunk_features,
+                                                count,
+                                                positive_probabilities + begin);
 #else
-        predict_batch_scalar(model,
-                             chunk_features,
-                             count,
-                             positive_probabilities + begin);
+        const int ret = predict_batch_scalar(model,
+                                             chunk_features,
+                                             count,
+                                             positive_probabilities + begin);
 #endif
+        /* 透传模型/拓扑错误（fail-closed）：返回非 SUCCESS 时整个输出缓冲区不可用。 */
+        if (ret != KADD_SUCCESS) {
+            return ret;
+        }
     }
     return KADD_SUCCESS;
 }
 
-void kadd_rf_model_free(kadd_rf_model_t *model)
+void kadd_rf_model_free(kadd_rf_model_t **model)
 {
-    if (!model) {
+    if (!model || !*model) {
         return;
     }
+    kadd_rf_model_t *handle = *model;
 #if KADD_RF_HAVE_SVE
-    free(model->sve_features);
-    free(model->sve_left);
-    free(model->sve_right);
-    free(model->sve_thresholds);
-    free(model->sve_probabilities);
+    free(handle->sve_features);
+    free(handle->sve_left);
+    free(handle->sve_right);
+    free(handle->sve_thresholds);
+    free(handle->sve_probabilities);
 #endif
-    free(model->tree_offsets);
-    free(model->nodes);
-    free(model);
+    free(handle->tree_offsets);
+    free(handle->nodes);
+    free(handle);
+    /* 清空调用者句柄：悬空句柄再被使用时，各入口的判空会返回
+     * KADD_ERROR_NULL_PTR，而不是 use-after-free / double-free。 */
+    *model = NULL;
 }
 
 int kadd_rf_model_get_feature_dim(const kadd_rf_model_t *model)

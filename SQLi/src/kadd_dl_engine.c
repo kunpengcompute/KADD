@@ -67,7 +67,7 @@ int kadd_dl_model_load(kadd_dl_model_t **model_out, const char *model_path, int 
                 fprintf(stderr,
                         "[kadd_dl] ERROR: feature_dim mismatch: user=%d, model=%d\n",
                         feature_dim, cnn_dim);
-                kadd_cnn_model_free(cnn);
+                kadd_cnn_model_free(&cnn);
                 free(h);
                 return KADD_ERROR_INVALID_PARAM;
             }
@@ -94,7 +94,7 @@ int kadd_dl_model_load(kadd_dl_model_t **model_out, const char *model_path, int 
         fprintf(stderr,
                 "[kadd_dl] ERROR: feature_dim mismatch: user=%d, model=%d\n",
                 feature_dim, onnx_dim);
-        kadd_inference_engine_free(h->onnx_engine);
+        kadd_inference_engine_free(&h->onnx_engine);
         free(h);
         return KADD_ERROR_INVALID_PARAM;
     }
@@ -157,18 +157,22 @@ int kadd_dl_model_get_feature_dim(kadd_dl_model_t *model)
     return model->feature_dim;
 }
 
-void kadd_dl_model_free(kadd_dl_model_t *model)
+void kadd_dl_model_free(kadd_dl_model_t **model)
 {
-    if (!model) return;
+    if (!model || !*model) return;
+
+    kadd_dl_model_t *handle = *model;
 
 #if KADD_HAVE_SVE
-    if (model->backend == 1) {
-        kadd_cnn_model_free(model->cnn_model);
-        free(model);
+    if (handle->backend == 1) {
+        kadd_cnn_model_free(&handle->cnn_model);
+        free(handle);
+        *model = NULL;
         return;
     }
 #endif
 
-    kadd_inference_engine_free(model->onnx_engine);
-    free(model);
+    kadd_inference_engine_free(&handle->onnx_engine);
+    free(handle);
+    *model = NULL;
 }

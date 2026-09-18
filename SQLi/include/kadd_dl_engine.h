@@ -48,8 +48,11 @@ int kadd_dl_model_predict_batch(kadd_dl_model_t *model, const float *inputs,
 /** @brief 获取输入维度（CNN: 300；ONNX: 从模型读取） */
 int kadd_dl_model_get_feature_dim(kadd_dl_model_t *model);
 
-/** @brief 释放模型 */
-void kadd_dl_model_free(kadd_dl_model_t *model);
+/**
+ * @brief 释放模型并清空调用者句柄
+ * @param model 模型句柄指针的指针；释放成功后 *model 为 NULL
+ */
+void kadd_dl_model_free(kadd_dl_model_t **model);
 
 #ifdef __cplusplus
 }

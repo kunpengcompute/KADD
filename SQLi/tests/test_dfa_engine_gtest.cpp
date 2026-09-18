@@ -56,7 +56,7 @@ protected:
     {
         // 每个测试后释放引擎
         if (engine) {
-            kadd_dfa_engine_free(engine);
+            kadd_dfa_engine_free(&engine);
             engine = nullptr;
         }
     }
@@ -1063,7 +1063,7 @@ TEST_F(DFAEngineTest, Free_Engine)
     EXPECT_NO_THROW(kadd_dfa_engine_free(nullptr));
 
     // 2. 释放 SetUp 中创建的有效引擎
-    EXPECT_NO_THROW(kadd_dfa_engine_free(engine));
+    EXPECT_NO_THROW(kadd_dfa_engine_free(&engine));
     engine = nullptr;  // 避免 TearDown 再次释放
 
     // 3. 再次释放 NULL 指针仍然安全

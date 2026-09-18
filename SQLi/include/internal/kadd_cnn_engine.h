@@ -39,7 +39,16 @@ int kadd_cnn_model_predict_batch(const kadd_cnn_model_t *model,
 
 int kadd_cnn_model_get_feature_dim(const kadd_cnn_model_t *model);
 
-void kadd_cnn_model_free(kadd_cnn_model_t *model);
+/**
+ * Free a model and clear the caller's handle.
+ *
+ * @param model Address of the caller's handle. *model is set to NULL once the
+ *              model has been released. Passing NULL, or the address of a NULL
+ *              handle, is a no-op, so a stale handle degrades into
+ *              KADD_ERROR_NULL_PTR at the next entry point instead of a
+ *              use-after-free or a double free.
+ */
+void kadd_cnn_model_free(kadd_cnn_model_t **model);
 
 #ifdef __cplusplus
 }

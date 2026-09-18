@@ -151,7 +151,10 @@ class KaddEngine:
             ctypes.c_void_p, ctypes.c_char_p, ctypes.c_size_t,
             ctypes.POINTER(ctypes.c_int), ctypes.POINTER(ctypes.c_int)]
         self.dfa_lib.kadd_dfa_engine_tokenize.restype = ctypes.c_int
-        self.dfa_lib.kadd_dfa_engine_free.argtypes = [ctypes.c_void_p]
+        # kadd_dfa_engine_free 的签名为 (kadd_dfa_engine_t **)：需传句柄变量的地址，
+        # C 侧释放后会把该变量写回 NULL（消除悬空句柄）
+        self.dfa_lib.kadd_dfa_engine_free.argtypes = [
+            ctypes.POINTER(ctypes.c_void_p)]
 
         # ----- 加载 Feature 引擎库 -----
         self.feat_lib = ctypes.CDLL(feature_so_path)
@@ -241,9 +244,13 @@ class KaddEngine:
 
     def close(self):
         """释放 DFA 引擎资源"""
-        if hasattr(self, '_dfa_eng') and self._dfa_eng:
-            self.dfa_lib.kadd_dfa_engine_free(self._dfa_eng)
-            self._dfa_eng = None
+        # 传句柄变量地址（byref），而不是句柄本身；释放后 _dfa_eng 复位为
+        # NULL 的 c_void_p 对象（而非 None），使 close()/__del__ 可重复调用
+        # 且不会出现 byref(None) 的 TypeError。
+        if getattr(self, '_dfa_eng', None) is not None and self._dfa_eng.value:
+            self.dfa_lib.kadd_dfa_engine_free(ctypes.byref(self._dfa_eng))
+        if hasattr(self, '_dfa_eng'):
+            self._dfa_eng = ctypes.c_void_p()
 
     def __del__(self):
         self.close()

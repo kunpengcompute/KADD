@@ -219,14 +219,14 @@ static int create_engine_internal(kadd_sqli_engine_t **engine,
                         config->model_rf_onnx);
                 if (kadd_model_load(&e->ml_model, config->model_rf_onnx, e->feature_dim) != 0) {
                     fprintf(stderr, "[kadd_sqli] ERROR: Failed to load ML model (both native and ONNX)\n");
-                    kadd_dfa_engine_free(e->dfa_engine);
+                    kadd_dfa_engine_free(&e->dfa_engine);
                     release_engine_buffers(e);
                     free(e);
                     return KADD_ERROR_MODEL_LOAD_FAILED;
                 }
             } else {
                 fprintf(stderr, "[kadd_sqli] ERROR: Failed to load ML model: %s\n", model_path);
-                kadd_dfa_engine_free(e->dfa_engine);
+                kadd_dfa_engine_free(&e->dfa_engine);
                 release_engine_buffers(e);
                 free(e);
                 return KADD_ERROR_MODEL_LOAD_FAILED;
@@ -237,7 +237,7 @@ static int create_engine_internal(kadd_sqli_engine_t **engine,
         const char *model_path = (strlen(config->model_rf_onnx) > 0) ? config->model_rf_onnx : config->model_rf;
         if (kadd_model_load(&e->ml_model, model_path, e->feature_dim) != 0) {
             fprintf(stderr, "[kadd_sqli] ERROR: Failed to load ML model: %s\n", model_path);
-            kadd_dfa_engine_free(e->dfa_engine);
+            kadd_dfa_engine_free(&e->dfa_engine);
             release_engine_buffers(e);
             free(e);
             return KADD_ERROR_MODEL_LOAD_FAILED;
@@ -264,14 +264,14 @@ static int create_engine_internal(kadd_sqli_engine_t **engine,
                         config->model_cnn_onnx);
                 if (kadd_dl_model_load(&e->dl_model, config->model_cnn_onnx, 0) != 0) {
                     fprintf(stderr, "[kadd_sqli] ERROR: Failed to load DL model (both native and ONNX)\n");
-                    kadd_dfa_engine_free(e->dfa_engine);
+                    kadd_dfa_engine_free(&e->dfa_engine);
                     release_engine_buffers(e);
                     free(e);
                     return KADD_ERROR_MODEL_LOAD_FAILED;
                 }
             } else {
                 fprintf(stderr, "[kadd_sqli] ERROR: Failed to load DL model: %s\n", model_path);
-                kadd_dfa_engine_free(e->dfa_engine);
+                kadd_dfa_engine_free(&e->dfa_engine);
                 release_engine_buffers(e);
                 free(e);
                 return KADD_ERROR_MODEL_LOAD_FAILED;
@@ -282,7 +282,7 @@ static int create_engine_internal(kadd_sqli_engine_t **engine,
         const char *model_path = (strlen(config->model_cnn_onnx) > 0) ? config->model_cnn_onnx : config->model_cnn;
         if (kadd_dl_model_load(&e->dl_model, model_path, 0) != 0) {
             fprintf(stderr, "[kadd_sqli] ERROR: Failed to load DL model: %s\n", model_path);
-            kadd_dfa_engine_free(e->dfa_engine);
+            kadd_dfa_engine_free(&e->dfa_engine);
             release_engine_buffers(e);
             free(e);
             return KADD_ERROR_MODEL_LOAD_FAILED;
@@ -601,27 +601,28 @@ int kadd_sqli_detect_batch(kadd_sqli_engine_t *engine, const char **inputs, int 
 }
 
 // 释放引擎
-void kadd_sqli_engine_free(kadd_sqli_engine_t *engine)
+void kadd_sqli_engine_free(kadd_sqli_engine_t **engine)
 {
-    if (!engine) {
+    if (!engine || !*engine) {
         return;
     }
+    kadd_sqli_engine_t *handle = *engine;
 
-    if (engine->ml_model) {
-        kadd_model_free(engine->ml_model);
-        engine->ml_model = NULL;
+    /* 子句柄由各自的 free 负责置空（均为二级指针），此处不再手写 = NULL */
+    if (handle->ml_model) {
+        kadd_model_free(&handle->ml_model);
     }
-    if (engine->dl_model) {
-        kadd_dl_model_free(engine->dl_model);
-        engine->dl_model = NULL;
+    if (handle->dl_model) {
+        kadd_dl_model_free(&handle->dl_model);
     }
-    if (engine->dfa_engine) {
-        kadd_dfa_engine_free(engine->dfa_engine);
-        engine->dfa_engine = NULL;
+    if (handle->dfa_engine) {
+        kadd_dfa_engine_free(&handle->dfa_engine);
     }
 
     /* 释放内存池 */
-    release_engine_buffers(engine);
+    release_engine_buffers(handle);
 
-    free(engine);
+    free(handle);
+    /* 清空调用者句柄，消除悬空句柄导致的 UAF / double-free */
+    *engine = NULL;
 }

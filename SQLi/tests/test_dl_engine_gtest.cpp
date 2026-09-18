@@ -202,7 +202,7 @@ static kadd_sqli_engine_t *CreateDLEngine()
     int ret = kadd_sqli_engine_create_from_file(&engine, path);
     remove(path);
     if (ret != KADD_SUCCESS || !engine) {
-        kadd_sqli_engine_free(engine);
+        kadd_sqli_engine_free(&engine);
         return nullptr;
     }
     return engine;
@@ -240,7 +240,7 @@ TEST(DLEngineTest, TC001_CNN_NormalDetection)
     EXPECT_GT(prob_or, prob_normal)
         << "OR injection should score higher than normal SQL";
 
-    kadd_sqli_engine_free(engine);
+    kadd_sqli_engine_free(&engine);
 }
 
 /* ========== TC002: CNN 引擎入参校验与异常处理验证 ========== */
@@ -260,7 +260,7 @@ TEST(DLEngineTest, TC002_NullParameterChecks)
 
     // kadd_sqli_detect: NULL probability
     EXPECT_EQ(kadd_sqli_detect(engine, "SELECT 1", nullptr), KADD_ERROR_NULL_PTR);
-    kadd_sqli_engine_free(engine);
+    kadd_sqli_engine_free(&engine);
 
     // kadd_dl_model_load: NULL model ptr
     EXPECT_EQ(kadd_dl_model_load(nullptr, CnnModelPath(), 0), KADD_ERROR_NULL_PTR);
@@ -278,7 +278,8 @@ TEST(DLEngineTest, TC002_NullParameterChecks)
     if (ret == KADD_SUCCESS && dl) {
         EXPECT_EQ(kadd_dl_model_predict(dl, nullptr, &prob), KADD_ERROR_NULL_PTR);
         EXPECT_EQ(kadd_dl_model_predict(dl, dummy, nullptr), KADD_ERROR_NULL_PTR);
-        kadd_dl_model_free(dl);
+        kadd_dl_model_free(&dl);
+        EXPECT_EQ(dl, nullptr);
     }
 }
 
@@ -316,7 +317,7 @@ TEST(DLEngineTest, TC003_InputLengthBoundary)
     EXPECT_GE(prob, 0.0f);
     EXPECT_LE(prob, 1.0f);
 
-    kadd_sqli_engine_free(engine);
+    kadd_sqli_engine_free(&engine);
 }
 
 /* ========== TC004: RF 引擎正常 SQL 注入检测功能验证 ========== */
@@ -341,7 +342,7 @@ TEST(DLEngineTest, TC004_RF_NormalDetection)
     EXPECT_GT(prob_or, prob_normal)
         << "OR injection should score higher than normal SQL";
 
-    kadd_sqli_engine_free(engine);
+    kadd_sqli_engine_free(&engine);
 }
 
 /* ========== TC007: 批量检测接口功能验证 ========== */
@@ -381,7 +382,7 @@ TEST(DLEngineTest, TC007_BatchDetection)
             << "Batch result differs from single at index " << i;
     }
 
-    kadd_sqli_engine_free(engine);
+    kadd_sqli_engine_free(&engine);
 }
 
 /* ========== TC008: batch_size 参数边界值处理验证 ========== */
@@ -412,7 +413,7 @@ TEST(DLEngineTest, TC008_BatchSizeBoundary)
     ret = kadd_dl_model_predict_batch(model, input300, 1, &p, 0);
     EXPECT_EQ(ret, KADD_SUCCESS);
 
-    kadd_dl_model_free(model);
+    kadd_dl_model_free(&model);
 
     // kadd_sqli_detect_batch: count=0
     kadd_sqli_engine_t *engine = CreateMLEngine();
@@ -421,7 +422,7 @@ TEST(DLEngineTest, TC008_BatchSizeBoundary)
     float bp[2] = {0};
     EXPECT_EQ(kadd_sqli_detect_batch(engine, inputs, 0, bp, 1),
               KADD_ERROR_INVALID_PARAM);
-    kadd_sqli_engine_free(engine);
+    kadd_sqli_engine_free(&engine);
 }
 
 /* ========== TC009: config 后端选择优先级验证 ========== */
@@ -449,7 +450,7 @@ TEST(DLEngineTest, TC009_ConfigBackendPriority)
         kadd_sqli_engine_t *engine = nullptr;
         int ret = kadd_sqli_engine_create_from_file(&engine, tmp);
         EXPECT_EQ(ret, KADD_SUCCESS);
-        if (ret == KADD_SUCCESS) kadd_sqli_engine_free(engine);
+        if (ret == KADD_SUCCESS) kadd_sqli_engine_free(&engine);
     }
 
     // 仅 model_rf（ML 模式默认）→ ML 后端
@@ -470,7 +471,7 @@ TEST(DLEngineTest, TC009_ConfigBackendPriority)
         kadd_sqli_engine_t *engine = nullptr;
         int ret = kadd_sqli_engine_create_from_file(&engine, tmp);
         EXPECT_EQ(ret, KADD_SUCCESS);
-        if (ret == KADD_SUCCESS) kadd_sqli_engine_free(engine);
+        if (ret == KADD_SUCCESS) kadd_sqli_engine_free(&engine);
     }
 
     // 无模型 key → 失败
@@ -486,7 +487,7 @@ TEST(DLEngineTest, TC009_ConfigBackendPriority)
         kadd_sqli_engine_t *engine = nullptr;
         int ret = kadd_sqli_engine_create_from_file(&engine, tmp);
         EXPECT_NE(ret, KADD_SUCCESS);
-        kadd_sqli_engine_free(engine);
+        kadd_sqli_engine_free(&engine);
     }
     remove(tmp);
 }
@@ -629,7 +630,7 @@ TEST(DLEngineTest, TC014_InferenceErrorCodes)
     EXPECT_EQ(kadd_dl_model_predict(model, frac_input, &prob),
               KADD_ERROR_INVALID_PARAM);
 
-    kadd_dl_model_free(model);
+    kadd_dl_model_free(&model);
 }
 
 /* ========== TC015: 生命周期完整性验证 ========== */
@@ -649,10 +650,11 @@ TEST(DLEngineTest, TC015_Lifecycle)
     EXPECT_EQ(ret, KADD_SUCCESS);
     EXPECT_GE(prob, 0.0f);
     EXPECT_LE(prob, 1.0f);
-    kadd_dl_model_free(model);
+    kadd_dl_model_free(&model);
+    EXPECT_EQ(model, nullptr) << "释放后必须清空调用者句柄";
 
     // free(NULL) 是空操作
-    kadd_dl_model_free(nullptr);
+    kadd_dl_model_free(&model);
 
     // 再次 load
     ret = kadd_dl_model_load(&model, CnnModelPath(), 0);
@@ -660,7 +662,8 @@ TEST(DLEngineTest, TC015_Lifecycle)
     ASSERT_NE(model, nullptr);
     ret = kadd_dl_model_predict(model, input, &prob);
     EXPECT_EQ(ret, KADD_SUCCESS);
-    kadd_dl_model_free(model);
+    kadd_dl_model_free(&model);
+    EXPECT_EQ(model, nullptr);
 }
 
 /* ========== TC020: 引擎释放与资源管理验证 ========== */
@@ -669,11 +672,11 @@ TEST(DLEngineTest, TC020_ResourceManagement)
 {
     // ML 引擎释放
     kadd_sqli_engine_t *engine = CreateMLEngine();
-    if (engine) kadd_sqli_engine_free(engine);
+    if (engine) kadd_sqli_engine_free(&engine);
 
     // DL 引擎释放
     engine = CreateDLEngine();
-    if (engine) kadd_sqli_engine_free(engine);
+    if (engine) kadd_sqli_engine_free(&engine);
 
     // free(NULL) 空操作
     kadd_sqli_engine_free(nullptr);
@@ -681,7 +684,7 @@ TEST(DLEngineTest, TC020_ResourceManagement)
     // load 失败后 free
     engine = nullptr;
     kadd_sqli_engine_create_from_file(&engine, "/nonexistent/config.json");
-    kadd_sqli_engine_free(engine);
+    kadd_sqli_engine_free(&engine);
 }
 
 /* ========== TC029: 模型文件 CRC32 防篡改校验验证 ========== */
@@ -913,7 +916,7 @@ TEST(DLEngineTest, TC030_CnnHmacAuthentication)
         EXPECT_NE(model, nullptr);
         if (model != nullptr) {
             EXPECT_GT(kadd_cnn_model_get_feature_dim(model), 0);
-            kadd_cnn_model_free(model);
+            kadd_cnn_model_free(&model);
         }
     }
 
@@ -1023,6 +1026,6 @@ TEST(DLEngineTest, OnnxBackend_Lifecycle)
     EXPECT_GE(prob, 0.0f);
     EXPECT_LE(prob, 1.0f);
 
-    kadd_dl_model_free(model);
-    model = nullptr;
+    kadd_dl_model_free(&model);
+    EXPECT_EQ(model, nullptr);
 }

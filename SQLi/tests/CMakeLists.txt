@@ -378,6 +378,22 @@ set_tests_properties(rf_engine_gtest PROPERTIES
     ENVIRONMENT "LD_LIBRARY_PATH=${CMAKE_BINARY_DIR}/src:$ENV{LD_LIBRARY_PATH}"
 )
 
+# RF 内部防御性测试（包含 kadd_rf_engine.c，可构造绕过文件校验的异常拓扑）
+add_executable(rf_internal_gtest test_rf_internal_gtest.cpp)
+target_compile_features(rf_internal_gtest PRIVATE cxx_std_17)
+target_include_directories(rf_internal_gtest PRIVATE
+    ${CMAKE_SOURCE_DIR}/include ${CMAKE_SOURCE_DIR}/include/internal ${CMAKE_SOURCE_DIR}/src)
+if(TARGET gtest_main)
+    target_link_libraries(rf_internal_gtest PRIVATE gtest_main)
+elseif(GTest_FOUND)
+    target_link_libraries(rf_internal_gtest PRIVATE GTest::gtest_main)
+endif()
+target_link_libraries(rf_internal_gtest PRIVATE pthread)
+add_test(NAME rf_internal_gtest COMMAND rf_internal_gtest)
+set_tests_properties(rf_internal_gtest PROPERTIES
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/tests
+)
+
 # 错误路径测试（与 FUZZ 共享 tests/error_paths_cases.inc，
 # 覆盖 config/dfa/feature/rf/cnn/dl/sqli 的校验、解析、认证失败与回退分支）
 add_kadd_gtest(error_paths_test test_error_paths_gtest.cpp)
