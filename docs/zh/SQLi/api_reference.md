@@ -15,7 +15,7 @@ KADD SQL注入检测引擎提供以下模块：
 
 ### 处理流程
 
-SQL注入检测引擎运行会按照以下流程图处理输入：
+SQL注入检测引擎运行时会按照以下流程图处理输入：
 
 ![sqli](../../figures/SQLi/sqli.png)
 
@@ -86,8 +86,8 @@ int kadd_sqli_detect(kadd_sqli_engine_t *engine, const char *input, float *proba
 **函数接口**
 
 ```c
-int kadd_sqli_detect_batch(kadd_sqli_engine_t *engine, const char **inputs, int count,
-                           float *probabilities, int batch_size);
+int kadd_sqli_detect_batch(kadd_sqli_engine_t *engine, const char **inputs,
+                           int count, float *probabilities, int batch_size);
 ```
 
 **参数**
@@ -258,7 +258,8 @@ int kadd_model_load(kadd_model_handle_t **handle, const char *model_path, int fe
 **函数接口**
 
 ```c
-int kadd_model_predict(kadd_model_handle_t *handle, const float *features, float *probability);
+int kadd_model_predict(kadd_model_handle_t *handle,
+                       const float *features, float *probability);
 ```
 
 **参数**
