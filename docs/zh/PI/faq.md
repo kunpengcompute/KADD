@@ -235,7 +235,7 @@ python train/train.py
 | warmup_rate | 0.03 | 预热比例     |
 | dropout     | 0    | Dropout率 |
 
-# 修订记录
+## 修订记录
 
 | 文档版本 | 发布日期       | 修改说明    |
 | ---- | ---------- | ------- |

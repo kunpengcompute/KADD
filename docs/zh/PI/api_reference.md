@@ -221,7 +221,7 @@ except KpDetectionException as e:
 | 黑白名单数据 | `algorithm/knowledge_base/blackwhitelist/blackwhitelist.json` |
 | 模型文件   | `algorithm/knowledge_base/model_file/clf_model.onnx`          |
 
-# 修订记录
+## 修订记录
 
 | 文档版本 | 发布日期 | 修改说明 |
 | -------- | -------- | -------- |

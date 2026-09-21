@@ -309,7 +309,7 @@ pip install -r /path/PI/deploy/requirements.txt
 
 #### 步骤 4：配置环境变量（仅鲲鹏处理器需要）
 
-**使用鲲鹏920处理器 / 鲲鹏920新型号处理器（加速库20）时，需配置以下 3 项：**
+**使用鲲鹏920处理器 / 鲲鹏920新型号处理器（加速库20）时，需配置以下 2 项：**
 
 1. 安装[SRA_Inference](https://www.hikunpeng.com/document/detail/zh/boostsra/srainference/SRA_Inference/kunpengsra_inference_16_0006.html)。若部署机与编译加速库的机器为同一台，则无需再安装。
 
@@ -363,7 +363,7 @@ numactl --cpunodebind=0 --membind=0 python 脚本名称.py
 dnf install -y numactl
 ```
 
-# 修订记录
+## 修订记录
 
 | 文档版本 | 发布日期       | 修改说明    |
 | ---- | ---------- | ------- |

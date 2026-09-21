@@ -141,7 +141,7 @@ python train/train.py
 numactl --cpunodebind=0 --membind=0 python 测试脚本.py
 ```
 
-# 修订记录
+## 修订记录
 
 | 文档版本 | 发布日期 | 修改说明 |
 | -------- | -------- | -------- |
