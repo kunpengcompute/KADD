@@ -27,7 +27,7 @@ export KADD_MODEL_HMAC_KEY=74fab58d87dc235ee049b6faf21b44825dba1d9dc05bbc14aeded
 source /opt/KADD/SQLi/build/kadd_env.sh
 ```
 
-![](../../public_sys-resources/icon-note.gif) **说明：**
+![说明图标](../../public_sys-resources/icon-note.gif) **说明：**
 
 - 上面的密钥是仓库自带的**公开开发密钥**，仓库内模型正是用它签名的，仅用于构建、测试与功能体验，不具备保密性。
 - 未注入密钥时，原生模型会被拒绝加载并在stderr打印ERROR，随后回退ONNX（丢失SVE加速）；若`config.json`只配置了原生模型，或程序直接调用`kadd_rf_model_load()`/`kadd_cnn_model_load()`，则加载失败。

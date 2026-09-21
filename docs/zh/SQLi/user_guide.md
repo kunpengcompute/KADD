@@ -61,14 +61,17 @@ export KADD_MODEL_HMAC_KEY=74fab58d87dc235ee049b6faf21b44825dba1d9dc05bbc14aeded
 source /opt/KADD/SQLi/build/kadd_env.sh
 ```
 
-![](../../public_sys-resources/icon-note.gif) **说明：**
+![说明图标](../../public_sys-resources/icon-note.gif) **说明：**
 
 - 上面的密钥是仓库自带的公开**开发密钥**，仅用于构建、测试与功能体验；生产部署必须用自有密钥通过`tools/rf_sign/rf_sign.py`重新签名模型，并经KMS或受限权限的env文件注入。
 - 未注入密钥时，原生模型会被拒绝加载并在stderr打印ERROR，随后回退ONNX（丢失SVE加速）；直接调用`kadd_rf_model_load()`/`kadd_cnn_model_load()`的程序则加载失败。
 
 ### 性能调优：ONNX Runtime线程数
 
-回退到ONNX Runtime时，引擎在创建session时已显式设置`intra_op=8`、`inter_op=1`。原因是模型很小（batch≤64、feature_dim=300），ONNX Runtime默认按物理核数开线程，线程派发与同步开销远超算子计算本身，实测CNN批量吞吐只有约1.6千samples/sec；固定为8/1后恢复到约1.4万-1.8万samples/sec。
+回退到ONNX Runtime时，引擎在创建session时已显式设置`intra_op=8`、`inter_op=1`，原因如下：
+
+- 模型很小（batch≤64、feature_dim=300），ONNX Runtime默认按物理核数开线程，线程派发与同步开销远超算子计算本身。
+- 实测CNN批量吞吐只有约1.6千samples/sec；固定为8/1后恢复到约1.4万-1.8万samples/sec。
 
 如需按机型调优，可用环境变量覆盖，无需重新编译：
 
@@ -77,7 +80,7 @@ export KADD_ORT_INTRA_OP_THREADS=8   # 取值1-1024，非法值忽略并回退�
 export KADD_ORT_INTER_OP_THREADS=1   # 取值1-1024，非法值忽略并回退默认1
 ```
 
-![](../../public_sys-resources/icon-note.gif) **说明：**
+![说明图标](../../public_sys-resources/icon-note.gif) **说明：**
 
 - 线程数只影响性能，不影响检测结果；取值非法时仅打印WARN并沿用默认值，不会导致模型加载失败。
 - 环境变量在创建引擎实例时读取，修改后需重新创建引擎才生效。
@@ -158,7 +161,8 @@ int main() {
 
     ```bash
     export LD_LIBRARY_PATH=/opt/KADD/SQLi/build/src:/opt/KADD/SQLi/util/onnxruntime-linux-aarch64-1.28.0/lib:$LD_LIBRARY_PATH
-    export KADD_MODEL_HMAC_KEY=74fab58d87dc235ee049b6faf21b44825dba1d9dc05bbc14aeded49cb211a1db   # 开发密钥，生产环境请替换为自有密钥
+    # 开发密钥，生产环境请替换为自有密钥
+    export KADD_MODEL_HMAC_KEY=74fab58d87dc235ee049b6faf21b44825dba1d9dc05bbc14aeded49cb211a1db
     ./web_detection_app
     ```
 
@@ -192,7 +196,8 @@ int main() {
 
 int main() {
     kadd_sqli_engine_t *engine = NULL;
-    if (kadd_sqli_engine_create_from_file(&engine, "/opt/KADD/SQLi/config.json") != KADD_SUCCESS) {
+    if (kadd_sqli_engine_create_from_file(&engine, "/opt/KADD/SQLi/config.json")
+            != KADD_SUCCESS) {
         return -1;
     }
 
@@ -240,7 +245,8 @@ int main() {
 
     ```bash
     export LD_LIBRARY_PATH=/opt/KADD/SQLi/build/src:/opt/KADD/SQLi/util/onnxruntime-linux-aarch64-1.28.0/lib:$LD_LIBRARY_PATH
-    export KADD_MODEL_HMAC_KEY=74fab58d87dc235ee049b6faf21b44825dba1d9dc05bbc14aeded49cb211a1db   # 开发密钥，生产环境请替换为自有密钥
+    # 开发密钥，生产环境请替换为自有密钥
+    export KADD_MODEL_HMAC_KEY=74fab58d87dc235ee049b6faf21b44825dba1d9dc05bbc14aeded49cb211a1db
     ./log_analysis_app
     ```
 
