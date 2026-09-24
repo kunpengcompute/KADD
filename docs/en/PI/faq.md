@@ -1,114 +1,116 @@
 # FAQs
 
-This document describes the frequently asked questions (FAQs) and solutions related to the KADD PI (Prompt Injection, jailbreak text detection)feature.
+<!-- md-trans-meta sourceCommit=e6b62e0b6301d6001b149147e843b5b6a34d9d54 translatedAt=2026-09-22T04:00:16.431Z pushedAt=2026-09-22T11:39:04.327Z -->
 
----
+This document describes frequently asked questions (FAQs) and solutions related to the KADD Prompt Injection (PI) feature for jailbreak text detection.
 
-## Installation & Deployment
+
+
+## Installation and Deployment
 
 ### Missing Dynamic Link Library
 
 **Question**
 
-On Kunpeng 920 processor, after the environment is deployed, running the program in a newly opened terminal results in missing dynamic link library errors.
+On a Kunpeng 920 processor, after the environment is deployed, running the program in a newly opened terminal reports an error, indicating that the dynamic link library is missing.
 
 **Answer**
 
-Environment variables do not take effect automatically in a new terminal. Reconfigure the environment variables according to the [Installation Guide](installation_guide.md).
+Environment variables do not take effect automatically in a new terminal. Reconfigure the environment variables as described in the [Installation Guide](installation_guide.md).
 
----
+
 
 ### Missing _ctypes Module
 
 **Question**
 
-Running the program shows `ModuleNotFoundError: No module named '_ctypes'`.
+When the program runs, the following error is reported: `ModuleNotFoundError: No module named '_ctypes'`.
 
 **Answer**
 
-This is because the Python installation is incomplete. Check if `libffi-devel` is installed on the system, and add the `--with-system-ffi` option when compiling Python from source:
+This occurs because the Python installation is incomplete. You need to check whether `libffi-devel` exists in the system, and add the `--with-system-ffi` option when compiling the Python source code.
 
 ```bash
-# Install libffi-devel (openEuler)
+# Install libffi-devel (openEuler).
 sudo yum install -y libffi-devel
 
-# Recompile Python with --with-system-ffi
+# Add --with-system-ffi when recompiling Python.
 ./configure --with-system-ffi
 make && make install
 ```
 
----
 
-### Missing System Libraries (GLIBC)
+
+### Missing System Library (glibc)
 
 **Question**
 
-Running the program shows `version GLIBC_XXX not found` or similar library version mismatch errors.
+When the program runs, errors such as `version GLIBC_XXX not found` are reported, indicating a system library version mismatch.
 
 **Answer**
 
-The system's `ldd` version is lower than the `ldd` version used when compiling the acceleration library. Due to the acceleration library's limitations, Kunpeng acceleration cannot be enabled. You can manually download the standard `onnxruntime` and run the non-accelerated version:
+The system's `ldd` version is lower than the `ldd` version used when the acceleration library was compiled. Due to the limitations of the acceleration library, Kunpeng acceleration cannot be enabled. You can manually download the standard ONNX Runtime and run the non-accelerated version.
 
 ```bash
 pip install onnxruntime==1.19.2
 ```
 
----
+
 
 ### Error When Compiling Arm Compute Library
 
 **Question**
 
-An error occurs when compiling Arm Compute Library using the scons command.
+An error occurs when you compile Arm Compute Library using the `scons` command.
 
 **Answer**
 
-The error may be caused by static check failures due to an excessively high gcc version. Use the following command:
+This may be caused by a static check error due to a high GCC version. You can use the following command:
 
 ```bash
 scons Werror=0 -j8 debug=0 neon=1 opencl=0 os=linux arch=armv8a build=native
 ```
 
----
 
-### Error When Compiling OnnxRuntime Source Code
+
+### Error When Compiling ONNX Runtime Source Code
 
 **Question**
 
-An error occurs when compiling the OnnxRuntime source code.
+An error occurs when you compile the ONNX Runtime source code.
 
 **Answer**
 
-- If Python.h is missing, the python-devel package may not be installed on the machine, or the python environment variables may not be set.
-- If libraries such as numpy are missing, the required Python third-party libraries may not be downloaded.
-- If the Eigen download fails, download [Eigen](https://gitlab.com/libeigen/eigen/-/archive/e7248b26a1ed53fa030c5c459f7ea095dfd276ac/eigen-e7248b26a1ed53fa030c5c459f7ea095dfd276ac.zip) using a browser, manually place it in the `/path/onnxruntime/build/Release/_deps/eigen-subbuild/eigen-populate-prefix/src/` directory, and run the following command. Note: `/path` is a placeholder. Replace it with the actual working directory first.
+- If `Python.h` is missing, the python-devel package may not be installed on the machine or the Python environment variables may not be set.
+- If libraries such as numpy are missing, the required third-party Python libraries may not be downloaded.
+- If the Eigen download fails, download [Eigen](https://gitlab.com/libeigen/eigen/-/archive/e7248b26a1ed53fa030c5c459f7ea095dfd276ac/eigen-e7248b26a1ed53fa030c5c459f7ea095dfd276ac.zip) from a browser, manually place it in the `/path/onnxruntime/build/Release/_deps/eigen-subbuild/eigen-populate-prefix/src/` directory, and run the following command. Note that `/path` is a placeholder; replace it with the actual working directory first.
 
 ```bash
-# Run in the /path/onnxruntime directory
+# Run the command in the /path/onnxruntime directory.
 grep -r "be8be39fdbc6e60e94fa7870b280707069b5b81a" . | cut -d: -f1 | sort -u | xargs sed -i.bak 's/be8be39fdbc6e60e94fa7870b280707069b5b81a/32b145f525a8308d7ab1c09388b2e288312d8eba/g'
 ```
 
----
+
 
 ### Python Version Mismatch
 
 **Question**
 
-Installing the acceleration library whl package reports a Python version incompatibility (for example, `is not a supported wheel on this platform`), or Python version related errors occur at runtime.
+When installing the .whl package for the acceleration library, a Python version incompatibility error (for example, `is not a supported wheel on this platform`) is reported, or a Python version-related error occurs at runtime.
 
 **Answer**
 
-Different Kunpeng chip models require different Python versions, and the Python version of the runtime environment must be the same as the Python version used when compiling the acceleration library whl package:
+Different Kunpeng chip models require different Python versions, and the Python version of the runtime environment must be consistent with the Python version used for compiling the acceleration library whl package.
 
-| Kunpeng Chip Model              | Required Python Version |
-| ------------------------------- | ----------------------- |
-| Kunpeng 920 processor           | 3.9                     |
-| Kunpeng 920 new model processor | 3.9                     |
-| Kunpeng 950 processor           | 3.10                    |
+| Kunpeng Chip Model      | Required Python Version |
+| ----------- | ---------- |
+| Kunpeng 920 processor    | 3.9        |
+| New Kunpeng 920 processor model | 3.9        |
+| Kunpeng 950 processor    | 3.10       |
 
-See the compilation environment requirements in the [Installation Guide](installation_guide.md), and recompile and redeploy the environment using the corresponding Python version.
+Refer to the compilation environment requirements in [Installation Guide](installation_guide.md), and use the corresponding Python version to recompile and deploy the environment.
 
----
+
 
 ## Usage
 
@@ -116,16 +118,16 @@ See the compilation environment requirements in the [Installation Guide](install
 
 **Question**
 
-How do I read the result returned by `kp_detect`?
+How should the result returned by `kp_detect` be interpreted?
 
 **Answer**
 
-The result is a dictionary. The `result` field values mean:
+The detection result is a dictionary. The meaning of the `result` field values is as follows:
 
-| result value | Meaning                    | Constant                    |
-| ------------ | -------------------------- | --------------------------- |
-| 1            | Jailbreak text (JAILBREAK) | `KunpengConstant.JAILBREAK` |
-| 0            | Normal text (BENIGN)       | `KunpengConstant.BENIGN`    |
+| Result Value | Meaning              | Constant                     |
+| ------- | --------------- | --------------------------- |
+| 1       | Jailbreak text (JAILBREAK) | `KunpengConstant.JAILBREAK` |
+| 0       | Normal text (BENIGN)    | `KunpengConstant.BENIGN`    |
 
 ```python
 res = kp_detect(kp, prompt)
@@ -135,77 +137,77 @@ else:
     print("Normal text")
 ```
 
----
 
-### Limits on Black/White Lists and Input Text
 
-**Question**
-
-Are there length or count limits for black/white lists and input text?
-
-**Answer**
-
-| Limit                                | Value      | Behavior When Exceeded                     |
-| ------------------------------------ | ---------- | ------------------------------------------ |
-| Black/white list entry count         | 500 each   | New entries are skipped with a warning log |
-| Black/white list single entry length | 8500 chars | Raises `KpUpdateException`                 |
-| Input text to detect length          | 8500 chars | Raises `KpDetectionException`              |
-
----
-
-### Black/White List Matching Method
+### Restrictions on the Blocklist/Trustlist and Input Text
 
 **Question**
 
-Is the black/white list matching exact or fuzzy?
+Are there any length or quantity restrictions on the blocklist/trustlist and input text?
 
 **Answer**
 
-The black/white list uses the **MinHash LSH** approximate matching algorithm with a similarity threshold of 0.8. Text is first segmented using jieba Chinese word segmentation, then MinHash signatures are computed for approximate matching. This means highly similar text will also be matched.
+| Restriction Item         | Limit Value     | Over-Limit Behavior                         |
+| ----------- | ------- | ---------------------------- |
+| Number of blocklist/trustlist entries   | 500 each | Skips new records and outputs a warning log.               |
+| Length of a single blocklist/trustlist record | 8500 characters | Throws a `KpUpdateException` exception.    |
+| Length of text to be detected     | 8500 characters | Throws a `KpDetectionException` exception. |
 
----
 
-### Using Detector Instances Across Threads
+
+### Blocklist/Trustlist Matching Mode
 
 **Question**
 
-Can multiple threads share the same detector instance?
+Do the blocklist and trustlist use exact matching or fuzzy matching?
 
 **Answer**
 
-It is recommended that each thread create an independent detector instance to avoid concurrency issues:
+The blocklist and trustlist use the **MinHash LSH** approximate matching algorithm with a similarity threshold of 0.8. The text is first segmented with `jieba`, and then MinHash signatures are computed for approximate matching. This means that highly similar text will also be matched.
+
+
+
+### Using Detection Instances Across Threads
+
+**Question**
+
+Can multiple threads share the same detection instance?
+
+**Answer**
+
+It is recommended that each thread create an independent detection instance to avoid concurrency issues.
 
 ```python
-# Each thread creates an independent instance
+# Create an independent instance for each thread.
 logger = logging.getLogger()
 kp = kp_detector_initialization(logger)
 ```
 
----
+
 
 ## Performance
 
-### How to Achieve the Best Detection Performance
+### How to Obtain Optimal Detection Performance
 
 **Question**
 
-How do I reduce detection latency?
+How can detection latency be reduced?
 
 **Answer**
 
-Use `numactl` to bind the NUMA node:
+Use `numactl` to bind NUMA nodes.
 
 ```bash
 numactl --cpunodebind=0 --membind=0 python script_name.py
 ```
 
-Additionally, the detector instance performs model warmup during initialization. The first detection will be slightly slower than subsequent ones.
+In addition, the detection instance performs model warmup during initialization, so the first detection is slightly slower than subsequent detections.
 
----
+
 
 ## Model Training
 
-### How to Train a Custom Model
+### How to Customize Model Training
 
 **Question**
 
@@ -213,30 +215,30 @@ How do I train a new detection model with my own dataset?
 
 **Answer**
 
-1. Prepare training data in JSON format and store it in `train/dataset/train_data.json`
-2. Download the Chinese-lert-small pretrained model and place it in `train/pretrained_model/chinese-lert-small/`
-3. Modify training parameters in `train/config/config.json`
-4. Run the training script:
+1. Prepare the training data in JSON format and store it in `train/dataset/train_data.json`.
+2. Download the Chinese-lert-small pretrained model and place it in `train/pretrained_model/chinese-lert-small/`.
+3. Modify the training parameters in `train/config/config.json`.
+4. Run the training script.
 
 ```bash
 python train/train.py
 ```
 
-After training, the ONNX model is automatically exported and quantized to INT8. Copy the generated `train/onnx_model/clf_model.onnx` to `algorithm/knowledge_base/model_file/` to replace the original model.
+After training is complete, the ONNX model is automatically exported and INT8 quantization is performed. Copy the generated `train/onnx_model/clf_model.onnx` to `algorithm/knowledge_base/model_file/` to replace the original model.
 
-**Training parameters:**
+**Training parameter description**:
 
-| Parameter   | Default | Description               |
-| ----------- | ------- | ------------------------- |
-| epochs      | 15      | Number of training epochs |
-| lr          | 2e-5    | Learning rate             |
-| batch_size  | 8       | Batch size                |
-| max_length  | 512     | Maximum sequence length   |
-| warmup_rate | 0.03    | Warmup ratio              |
-| dropout     | 0       | Dropout rate              |
+| Parameter    | Default Value | Description |
+| ----------- | ---- | -------- |
+| epochs      | 15   | Number of training epochs |
+| lr          | 2e-5 | Learning rate |
+| batch_size  | 8    | Batch size |
+| max_length  | 512  | Maximum sequence length |
+| warmup_rate | 0.03 | Warmup ratio |
+| dropout     | 0    | Dropout rate |
 
-# Revision History
+## Change History
 
-| Document Version | Release Date | Description           |
-| ---------------- | ------------ | --------------------- |
-| 01               | 2026-09-30   | First official release |
+| Version | Date       | Description    |
+| ---- | ---------- | ------- |
+| 01   | 2026-09-30 | This is the first official release. |
