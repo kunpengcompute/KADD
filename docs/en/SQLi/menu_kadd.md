@@ -1,7 +1,0 @@
-- [Project Introduction](../../README_EN.md)
-- [Release Notes](release_notes.md)
-- [Installation Guide](installation_guide.md)
-- [Quick Start](quick_start.md)
-- [User Guide](user_guide.md)
-- [API Reference](api_reference.md)
-- [FAQs](faq.md)

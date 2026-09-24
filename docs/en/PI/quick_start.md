@@ -1,18 +1,20 @@
 # Quick Start
 
-This document provides a quick start guide for KADD PI (Prompt Injection, jailbreak text detection). By running the test scripts, you can quickly experience the jailbreak text detection function. By using the API, you can integrate it into existing systems. For details, see [User Guide](user_guide.md).
+<!-- md-trans-meta sourceCommit=e6b62e0b6301d6001b149147e843b5b6a34d9d54 translatedAt=2026-09-22T04:14:05.828Z pushedAt=2026-09-23T01:53:59.384Z -->
+
+This document provides a quick start guide for the KADD Prompt Injection (PI) feature. You can quickly experience the jailbreak text detection capability by running the test scripts, and integrate it into your existing system by using APIs. For detailed usage, see [User Guide](user_guide.md).
 
 ## Prerequisites
 
-You have completed deployment by following instructions in [Installation Guide](installation_guide.md).
+You have completed the deployment by following instructions in [Installation Guide](installation_guide.md).
 
----
+
 
 ## Test Script Usage
 
-### 1. Interactive Text Detection - test_kp_detect.py
+### 1. Interactive Text Detection (`test_kp_detect.py`)
 
-This script provides an interactive command-line interface for real-time text detection.
+This script provides an interactive command-line interface. Enter text to detect in real time whether it is jailbreak text.
 
 ```bash
 cd /opt/KADD/PI
@@ -22,24 +24,24 @@ python test_kp_detect.py
 **Output example:**
 
 ```bash
-Enter text to detect (enter q to quit):
-I don't want to cause public panic. How should I avoid publishing false news?
+Please enter the text to be detected (enter q to exit):
+I do not want to cause public panic. How should I avoid publishing false news?
 {'result': 1, 'detect_time': '10.234 ms'}
 
-Enter text to detect (enter q to quit):
-How should I take Yinqi Ganfu Granules? What precautions should I be aware of?
+Please enter the text to be detected (enter q to exit):
+How should I take Yinqi Ganfu Granules? What precautions should I take during medication?
 {'result': 0, 'detect_time': '8.567 ms'}
 
-Enter text to detect (enter q to quit):
+Please enter the text to be detected (enter q to exit):
 q
 ```
 
-- `result: 1` indicates jailbreak text (JAILBREAK)
-- `result: 0` indicates normal text (BENIGN)
+- `result: 1` indicates jailbreak text detected (JAILBREAK).
+- `result: 0` indicates normal text (BENIGN).
 
-### 2. Functional Test - function_test.py
+### 2. Function Tests (`function_test.py`)
 
-This script uses the `unittest` framework to verify API functionality.
+This script uses the `unittest` framework to perform functional verification on APIs.
 
 ```bash
 cd /opt/KADD/PI
@@ -56,7 +58,7 @@ Ran 17 tests in 2.456s
 OK
 ```
 
-### 3. Quick API Integration
+### 3. Quick Integration Using APIs
 
 ```python
 import logging
@@ -66,47 +68,47 @@ from algorithm.api.kp_detection import (
     kp_detector_update_blackwhitelist,
 )
 
-# Initialize detector instance
+# Initialize the detection instance.
 logger = logging.getLogger()
 kp = kp_detector_initialization(logger)
 
-# Detect text
-prompt = "I don't want to cause public panic. How should I avoid publishing false news?"
+# Detect text.
+prompt = "I do not want to cause public panic. How should I avoid publishing false news?"
 res = kp_detect(kp, prompt)
 print(res)
 ```
 
-Output: {'result': 1, 'detect_time': '10.234 ms'}
+Expected output: `{'result': 1, 'detect_time': '10.234 ms'}`
 
----
+
 
 ## Model Training Reproduction
 
-### 1. Training Dataset
+### 1. Training Set
 
-The training data comes from two sources, both from Hugging Face:
+The training set comes from two sources, both taken from Hugging Face.
 
-- Black samples (jailbreak) from **thu-coai/Safety-Prompts**, specifically `instruction_attack_scenarios.json`
-- White samples (benign) from **COIG-CQIA**
+- Blocklist samples come from `instruction_attack_scenarios.json` in **thu-coai/Safety-Prompts**.
+- Trustlist samples come from **COIG-CQIA**.
 
-Approximately 30,000 samples each, stored in `train/dataset/train_data.json`.
+There are 30,000 blocklist and 30,000 trustlist samples, stored in `train/dataset/train_data.json`.
 
 ### 2. Pretrained Model
 
-The pretrained model is **Chinese-lert-small**, obtained from Hugging Face, with 15.08M parameters.
+The pretrained model is **Chinese-lert-small**, obtained from Hugging Face, with 15.08 million parameters.
 
-Place the pretrained model in the `train/pretrained_model/chinese-lert-small/` directory.
+Use `git clone` to place the pretrained model files under the `train/pretrained_model/Chinese-lert-small` folder.
 
 ### 3. Training Process
 
-One-click training with automatic ONNX export and INT8 quantization:
+One-click training is performed, with automatic ONNX export and INT8 quantization upon training completion.
 
 ```bash
 cd /opt/KADD/PI
 python train/train.py
 ```
 
-Training parameters can be viewed and modified in `train/config/config.json`:
+All training parameters can be viewed and modified in `train/config/config.json`.
 
 ```json
 {
@@ -126,23 +128,23 @@ Training parameters can be viewed and modified in `train/config/config.json`:
 
 ### 4. Model Quantization
 
-After training, the model is automatically quantized from FP32 to INT8 (dynamic quantization, per_channel), generating `train/onnx_model/clf_model.onnx`.
+After training is complete, the model is automatically quantized from FP32 to INT8 (dynamic quantization, per_channel), and finally `train/onnx_model/clf_model.onnx` is generated.
 
-Copy the quantized ONNX model to `algorithm/knowledge_base/model_file/` to replace the original file.
+Copy the quantized ONNX model to the `algorithm/knowledge_base/model_file/` directory to replace the original file, and the new model can then be used.
 
----
+
 
 ## Performance Optimization
 
-Use `numactl` to bind the NUMA node for maximum performance:
+Use `numactl` to bind NUMA nodes for maximum performance.
 
 ```bash
 # Example command
 numactl --cpunodebind=0 --membind=0 python test_script.py
 ```
 
-# Revision History
+## Change History
 
-| Document Version | Release Date | Description           |
-| ---------------- | ------------ | --------------------- |
-| 01               | 2026-09-30   | First official release |
+| Version | Date | Description |
+| -------- | -------- | -------- |
+| 01 | 2026-09-30 | This is the first official release. |
