@@ -212,10 +212,10 @@ except KpDetectionException as e:
 | API入口  | algorithm/api/kp_detection.py                               |
 | 检测主逻辑  | algorithm/codes/kp_jailbreak_detection.py                   |
 | 配置定义   | algorithm/codes/kp_config.py                                |
-| 异常定义   | algorithm/codes/kp_exception.py`                             |
-| 黑白名单过滤 | `algorithm/codes/filter/kp_blackwhitelist_filter.py          |
-| 正则过滤   | algorithm/codes/filter/kp_regex_filter.py`                   |
-| 模型分类   | `algorithm/codes/filter/kp_classifier_filter.py              |
+| 异常定义   | algorithm/codes/kp_exception.py                             |
+| 黑白名单过滤 | algorithm/codes/filter/kp_blackwhitelist_filter.py          |
+| 正则过滤   | algorithm/codes/filter/kp_regex_filter.py                   |
+| 模型分类   | algorithm/codes/filter/kp_classifier_filter.py              |
 | 黑白名单数据 | algorithm/knowledge_base/blackwhitelist/blackwhitelist.json |
 | 模型文件   | algorithm/knowledge_base/model_file/clf_model.onnx          |
 
