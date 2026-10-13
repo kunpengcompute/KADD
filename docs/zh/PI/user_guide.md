@@ -2,8 +2,6 @@
 
 本指南提供KADD PI（Prompt Injection，越狱文本检测）特性的配置说明和具体代码示例。
 
----
-
 ## 检测原理
 
 KADD PI采用规则和深度学习相结合的混合检测架构，检测流程为三级过滤：
@@ -16,13 +14,9 @@ KADD PI采用规则和深度学习相结合的混合检测架构，检测流程�
 | 正则规则过滤 | 匹配常见越狱模式（如"越狱模式"、"系统prompt"等） |
 | 模型分类过滤 | 基于LERT模型的ONNX推理，判断是否为越狱文本 |
 
----
-
 ## 前提条件
 
 请参考[安装指南](installation_guide.md)完成部署。
-
----
 
 ## 配置说明
 
@@ -60,8 +54,6 @@ PI特性的配置位于 `algorithm/codes/kp_config.py`，主要配置项如下�
 - 每条记录必须为字符串类型
 - 每条记录最大长度为 8500 个字符
 - 待检测文本最大长度为 8500 个字符
-
----
 
 ## 越狱文本检测用例
 
@@ -207,8 +199,6 @@ except KpDetectionException as e:
     # 输出: 检测失败: 错误码=20000, 信息=prompt exceeds max length: 8501/8500.
 ```
 
----
-
 ## 输出格式
 
 检测结果为字典格式：
@@ -222,8 +212,8 @@ except KpDetectionException as e:
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `result` | int | `1` = JAILBREAK（越狱），`0` = BENIGN（正常） |
-| `detect_time` | str | 检测耗时，格式为 `X.XXX ms` |
+| result | int | 1 = JAILBREAK（越狱），0 = BENIGN（正常） |
+| detect_time | str | 检测耗时，格式为 X.XXX ms |
 
 ## 修订记录
 

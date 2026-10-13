@@ -2,8 +2,6 @@
 
 本文档收集了KADD PI（Prompt Injection，越狱文本检测）特性使用过程中的常见问题和解决方案。
 
----
-
 ## 安装部署相关
 
 ### 缺少动态链接库
@@ -15,8 +13,6 @@
 **回答**
 
 环境变量在新终端中不会自动生效，需按照[安装指南](installation_guide.md)重新配置环境变量。
-
----
 
 ### 缺少 _ctypes 模块
 
@@ -37,8 +33,6 @@ sudo yum install -y libffi-devel
 make && make install
 ```
 
----
-
 ### 缺少系统库（GLIBC）
 
 **问题**
@@ -53,8 +47,6 @@ make && make install
 pip install onnxruntime==1.19.2
 ```
 
----
-
 ### 编译Arm Compute Library时报错
 
 **问题**
@@ -68,8 +60,6 @@ pip install onnxruntime==1.19.2
 ```bash
 scons Werror=0 -j8 debug=0 neon=1 opencl=0 os=linux arch=armv8a build=native
 ```
-
----
 
 ### 编译Onnxruntime源码时报错
 
@@ -88,8 +78,6 @@ scons Werror=0 -j8 debug=0 neon=1 opencl=0 os=linux arch=armv8a build=native
 grep -r "be8be39fdbc6e60e94fa7870b280707069b5b81a" . | cut -d: -f1 | sort -u | xargs sed -i.bak 's/be8be39fdbc6e60e94fa7870b280707069b5b81a/32b145f525a8308d7ab1c09388b2e288312d8eba/g'
 ```
 
----
-
 ### Python 版本不匹配
 
 **问题**
@@ -107,8 +95,6 @@ grep -r "be8be39fdbc6e60e94fa7870b280707069b5b81a" . | cut -d: -f1 | sort -u | x
 | 鲲鹏950处理器    | 3.10       |
 
 请参考[安装指南](installation_guide.md)中的编译环境要求，使用对应版本的Python重新编译并部署环境。
-
----
 
 ## 使用相关
 
@@ -135,8 +121,6 @@ else:
     print("正常文本")
 ```
 
----
-
 ### 黑白名单和输入文本有哪些限制
 
 **问题**
@@ -151,8 +135,6 @@ else:
 | 黑/白名单单条记录长度 | 8500 字符 | 抛出 `KpUpdateException` 异常    |
 | 待检测文本长度     | 8500 字符 | 抛出 `KpDetectionException` 异常 |
 
----
-
 ### 黑白名单的匹配方式是什么
 
 **问题**
@@ -162,8 +144,6 @@ else:
 **回答**
 
 黑白名单使用 **MinHash LSH** 近似匹配算法，相似度阈值为 0.8。文本首先经过 jieba 中文分词，然后计算 MinHash 签名进行近似匹配。这意味着高度相似的文本也会被匹配到。
-
----
 
 ### 检测实例可以跨线程使用吗
 
@@ -180,8 +160,6 @@ else:
 logger = logging.getLogger()
 kp = kp_detector_initialization(logger)
 ```
-
----
 
 ## 性能相关
 
@@ -200,8 +178,6 @@ numactl --cpunodebind=0 --membind=0 python 脚本名称.py
 ```
 
 此外，检测实例在初始化时会进行模型预热（warmup），首次检测会比后续检测稍慢。
-
----
 
 ## 模型训练相关
 

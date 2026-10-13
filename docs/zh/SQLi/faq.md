@@ -2,8 +2,6 @@
 
 本文档收集了KADD引擎使用过程中的常见问题和解决方案。
 
----
-
 ## 安装相关
 
 ### 运行时提示找不到库文件
@@ -26,8 +24,6 @@ export LD_LIBRARY_PATH=/opt/KADD/SQLi/build/src:$LD_LIBRARY_PATH
 echo 'export LD_LIBRARY_PATH=/opt/KADD/SQLi/build/src:$LD_LIBRARY_PATH' >> ~/.bashrc
 source ~/.bashrc
 ```
-
----
 
 ## 使用相关
 
@@ -60,8 +56,6 @@ if (probability >= 0.5f) {
 }
 ```
 
----
-
 ### 引擎实例可以跨线程使用吗
 
 **问题**
@@ -89,8 +83,6 @@ kadd_sqli_detect(engine, input, &probability);
 kadd_sqli_engine_free(engine);
 ```
 
----
-
 ### ML模式和DL模式的区别与选择
 
 **问题**
@@ -117,8 +109,6 @@ kadd_sqli_engine_free(engine);
 无需重新编译，下次创建引擎时生效。
 
 **模型加载策略**：两种模式均采用相同策略。SVE可用时优先加载原生二进制格式（`.krf` / `.kcn`），失败则自动回退ONNX Runtime加载`.onnx`格式。
-
----
 
 ### SVE加速如何工作
 
