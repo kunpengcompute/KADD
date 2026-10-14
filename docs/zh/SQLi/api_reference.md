@@ -26,8 +26,6 @@ ML和DL引擎均采用相同的加载策略：
 1. SVE可用时，优先尝试加载原生二进制格式（`.krf` / `.kcn`）
 2. 原生格式加载失败或SVE不可用时，回退ONNX Runtime加载`.onnx`格式
 
----
-
 ## SQLi引擎API
 
 ### kadd_sqli_engine_create_from_file
@@ -51,8 +49,6 @@ int kadd_sqli_engine_create_from_file(kadd_sqli_engine_t **engine, const char *c
 
 状态码：`KADD_SUCCESS`表示成功，负值表示失败
 
----
-
 ### kadd_sqli_detect
 
 **功能**
@@ -74,8 +70,6 @@ int kadd_sqli_detect(kadd_sqli_engine_t *engine, const char *input, float *proba
 **返回值**
 
 状态码：`KADD_SUCCESS`表示成功，负值表示失败
-
----
 
 ### kadd_sqli_detect_batch
 
@@ -102,8 +96,6 @@ int kadd_sqli_detect_batch(kadd_sqli_engine_t *engine, const char **inputs,
 
 状态码：`KADD_SUCCESS`表示成功，负值表示失败
 
----
-
 ### kadd_sqli_engine_free
 
 **功能**
@@ -115,8 +107,6 @@ int kadd_sqli_detect_batch(kadd_sqli_engine_t *engine, const char **inputs,
 ```c
 void kadd_sqli_engine_free(kadd_sqli_engine_t *engine);
 ```
-
----
 
 ## DL引擎API
 
@@ -142,8 +132,6 @@ int kadd_dl_model_load(kadd_dl_model_t **model, const char *model_path, int feat
 
 状态码：`KADD_SUCCESS`表示成功，负值表示失败
 
----
-
 ### kadd_dl_model_predict
 
 **功能**
@@ -165,8 +153,6 @@ int kadd_dl_model_predict(kadd_dl_model_t *model, const float *input, float *pro
 **返回值**
 
 状态码：`KADD_SUCCESS`表示成功，负值表示失败
-
----
 
 ### kadd_dl_model_predict_batch
 
@@ -193,8 +179,6 @@ int kadd_dl_model_predict_batch(kadd_dl_model_t *model, const float *inputs,
 
 状态码：`KADD_SUCCESS`表示成功，负值表示失败
 
----
-
 ### kadd_dl_model_get_feature_dim
 
 **功能**
@@ -207,8 +191,6 @@ int kadd_dl_model_predict_batch(kadd_dl_model_t *model, const float *inputs,
 int kadd_dl_model_get_feature_dim(kadd_dl_model_t *model);
 ```
 
----
-
 ### kadd_dl_model_free
 
 **功能**
@@ -220,8 +202,6 @@ int kadd_dl_model_get_feature_dim(kadd_dl_model_t *model);
 ```c
 void kadd_dl_model_free(kadd_dl_model_t *model);
 ```
-
----
 
 ## ML引擎API
 
@@ -247,8 +227,6 @@ int kadd_model_load(kadd_model_handle_t **handle, const char *model_path, int fe
 
 状态码：`KADD_SUCCESS`表示成功，负值表示失败
 
----
-
 ### kadd_model_predict
 
 **功能**
@@ -271,8 +249,6 @@ int kadd_model_predict(kadd_model_handle_t *handle,
 **返回值**
 
 状态码：`KADD_SUCCESS`表示成功，负值表示失败
-
----
 
 ### kadd_model_predict_batch
 
@@ -304,8 +280,6 @@ int kadd_model_predict_batch(kadd_model_handle_t *handle, const float *features,
 * 如果 `batch_size` 小于等于0或大于1024，将自动使用默认值64
 * 任何批次处理失败会立即返回对应错误码，不会部分成功
 
----
-
 ### kadd_model_get_feature_dim
 
 **功能**
@@ -318,8 +292,6 @@ int kadd_model_predict_batch(kadd_model_handle_t *handle, const float *features,
 int kadd_model_get_feature_dim(kadd_model_handle_t *handle);
 ```
 
----
-
 ### kadd_model_free
 
 **功能**
@@ -331,8 +303,6 @@ int kadd_model_get_feature_dim(kadd_model_handle_t *handle);
 ```c
 void kadd_model_free(kadd_model_handle_t *handle);
 ```
-
----
 
 ## DFA引擎API
 
@@ -362,8 +332,6 @@ int kadd_dfa_engine_create(kadd_dfa_engine_t **engine,
 
 状态码：`KADD_SUCCESS`表示成功，负值表示失败
 
----
-
 ### kadd_dfa_engine_tokenize
 
 **功能**
@@ -391,8 +359,6 @@ int kadd_dfa_engine_tokenize(const kadd_dfa_engine_t *engine,
 **返回值**
 
 状态码：`KADD_SUCCESS`表示成功，负值表示失败
-
----
 
 ### kadd_dfa_engine_tokenize_batch
 
@@ -426,8 +392,6 @@ int kadd_dfa_engine_tokenize_batch(const kadd_dfa_engine_t *engine,
 
 任何输入失败都会立即返回错误，不会部分成功。
 
----
-
 ### kadd_dfa_engine_free
 
 **功能**
@@ -439,8 +403,6 @@ int kadd_dfa_engine_tokenize_batch(const kadd_dfa_engine_t *engine,
 ```c
 void kadd_dfa_engine_free(kadd_dfa_engine_t *engine);
 ```
-
----
 
 ## Feature引擎API
 
@@ -468,8 +430,6 @@ int kadd_seq_to_feature(const int *seq, int seq_len, int window_size,
 **返回值**
 
 状态码：`KADD_SUCCESS`表示成功，负值表示失败
-
----
 
 ### kadd_seq_to_feature_batch
 
@@ -502,8 +462,6 @@ int kadd_seq_to_feature_batch(kadd_feature_batch_t *batch);
 
 任何序列失败都会立即返回错误，不会部分成功。
 
----
-
 ## 配置加载API
 
 ### kadd_config_load
@@ -527,8 +485,6 @@ int kadd_config_load(const char *config_path, kadd_config_t *config);
 
 状态码：`KADD_SUCCESS`表示成功，负值表示失败
 
----
-
 ### kadd_config_free
 
 **功能**
@@ -540,8 +496,6 @@ int kadd_config_load(const char *config_path, kadd_config_t *config);
 ```c
 void kadd_config_free(kadd_config_t *config);
 ```
-
----
 
 ## 错误码
 
@@ -566,8 +520,6 @@ SQLi引擎作为顶层模块不单独定义错误码，错误发生时直接返�
 | -200 | `KADD_FEATURE_ERROR_VALUE_OUT_OF_RANGE` | Feature | Feature序列元素超出范围 |
 
 **详细定义请参考源码头文件** `/opt/KADD/SQLi/include/kadd_errors.h`
-
----
 
 ## 头文件路径
 

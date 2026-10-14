@@ -6,9 +6,9 @@ KADD PI（Prompt Injection，越狱文本检测）特性提供以下Python API�
 
 | 接口                                  | 功能          |
 | ----------------------------------- | ----------- |
-| `kp_detector_initialization`        | 初始化检测实例     |
-| `kp_detect`                         | 检测文本是否为越狱文本 |
-| `kp_detector_update_blackwhitelist` | 动态更新黑白名单    |
+| kp_detector_initialization        | 初始化检测实例     |
+| kp_detect                         | 检测文本是否为越狱文本 |
+| kp_detector_update_blackwhitelist | 动态更新黑白名单    |
 
 ### 处理流程
 
@@ -18,11 +18,9 @@ KADD PI（Prompt Injection，越狱文本检测）特性提供以下Python API�
 
 | 常量                  | 值    | 说明                    |
 | ------------------- | ---- | --------------------- |
-| `JAILBREAK`         | 1    | 越狱文本                  |
-| `BENIGN`            | 0    | 正常文本                  |
-| `MAX_PROMPT_LENGTH` | 8500 | 输入文本最大长度（字符数），超出则抛出异常 |
-
----
+| JAILBREAK         | 1    | 越狱文本                  |
+| BENIGN            | 0    | 正常文本                  |
+| MAX_PROMPT_LENGTH | 8500 | 输入文本最大长度（字符数），超出则抛出异常 |太ga
 
 ## 检测API
 
@@ -211,15 +209,15 @@ except KpDetectionException as e:
 
 | 文件     | 路径                                                            |
 | ------ | ------------------------------------------------------------- |
-| API入口  | `algorithm/api/kp_detection.py`                               |
-| 检测主逻辑  | `algorithm/codes/kp_jailbreak_detection.py`                   |
-| 配置定义   | `algorithm/codes/kp_config.py`                                |
-| 异常定义   | `algorithm/codes/kp_exception.py`                             |
-| 黑白名单过滤 | `algorithm/codes/filter/kp_blackwhitelist_filter.py`          |
-| 正则过滤   | `algorithm/codes/filter/kp_regex_filter.py`                   |
-| 模型分类   | `algorithm/codes/filter/kp_classifier_filter.py`              |
-| 黑白名单数据 | `algorithm/knowledge_base/blackwhitelist/blackwhitelist.json` |
-| 模型文件   | `algorithm/knowledge_base/model_file/clf_model.onnx`          |
+| API入口  | algorithm/api/kp_detection.py                               |
+| 检测主逻辑  | algorithm/codes/kp_jailbreak_detection.py                   |
+| 配置定义   | algorithm/codes/kp_config.py                                |
+| 异常定义   | algorithm/codes/kp_exception.py                             |
+| 黑白名单过滤 | algorithm/codes/filter/kp_blackwhitelist_filter.py          |
+| 正则过滤   | algorithm/codes/filter/kp_regex_filter.py                   |
+| 模型分类   | algorithm/codes/filter/kp_classifier_filter.py              |
+| 黑白名单数据 | algorithm/knowledge_base/blackwhitelist/blackwhitelist.json |
+| 模型文件   | algorithm/knowledge_base/model_file/clf_model.onnx          |
 
 ## 修订记录
 

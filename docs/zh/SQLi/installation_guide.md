@@ -72,8 +72,6 @@ KADD SQL 是一个SQL注入检测工具，通过目 `SQLi/build.sh` 一键构建
     ./kadd_config_demo
     ```
 
----
-
 ## 构建指南
 
 ### 根目录一键构建（推荐）
@@ -99,8 +97,6 @@ export LD_LIBRARY_PATH=../src:/opt/KADD/SQLi/util/onnxruntime-linux-aarch64-1.28
 export KADD_MODEL_HMAC_KEY=74fab58d87dc235ee049b6faf21b44825dba1d9dc05bbc14aeded49cb211a1db   # 开发密钥；用 build.sh 构建时可直接 source ../kadd_env.sh
 ./kadd_sqli_demo
 ```
-
----
 
 ### SQLi特性单独构建（生产部署）
 

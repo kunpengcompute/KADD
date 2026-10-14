@@ -6,8 +6,6 @@
 
 请参考[安装指南](installation_guide.md)完成安装。
 
----
-
 ## Demo程序使用
 
 KADD提供了6个demo程序，分别展示各个引擎的使用方法。
@@ -212,8 +210,6 @@ DFA 编译器
 - `eod_table.bin` - DFA结束检测表
 
 将生成的表文件复制替换到 `/opt/KADD/SQLi/assets/data/` 目录下的DFA表，完成更新。
-
----
 
 ## 模型训练
 
@@ -473,5 +469,4 @@ python model_train.py --help
     ```bash
     python prepare_cnn_benchmark.py
     ```
-
----
+    

@@ -6,8 +6,6 @@
 
 请参考[安装指南](installation_guide.md)完成部署。
 
----
-
 ## 测试脚本使用
 
 ### 1. 交互式文本检测 - test_kp_detect.py
@@ -78,8 +76,6 @@ print(res)
 
 预期输出: {'result': 1, 'detect_time': '10.234 ms'}
 
----
-
 ## 模型训练复现
 
 ### 1. 训练集
@@ -129,8 +125,6 @@ python train/train.py
 训练完成后，模型会自动从FP32量化为INT8（动态量化，per_channel），最终生成 `train/onnx_model/clf_model.onnx`。
 
 将量化后的ONNX模型复制到 `algorithm/knowledge_base/model_file/` 目录替换原有文件即可使用新模型。
-
----
 
 ## 性能优化
 

@@ -2,8 +2,6 @@
 
 本指南提供KADD SQL注入检测引擎的配置说明和具体代码示例。
 
----
-
 ## 配置文件
 
 KADD通过 `config.json` 配置各引擎模块：
@@ -42,8 +40,6 @@ KADD通过 `config.json` 配置各引擎模块：
 - **ML模式**（默认）：使用随机森林分类器。SVE可用时优先加载原生`.krf`格式，失败则回退ONNX Runtime加载`.onnx`格式
 - **DL模式**：使用CNN深度学习模型。SVE可用时优先加载原生`.kcn`格式，失败则回退ONNX Runtime加载`.onnx`格式
 - **模型认证**：原生`.krf`/`.kcn`强制HMAC-SHA256认证，未签名、密钥缺失或不匹配一律拒绝加载（fail-closed）并回退ONNX；`.onnx`不参与认证
-
----
 
 ## 前提条件
 
@@ -85,8 +81,6 @@ export KADD_ORT_INTER_OP_THREADS=1   # 取值1-1024，非法值忽略并回退�
 - 线程数只影响性能，不影响检测结果；取值非法时仅打印WARN并沿用默认值，不会导致模型加载失败。
 - 环境变量在创建引擎实例时读取，修改后需重新创建引擎才生效。
 - `coverage_all.sh`已默认导出上述两个变量（8/1），可通过`KADD_ORT_INTRA_OP_THREADS=4 ./coverage_all.sh`临时调优。
-
----
 
 ## SQL注入检测完整用例
 
@@ -175,8 +169,6 @@ int main() {
 [攻击] 输入: "admin'--" (概率: 95.21%)
 [攻击] 输入: "SELECT * FROM users" (概率: 87.33%)
 ```
-
----
 
 ### 用例2：批量日志分析
 
