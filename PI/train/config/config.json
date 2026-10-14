@@ -1,0 +1,23 @@
+{
+    "description": "Train code for kunpeng jailbreak detection model",
+    "pretrained_model": "Chinese-lert-small",
+    "dataset": "train_data.json",
+    "label2id": {
+        "non-jailbreak": 0,
+        "jailbreak": 1
+    },
+    "loss_fn": "cross_entropy",
+    "save_epoch": "best",
+    "save_path": "finetuned_model",
+    "onnx_path": "onnx_model",
+    "onnx_model": "clf_model_fp32.onnx",
+    "num_classes": 2,
+    "val_ratio": 0.0,
+    "dropout": 0,
+    "epochs": 15,
+    "lr": 2e-5,
+    "weight_decay": 0.0,
+    "warmup_rate": 0.03,
+    "batch_size": 8,
+    "max_length": 512
+}

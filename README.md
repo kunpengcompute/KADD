@@ -1,206 +1,158 @@
-# KADD SQL 注入检测引擎
+# KADD
 
-## 🚀 快速开始
+[![License](https://img.shields.io/badge/license-BSD%203--Clause-blue)](LICENSE)
 
-### 前置要求
+## 最新消息
 
-- **编译器**: Clang 12+ / GCC 11+
-- **CMake**: 3.16+
-- **依赖**: ONNX Runtime、cJSON、Google Test（可选）
+- [2026-09-30] : 发布KADD 1.1.0版本。新增PI特性；更新SQLi特性，新增DL（CNN）推理模式并支持ML/DL双模式切换。
+- [2026-06-30] : 发布KADD SQL注入检测库 1.0.0版本。基于DFA状态机+机器学习的混合检测方案，提供高性能SQL注入攻击检测能力，支持文本特征提取和批量推理优化。
 
-### 依赖安装
+## 项目介绍
 
-> 详见 [第三方库安装指南](docs/DEPENDENCIES.md)
+KADD是鲲鹏智能数据分析套件，提供多种安全检测能力。当前支持以下特性：
 
-### 构建指南
+- **PI特性**：采用规则和深度学习相结合的混合检测架构，实现对越狱文本的高精度、低延迟检测，提供python语言的API接口
+- **SQL注入检测**：采用DFA状态机与ML/DL双引擎相结合的混合检测架构，通过DFA引擎进行精确的SQL语句分词，结合ML引擎或DL（CNN）引擎进行智能特征推理，实现对SQL注入攻击的高精度、低延迟检测
 
-#### 📦 基础构建（生产部署）
+方案针对鲲鹏处理器特性进行优化，在保证检测准确率的同时，提供简洁的C语言API接口，易于集成到现有安全防护系统中。
 
-```bash
-# 一键构建（下载依赖 + 编译）
-chmod +x build.sh && ./build.sh
+## 特性介绍
 
-# 或手动构建
-mkdir -p build && cd build
-cmake ..
-cmake --build .
+| 特性名称 | 特性介绍 |
+|----------|----------|
+| [PI特性](#pi特性) | 采用规则与深度学习（LERT模型）相结合的混合检测架构，通过黑白名单、正则规则和ONNX模型推理三级过滤，实现高性能越狱文本检测能力，提供Python语言API接口。 |
+| [SQL注入检测](#sql注入检测特性) | 提供基于DFA状态机的SQL语句精确分词、28维特征向量提取、ML/DL双模式推理，实现高性能SQL注入攻击检测能力。 |
+
+## 目录结构
+
+项目目录结构如下：
+
+```text
+|—— build.sh                  # 项目构建脚本
+|—— config.json               # 项目配置文件
+|—— LICENSE                   # 项目主许可证
+|—— README.md                 # 说明文档
+|—— docs/                     # 文档资料目录
+│   ├── LICENSE               # 文档许可证
+│   ├── en/                   # 英文文档目录
+│   │   ├── PI/               # PI特性文档
+│   │   │   ├── api_reference.md
+│   │   │   ├── faq.md
+│   │   │   ├── installation_guide.md
+│   │   │   ├── quick_start.md
+│   │   │   ├── release_notes.md
+│   │   │   └── user_guide.md
+│   │   └── SQLi/             # SQL注入检测特性文档
+│   │       ├── api_reference.md
+│   │       ├── faq.md
+│   │       ├── installation_guide.md
+│   │       ├── quick_start.md
+│   │       ├── release_notes.md
+│   │       └── user_guide.md
+│   ├── figures/              # 图片资源
+│   │   └── SQLi/
+│   ├── public_sys-resources/ # 文档提示图标资源
+│   └── zh/                   # 中文文档目录
+│       ├── menu_kadd.md      # 公共菜单
+│       ├── release_notes.md  # 公共版本说明书
+│       ├── PI/               # PI特性文档
+│       │   ├── api_reference.md
+│       │   ├── faq.md
+│       │   ├── installation_guide.md
+│       │   ├── quick_start.md
+│       │   └── user_guide.md
+│       └── SQLi/             # SQL注入检测特性文档
+│           ├── api_reference.md
+│           ├── faq.md
+│           ├── installation_guide.md
+│           ├── quick_start.md
+│           └── user_guide.md
+|—— PI/                       # PI特性代码
+│   └── THIRD_PARTY_LICENSES  # PI特性三方许可证
+|—— SQLi/                     # SQL注入检测特性代码
+│   └── THIRD_PARTY_LICENSES  # SQL注入检测特性三方许可证
 ```
 
-#### 🧪 单元测试构建（GCC 编译）
+## PI特性
 
-```bash
-mkdir -p build_ut && cd build_ut
-cmake -DUSE_SYSTEM_LIBS=OFF -DENABLE_CODE_COVERAGE=ON ..
-cmake --build .
+### 特性简介
 
-# 运行测试
-export LD_LIBRARY_PATH=$(pwd)/src:../third_party/onnxruntime/lib:/usr/local/lib64:/usr/local/lib:$LD_LIBRARY_PATH
-ctest --verbose
+KADD PI（Prompt Injection，越狱文本检测）采用规则和深度学习相结合的混合检测架构。检测流程为三级过滤：黑白名单过滤（基于MinHash LSH近似匹配）、正则规则过滤（匹配常见越狱模式）、模型分类过滤（基于LERT模型的ONNX推理），实现对越狱文本的高精度、低延迟检测。方案针对鲲鹏处理器特性进行优化，在保证检测准确率的同时，提供简洁的Python语言API接口，易于集成到现有安全防护系统中。
 
-# 生成 ut 覆盖率报告
-make coverage
-```
+### 版本说明
 
-#### 🎯 Fuzz 测试构建（Clang + ASan）
+KADD的版本说明包含软件版本配套关系和软件包下载以及每个版本的特性变更说明，具体请参见[版本说明](docs/zh/release_notes.md)。
 
-```bash
-mkdir -p build_fuzz && cd build_fuzz
-cmake -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang \
-      -DUSE_SYSTEM_LIBS=OFF -DENABLE_CODE_COVERAGE=ON ..
-cmake --build .
+### 快速入门
 
-# 运行 Fuzz 生成覆盖率数据（3小时，ONNX 内存泄漏故使用 -detect_leaks=0）
-cd tests && export ASAN_OPTIONS=detect_leaks=0 && \
-    ./kadd_fuzzer -detect_leaks=0 -runs=30000000 -max_total_time=10800 \
-    assets/fuzz_corpus > /dev/null 2>&1
+PI特性的快速入门，包括快速安装、数据准备和工具使用等，具体请参见[快速入门](docs/zh/PI/quick_start.md)。
 
-# 展示覆盖率报告
-llvm-profdata merge -sparse default.profraw -o kadd.profdata
-llvm-cov report ./kadd_fuzzer -instr-profile=kadd.profdata \
-    -ignore-filename-regex="tests/.*|third_party/.*|include/*"
+### 学习文档
 
-# 生成 fuzz 覆盖率报告
-llvm-cov show ./kadd_fuzzer -instr-profile=kadd.profdata \
-    -format=html -o coverage_html \
-    -ignore-filename-regex="tests/.*|third_party/.*|include/*"
-```
+本特性提供以下学习文档可供参考。
 
-#### 🔧 编译选项速查表
+| 文档 | 介绍|
+| -- | -- |
+| [版本说明书](docs/zh/release_notes.md) | 提供KADD及PI、SQLi特性的版本更新说明。 |
+| [安装指南](docs/zh/PI/installation_guide.md) | 提供KADD PI特性的环境部署、依赖包安装及加速库编译方法。 |
+| [快速入门](docs/zh/PI/quick_start.md) | 提供KADD PI特性的demo示例快速使用方法。 |
+| [API参考](docs/zh/PI/api_reference.md) | 提供KADD PI特性的初始化、检测和黑白名单更新接口的完整API说明。 |
+| [用户指南](docs/zh/PI/user_guide.md) | 提供KADD PI特性的配置说明、检测原理和代码示例。 |
+| [FAQ](docs/zh/PI/faq.md) | 列举KADD PI特性的一些常见问题。 |
 
-| 选项 | 默认值 | 说明 | 使用场景 |
-|------|--------|------|---------|
-| `-DCMAKE_BUILD_TYPE=Release` | Debug | 发布构建（-O3 优化） | 生产部署 |
-| `-DKADD_OPTIMIZE=ON` | OFF | 额外优化选项 | 性能测试 |
-| `-DENABLE_ARM_SVE=ON` | ON | ARM SVE 加速（默认开启） | ARM 平台 |
-| `-DENABLE_CODE_COVERAGE=ON` | OFF | 代码覆盖率 | 覆盖率分析 |
-| `-DBUILD_TESTS=ON` | ON | 构建测试程序 | 测试构建 |
-| `-DUSE_SYSTEM_LIBS=OFF` | ON | 使用第三方库 | 独立构建 |
-| `-DCMAKE_CXX_COMPILER=clang++` | auto | 指定编译器 | Fuzz/覆盖 |
-| `-DCMAKE_C_COMPILER=clang` | auto | 指定编译器 | Fuzz/覆盖 |
+## SQL注入检测特性
 
-## 📦 模块说明
+### 特性简介
 
-| 模块 | 说明 | 依赖 |
-|------|------|------|
-| DFA 引擎 | 字符串分词 | 无 |
-| 特征引擎 | 序列转特征向量 | 无 |
-| ML 引擎 | ONNX 模型推理 | ONNX Runtime |
-| SQLi 引擎 | 完整检测 API | DFA + 特征 + ML + cJSON |
+KADD SQL注入检测方案采用DFA状态机与ML/DL双引擎相结合的混合检测架构。通过DFA引擎进行精确的SQL语句分词，结合ML引擎或DL（CNN）引擎进行智能特征推理，实现对SQL注入攻击的高精度、低延迟检测。方案针对鲲鹏处理器特性进行优化，在保证检测准确率的同时，提供简洁的C语言API接口，易于集成到现有安全防护系统中。
 
-## 💡 快速示例
+### 版本说明
 
-```c
-#include "kadd_sqli_engine.h"
+KADD的版本说明包含软件版本配套关系和软件包下载以及每个版本的特性变更说明，具体请参见[版本说明](docs/zh/release_notes.md)。
 
-int main() {
-    // 创建检测引擎
-    kadd_sqli_engine_t *engine = NULL;
-    if (kadd_sqli_engine_create_from_file(&engine, "config.json") != KADD_SQLI_OK) {
-        return 1;
-    }
-    
-    // 检测 SQL 注入
-    const char *input = "id=1' OR '1'='1";
-    float probability = 0.0f;
-    
-    if (kadd_sqli_detect(engine, input, &probability) == KADD_SQLI_OK) {
-        if (probability >= 0.5f) {
-            printf("SQL 注入! 概率: %.2f%%\n", probability * 100);
-        } else {
-            printf("安全输入\n");
-        }
-    }
-    
-    kadd_sqli_engine_free(engine);
-    return 0;
-}
-```
+### 快速入门
 
-## 📚 文档
+SQL注入检测特性的快速入门，包括快速安装、数据准备和工具使用等，具体请参见[快速入门](docs/zh/SQLi/quick_start.md)。
 
-- [第三方库安装指南](docs/DEPENDENCIES.md) - 依赖安装说明
+### 学习文档
 
+本特性提供以下学习文档可供参考。
 
-## 📁 目录结构
+| 文档 | 介绍|
+| -- | -- |
+| [版本说明书](docs/zh/release_notes.md) | 提供KADD及PI、SQLi特性的版本更新说明。 |
+| [安装指南](docs/zh/SQLi/installation_guide.md) | 提供KADD SQL注入检测特性的环境部署、依赖包安装及编译方法。 |
+| [快速入门](docs/zh/SQLi/quick_start.md) | 提供KADD SQL注入检测特性的demo示例快速使用方法。 |
+| [API参考](docs/zh/SQLi/api_reference.md) | 提供KADD SQL注入检测特性的DFA引擎、特征引擎、ML引擎、DL引擎和SQLi引擎的完整API接口说明。 |
+| [用户指南](docs/zh/SQLi/user_guide.md) | 提供KADD SQL注入检测特性的用法和实践。 |
+| [FAQ](docs/zh/SQLi/faq.md) | 列举KADD SQL注入检测特性的一些常见问题。 |
 
-```
-KADD/
-├── include/          # 头文件
-├── src/              # 源代码
-├── tests/            # 测试代码
-├── docs/             # 文档
-├── tools/            # 工具脚本（⚠️ 见下方说明）
-├── assets/           # 模型和数据文件
-└── third_party/      # 第三方依赖
-```
+## 贡献声明
 
-### ⚠️ 关于 tools 目录
+如果使用过程中有任何问题，或者需要反馈特性需求和bug报告，可以提交issues联系我们，具体贡献方法可参考[这里](https://gitcode.com/boostkit/community/blob/master/docs/contributor/contributing.md)。
 
-`tools/` 目录包含**模型和数据生成工具**，用于：
+## 免责声明
 
-- 训练和生成检测模型（`tools/train_tokens.py`）
-- 生成 DFA 状态转移表（`tools/dfa_compile/dfa_compiler.py`）
+致KADD使用者
 
-**重要声明：**
+- 本项目仅提供参考示例及工具，使用者需自行承担使用风险，并理解以下内容：
+    - 数据处理及删除：用户在使用本工具过程中产生的数据属于用户责任范畴。建议用户在使用完毕后及时删除相关数据，以防信息泄露。
+    - 数据保密与传播：使用者了解并同意不得将通过本工具产生的数据随意外发或传播。对于由此产生的信息泄露、数据泄露或其他不良后果，本工具及其开发者概不负责。
+    - 用户输入安全性：用户需自行保证输入的命令行的安全性，并承担因输入不当而导致的任何安全风险或损失。对于输入命令行不当所导致的问题，本工具及其开发者概不负责。
+- 免责声明范围：本免责声明适用于所有使用本工具的个人或实体。不建议将此工具用于任何商业用途。使用本工具即表示您同意并接受本声明的内容，并愿意承担因使用该功能而产生的风险和责任，如有异议请停止使用本工具。
+- 在使用本工具之前，请谨慎阅读并理解以上免责声明的内容。对于使用本工具所产生的任何问题或疑问，请及时联系开发者。
 
-> 本目录代码**仅供学习和参考**，**不保证**：
-> - 代码质量符合生产标准
-> - 无安全漏洞
-> - 与主项目代码规范一致
->
-> 这些工具是**开发过程中的临时脚本**，可能未经过充分测试和审查。
-> 如需用于生产环境，请自行评估安全性并进行必要的加固。
+## 许可证书
 
-**示例：重新训练模型**
+本项目采用**BSD 3-Clause**许可证。详见 [LICENSE](LICENSE)。
 
-```bash
-# 1. 准备训练数据
-cp your_custom_dataset.csv assets/data/
+本项目的文档适用**CC-BY 4.0**许可证，具体请参见 [LICENSE](docs/LICENSE) 文件。
 
-# 2. 运行训练脚本（⚠️ 谨慎执行）
-python tools/train_tokens.py \
-    --input assets/data/your_custom_dataset.csv \
-    --output assets/model/model_tokens_rf.onnx
+---
 
-# 3. 验证新模型
-./build/kadd_sqli_demo
-```
+## 第三方许可证
 
-#### 安全建议
+各特性模块使用的第三方库及其许可证详见对应模块目录下的 `THIRD_PARTY_LICENSES` 文件：
 
-1. **默认不运行**：使用预生成的产物即可满足大部分需求
-2. **隔离环境**：如需定制，在独立的沙箱/容器中运行
-3. **审查代码**：运行前务必检查脚本内容
-4. **验证产物**：对生成的模型和状态表进行充分测试
-
-## 🏗️ 架构
-
-```
-输入字符串 → DFA 分词 → Token 序列 → 特征提取 → 特征向量 → ML 推理 → 概率
-```
-
-## 🌍 平台支持
-
-| 平台 | 架构 | 状态 |
-|------|------|------|
-| Linux | x86_64 | ✅ 支持 |
-| Linux | aarch64 | ✅ 支持 (NEON) |
-| Linux | ARMv9-A | ✅ 支持 (SVE/SVE2) |
-
-## 📜 第三方开源库
-
-本项目使用以下开源库：
-
-| 库名 | 许可证 | 仓库地址 |
-|---------|---------|------------|
-| [cJSON](https://github.com/DaveGamble/cJSON) | MIT | https://github.com/DaveGamble/cJSON |
-| [ONNX Runtime](https://github.com/microsoft/onnxruntime) | MIT | https://github.com/microsoft/onnxruntime |
-| [Google Test](https://github.com/google/googletest) | BSD 3-Clause | https://github.com/google/googletest |
-
-完整许可证文本请参见 [THIRD_PARTY_LICENSES.txt](THIRD_PARTY_LICENSES.txt)
-
-## 📄 许可证
-
-源代码 **Private Repository Source Code License 1.0**  [LICENSE](LICENSE)。
-
-文档 **CC-BY 4.0 (Creative Commons Attribution 4.0 International)** [LICENSE](./docs/LICENSE)。
+- **PI特性**：详见 [PI/THIRD_PARTY_LICENSES](PI/THIRD_PARTY_LICENSES)
+- **SQL注入检测特性**：详见 [SQLi/THIRD_PARTY_LICENSES](SQLi/THIRD_PARTY_LICENSES)

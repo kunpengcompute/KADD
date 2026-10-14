@@ -1,0 +1,2 @@
+PI/algorithm/knowledge_base/model_file/clf_model.onnx filter=lfs diff=lfs merge=lfs -text
+SQLi/tools/model_train/train_data/train_data.csv filter=lfs diff=lfs merge=lfs -text

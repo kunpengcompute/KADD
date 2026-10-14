@@ -1,0 +1,13 @@
+{
+  "engine_mode": "ml",
+
+  "transition_table": "/opt/KADD/SQLi/assets/data/transition_table.bin",
+  "output_table": "/opt/KADD/SQLi/assets/data/output_table.bin",
+  "eod_table": "/opt/KADD/SQLi/assets/data/eod_table.bin",
+
+  "model_rf": "/opt/KADD/SQLi/assets/model/model_tokens_rf.krf",
+  "model_rf_onnx": "/opt/KADD/SQLi/assets/model/model_tokens_rf.onnx",
+
+  "model_cnn": "/opt/KADD/SQLi/assets/model/model_tokens_dl_cnn.kcn",
+  "model_cnn_onnx": "/opt/KADD/SQLi/assets/model/model_tokens_dl_cnn.onnx"
+}
