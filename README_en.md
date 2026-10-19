@@ -1,9 +1,5 @@
 # KADD
 
-<!-- md-trans-meta sourceCommit=bd143b7dd3a8d6940dbfa762540fd554e881848e translatedAt=2026-09-22T04:46:45.625Z pushedAt=2026-09-24T02:41:21.159Z -->
-
-[![License](https://img.shields.io/badge/license-BSD%203--Clause-blue)](LICENSE)
-
 ## Latest Updates
 
 - [2026-09-30] : Released KADD 1.1.0: Added the PI feature; updated the SQLi feature by adding the DL (CNN) inference mode and supporting ML/DL dual-mode switching.
@@ -149,8 +145,6 @@ To KADD users
 This project is licensed under **BSD 3-Clause** License. For details, see [LICENSE](LICENSE).
 
 The documents of this project are licensed under **CC-BY 4.0**. For details, see [LICENSE](docs/LICENSE).
-
-
 
 ## Third-Party License
 
