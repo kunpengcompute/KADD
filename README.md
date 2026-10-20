@@ -1,7 +1,5 @@
 # KADD
 
-[![License](https://img.shields.io/badge/license-BSD%203--Clause-blue)](LICENSE)
-
 ## 最新消息
 
 - [2026-09-30] : 发布KADD 1.1.0版本。新增PI特性；更新SQLi特性，新增DL（CNN）推理模式并支持ML/DL双模式切换。
