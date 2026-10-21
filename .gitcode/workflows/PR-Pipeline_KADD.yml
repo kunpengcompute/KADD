@@ -11,7 +11,7 @@ on: # 自动触发工作流运行的触发条件
   pull_request_comment: # 标准 PR 评论触发事件
     types: [created]
     branches: [ '*' ]
-    comments: [ '^(?:\/)?compile*' , 'sca-pr-scan']
+    comments: [ '^(?:\/)?compile*' , 'sca-pr-scan' ]
 
 permissions:
   repository: read
