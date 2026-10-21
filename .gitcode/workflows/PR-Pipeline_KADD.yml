@@ -126,7 +126,8 @@ stages: #阶段，不超过16个阶段，不超过256个job
         name: build
         if: ${{ jobs.Detect_file_changes.outputs.need_build == 'yes' }}
         select: selected_by_default
-        #needs: [ Detect_file_changes, sca-pr, malicious-scan]   # 首次推送先注释，验证通过后放开（阶段二恢复）
+        needs: [ Detect_file_changes ]   # 门控 outputs 引用必须配合 needs（附录二第10条），Detect_file_changes 不随阶段一注释
+        #needs: [ sca-pr, malicious-scan]   # 阶段一暂注释，验证通过后放开（阶段二合并入上一行）
         uses: .gitcode/workflows/build_job.yml
         with:
           runs_on_flavor: "flavor=small"
