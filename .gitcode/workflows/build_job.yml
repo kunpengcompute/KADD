@@ -1,0 +1,35 @@
+name: Build Job
+
+on:
+  workflow_call:
+    inputs:
+      runs_on_flavor:
+        required: true
+        type: string
+      docker_img:
+        required: true
+        type: string
+      pr_id:
+        required: true
+        type: string
+
+jobs:
+  JOB_Compile:
+    name: Compile
+    select: selected_by_default
+    runs-on: [ self-hosted, os=euler, arch=arm64, type=pr, "${{ inputs.runs_on_flavor }}" ]
+    container:
+      image: ${{ inputs.docker_img }}
+    steps:
+      - name: fast_checkout
+        identifier: fast_checkout
+        uses: checkout
+        with:
+          # pull_request_target 工作流检出 fork PR 预合并引用会被安全拦截，需显式放行
+          allow-unsafe-pr-checkout: true
+          ref: refs/merge-requests/${{ inputs.pr_id }}/merge
+      - name: build
+        run: |-
+          yum install cmake gcc gcc-c++ make wget unzip tar -y
+          chmod +x build.sh
+          sh build.sh
