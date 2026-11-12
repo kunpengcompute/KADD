@@ -143,7 +143,7 @@ rpm -ivh boostsra-inference-1.2.0-RC1.aarch64.rpm
 source /etc/profile
 ```
 
-然后安装打入KONNX补丁的onnxruntime源码，具体见[参考文档](https://www.hikunpeng.com/document/detail/zh/boostsra/srainference/SRA_Inference/kunpengsra_inference_16_0031.html)：
+然后安装打入KONNX补丁的onnxruntime源码，具体见[SRA_Inference文档](https://www.hikunpeng.com/document/detail/zh/boostsra/srainference/SRA_Inference/kunpengsra_inference_16_0031.html)/srainference/SRA_Inference/kunpengsra_inference_16_0031.html)：
 
 ```bash
 # 注意：/path 为占位符，请先替换为实际工作目录

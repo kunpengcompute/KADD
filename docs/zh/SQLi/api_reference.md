@@ -1,5 +1,7 @@
 # API参考手册
 
+本文档介绍KADD SQL注入检测引擎的API，涵盖SQLi、DL、ML、DFA、Feature引擎及配置加载接口的函数接口、参数与返回值说明，适用于基于KADD开发SQL注入检测能力的工程师。
+
 ## 概述
 
 KADD SQL注入检测引擎提供以下模块：
@@ -17,7 +19,7 @@ KADD SQL注入检测引擎提供以下模块：
 
 SQL注入检测引擎运行时会按照以下流程图处理输入：
 
-![sqli](../../figures/SQLi/sqli.png)
+![SQL注入检测引擎处理流程图：输入SQL依次经DFA分词、特征转换，再由ML或DL引擎推理得出注入概率](../../figures/SQLi/sqli.png)
 
 ### 模型加载策略
 
@@ -199,7 +201,7 @@ int kadd_dl_model_predict_batch(kadd_dl_model_t *model, const float *inputs,
 
 **功能**
 
-获取输入维度（CNN: 300；ONNX: 从模型读取）。
+获取模型特征维度（CNN: 300；ONNX: 从模型读取）。
 
 **函数接口**
 
@@ -241,7 +243,7 @@ int kadd_model_load(kadd_model_handle_t **handle, const char *model_path, int fe
 
 * `handle`：模型句柄指针的指针
 * `model_path`：模型文件路径（`.krf`原生格式或`.onnx`）
-* `feature_dim`：特征维度（0=从模型自动读取；>0=校验与模型维度是否一致）
+* `feature_dim`：特征维度（0表示从模型自动读取；大于0时校验与模型维度是否一致）
 
 **返回值**
 
@@ -584,3 +586,9 @@ SQLi引擎作为顶层模块不单独定义错误码，错误发生时直接返�
 | `kadd_cnn_engine.h` | `/opt/KADD/SQLi/include/internal/` | CNN原生引擎（内部） |
 | `kadd_rf_engine.h` | `/opt/KADD/SQLi/include/internal/` | RF原生引擎（内部） |
 | `kadd_inference_engine.h` | `/opt/KADD/SQLi/include/internal/` | ONNX推理引擎（内部） |
+
+## 修订记录
+
+| 文档版本 | 发布日期 | 修改说明 |
+| -------- | -------- | -------- |
+| 01 | 2026-09-30 | 第一次正式发布 |

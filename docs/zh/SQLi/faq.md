@@ -10,7 +10,9 @@
 
 **问题**
 
-`error while loading shared libraries: libkadd_sqli.so: cannot open shared object file`
+```text
+error while loading shared libraries: libkadd_sqli.so: cannot open shared object file
+```
 
 **回答**
 
@@ -70,7 +72,7 @@ if (probability >= 0.5f) {
 
 **回答**
 
-不可以。引擎实例**不是线程安全的**。每个线程应创建独立的引擎实例：
+不可以。引擎实例**不是线程安全的**。
 
 每个线程按以下顺序使用引擎：
 
@@ -130,7 +132,7 @@ kadd_sqli_engine_free(engine);
 
 KADD的ML和DL引擎均采用**自动回退**策略：
 
-1. 编译时通过 `-DENABLE_ARM_SVE=ON`（默认开启）启用SVE编译路径
-2. 运行时检测SVE可用性（通过 `kadd_sve.h` 中的宏判断）
-3. SVE可用时，加载原生二进制模型（`.krf` / `.kcn`），利用SVE指令加速
-4. SVE不可用时，自动回退ONNX Runtime加载`.onnx`模型
+1. 编译时通过 `-DENABLE_ARM_SVE=ON`（默认开启）启用SVE编译路径。
+2. 运行时检测SVE可用性（通过 `kadd_sve.h` 中的宏判断）。
+3. SVE可用时，加载原生二进制模型（`.krf` / `.kcn`），利用SVE指令加速。
+4. SVE不可用时，自动回退ONNX Runtime加载`.onnx`模型。
