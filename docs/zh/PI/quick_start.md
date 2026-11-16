@@ -74,7 +74,11 @@ res = kp_detect(kp, prompt)
 print(res)
 ```
 
-预期输出: {'result': 1, 'detect_time': '10.234 ms'}
+**输出示例**：
+
+```output
+{'result': 1, 'detect_time': '10.234 ms'}
+```
 
 ## 模型训练复现
 
