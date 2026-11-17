@@ -4,17 +4,17 @@
 
 ## 关于 KADD SQL
 
-KADD SQL 是一个SQL注入检测工具，通过目 `SQLi/build.sh` 一键构建。
+KADD SQL 是一个SQL注入检测工具，通过运行 `SQLi/build.sh` 一键构建。
 
 ## 环境要求
 
-### 已验证环境
+### 硬件环境
 
 处理器为鲲鹏920新型号处理器，操作系统为openEuler 24.03 LTS。
 
-### 软件要求
+### 操作系统和软件要求
 
-| 项目 | 要求 |说明|
+| 项目 | 要求 | 说明 |
 |------|------|------|
 | GCC | 10.3.1及以上 | 必选 |
 | CMake | 2.8.11及以上 | 必选 |
@@ -185,7 +185,7 @@ cd /opt/KADD/SQLi
 | `build_longrun_*/lr_cov_html/index.html` | 覆盖率HTML，点开函数所在行可见每个开放函数约3000万次运行计数 |
 | `build_longrun_*/longrun_*.tar.gz` | 以上产物打包，便于回传留档 |
 
-可用环境变量调整规模：`N=8 API_CALLS=1000000 ./tools/fuzz_longrun.sh`。插桩构建比纯吞吐版（`./build.sh fuzz`）慢约10%~30%，但运行计数可留档。
+可用环境变量调整规模：`N=8 API_CALLS=1000000 ./tools/fuzz_longrun.sh`。其中N为并行实例数（正整数，默认32）；API_CALLS为单个等频接口的目标调用次数（正整数，默认30000000，即3000万）。插桩构建比纯吞吐版（`./build.sh fuzz`）慢约10%~30%，但运行计数可留档。
 
 #### 手工构建（覆盖率插桩）
 
@@ -241,3 +241,9 @@ cd /opt/KADD/SQLi
 | `-DBUILD_TESTS=ON` | ON | 构建测试程序 | 测试构建 |
 | `-DCMAKE_CXX_COMPILER=clang++` | auto | 指定编译器 | Fuzz/覆盖 |
 | `-DCMAKE_C_COMPILER=clang` | auto | 指定编译器 | Fuzz/覆盖 |
+
+## 修订记录
+
+| 文档版本 | 发布日期 | 修改说明 |
+| -------- | -------- | -------- |
+| 01 | 2026-09-30 | 第一次正式发布 |

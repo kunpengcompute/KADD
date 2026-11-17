@@ -1,23 +1,25 @@
 # API参考手册
 
+本文档介绍KADD SQL注入检测引擎的API，涵盖SQLi、DL、ML、DFA、Feature引擎及配置加载接口的函数接口、参数与返回值说明，适用于基于KADD开发SQL注入检测能力的工程师。
+
 ## 概述
 
 KADD SQL注入检测引擎提供以下模块：
 
 | 模块 | 头文件 | 功能 |
 |------|--------|------|
-| SQLi引擎 | `kadd_sqli_engine.h` | SQL注入检测（ML/DL双模式） |
-| DL引擎 | `kadd_dl_engine.h` | 统一DL/CNN推理（SVE原生 + ONNX回退） |
-| ML引擎 | `kadd_ml_engine.h` | 统一ML/RF推理（SVE原生 + ONNX回退） |
-| DFA引擎 | `kadd_dfa_engine.h` | 字符串分词 |
-| Feature引擎 | `kadd_feature_engine.h` | 序列转特征向量 |
-| Config | `kadd_config_loader.h` | 配置加载 |
+| SQLi引擎 | kadd_sqli_engine.h | SQL注入检测（ML/DL双模式） |
+| DL引擎 | kadd_dl_engine.h | 统一DL/CNN推理（SVE原生 + ONNX回退） |
+| ML引擎 | kadd_ml_engine.h | 统一ML/RF推理（SVE原生 + ONNX回退） |
+| DFA引擎 | kadd_dfa_engine.h | 字符串分词 |
+| Feature引擎 | kadd_feature_engine.h | 序列转特征向量 |
+| Config | kadd_config_loader.h | 配置加载 |
 
 ### 处理流程
 
 SQL注入检测引擎运行时会按照以下流程图处理输入：
 
-![sqli](../../figures/SQLi/sqli.png)
+![SQL注入检测引擎处理流程图：输入SQL依次经DFA分词、特征转换，再由ML或DL引擎推理得出注入概率](../../figures/SQLi/sqli.png)
 
 ### 模型加载策略
 
@@ -183,7 +185,7 @@ int kadd_dl_model_predict_batch(kadd_dl_model_t *model, const float *inputs,
 
 **功能**
 
-获取输入维度（CNN: 300；ONNX: 从模型读取）。
+获取模型特征维度（CNN: 300；ONNX: 从模型读取）。
 
 **函数接口**
 
@@ -221,7 +223,7 @@ int kadd_model_load(kadd_model_handle_t **handle, const char *model_path, int fe
 
 * `handle`：模型句柄指针的指针
 * `model_path`：模型文件路径（`.krf`原生格式或`.onnx`）
-* `feature_dim`：特征维度（0=从模型自动读取；>0=校验与模型维度是否一致）
+* `feature_dim`：特征维度（0表示从模型自动读取；大于0时校验与模型维度是否一致）
 
 **返回值**
 
@@ -503,21 +505,21 @@ SQLi引擎作为顶层模块不单独定义错误码，错误发生时直接返�
 
 | 错误码 | 宏 | 模块 | 说明 |
 |--------|----|------|------|
-| 0 | `KADD_SUCCESS` | 通用 | 成功 |
-| -101 | `KADD_ERROR_INVALID_INPUT` | 通用 | 无效输入 |
-| -102 | `KADD_ERROR_NULL_PTR` | 通用 | 空指针 |
-| -103 | `KADD_ERROR_OUT_OF_MEMORY` | 通用 | 内存不足 |
-| -104 | `KADD_ERROR_NOT_INIT` | 通用 | 引擎未初始化 |
-| -105 | `KADD_ERROR_INVALID_PARAM` | 通用 | 无效参数 |
-| -107 | `KADD_ERROR_MODEL_LOAD_FAILED` | 通用 | 模型加载失败 |
-| -108 | `KADD_ERROR_FILE_OPERATION_FAILED` | 通用 | 文件操作失败 |
-| -109 | `KADD_ERROR_CONFIG` | 通用 | 配置文件错误或缺失必需字段 |
-| -110 | `KADD_ERROR_INFERENCE_FAILED` | 通用 | 模型推理失败 |
-| -10 | `KADD_DFA_ERROR_FILE_NOT_FOUND` | DFA | DFA文件未找到 |
-| -11 | `KADD_DFA_ERROR_PARSE` | DFA | DFA文件解析失败 |
-| -12 | `KADD_DFA_ERROR_BUFFER_OVERFLOW` | DFA | DFA缓冲区溢出 |
-| -13 | `KADD_DFA_ERROR_INVALID_LENGTH` | DFA | DFA输入长度无效 |
-| -200 | `KADD_FEATURE_ERROR_VALUE_OUT_OF_RANGE` | Feature | Feature序列元素超出范围 |
+| 0 | KADD_SUCCESS | 通用 | 成功 |
+| -101 | KADD_ERROR_INVALID_INPUT | 通用 | 无效输入 |
+| -102 | KADD_ERROR_NULL_PTR | 通用 | 空指针 |
+| -103 | KADD_ERROR_OUT_OF_MEMORY | 通用 | 内存不足 |
+| -104 | KADD_ERROR_NOT_INIT | 通用 | 引擎未初始化 |
+| -105 | KADD_ERROR_INVALID_PARAM | 通用 | 无效参数 |
+| -107 | KADD_ERROR_MODEL_LOAD_FAILED | 通用 | 模型加载失败 |
+| -108 | KADD_ERROR_FILE_OPERATION_FAILED | 通用 | 文件操作失败 |
+| -109 | KADD_ERROR_CONFIG | 通用 | 配置文件错误或缺失必需字段 |
+| -110 | KADD_ERROR_INFERENCE_FAILED | 通用 | 模型推理失败 |
+| -10 | KADD_DFA_ERROR_FILE_NOT_FOUND | DFA | DFA文件未找到 |
+| -11 | KADD_DFA_ERROR_PARSE | DFA | DFA文件解析失败 |
+| -12 | KADD_DFA_ERROR_BUFFER_OVERFLOW | DFA | DFA缓冲区溢出 |
+| -13 | KADD_DFA_ERROR_INVALID_LENGTH | DFA | DFA输入长度无效 |
+| -200 | KADD_FEATURE_ERROR_VALUE_OUT_OF_RANGE | Feature | Feature序列元素超出范围 |
 
 **详细定义请参考源码头文件** `/opt/KADD/SQLi/include/kadd_errors.h`
 
@@ -525,14 +527,20 @@ SQLi引擎作为顶层模块不单独定义错误码，错误发生时直接返�
 
 | 头文件 | 路径 | 说明 |
 |--------|------|------|
-| `kadd_sqli_engine.h` | `/opt/KADD/SQLi/include/` | SQLi引擎（公开） |
-| `kadd_dl_engine.h` | `/opt/KADD/SQLi/include/` | DL引擎（公开） |
-| `kadd_ml_engine.h` | `/opt/KADD/SQLi/include/` | ML引擎（公开） |
-| `kadd_errors.h` | `/opt/KADD/SQLi/include/` | 错误码（公开） |
-| `kadd_dfa_engine.h` | `/opt/KADD/SQLi/include/` | DFA引擎（公开） |
-| `kadd_feature_engine.h` | `/opt/KADD/SQLi/include/` | Feature引擎（公开） |
-| `kadd_config_loader.h` | `/opt/KADD/SQLi/include/` | 配置加载（公开） |
-| `kadd_sve.h` | `/opt/KADD/SQLi/include/internal/` | SVE检测（内部） |
-| `kadd_cnn_engine.h` | `/opt/KADD/SQLi/include/internal/` | CNN原生引擎（内部） |
-| `kadd_rf_engine.h` | `/opt/KADD/SQLi/include/internal/` | RF原生引擎（内部） |
-| `kadd_inference_engine.h` | `/opt/KADD/SQLi/include/internal/` | ONNX推理引擎（内部） |
+| kadd_sqli_engine.h | /opt/KADD/SQLi/include/ | SQLi引擎（公开） |
+| kadd_dl_engine.h | /opt/KADD/SQLi/include/ | DL引擎（公开） |
+| kadd_ml_engine.h | /opt/KADD/SQLi/include/ | ML引擎（公开） |
+| kadd_errors.h | /opt/KADD/SQLi/include/ | 错误码（公开） |
+| kadd_dfa_engine.h | /opt/KADD/SQLi/include/ | DFA引擎（公开） |
+| kadd_feature_engine.h | /opt/KADD/SQLi/include/ | Feature引擎（公开） |
+| kadd_config_loader.h | /opt/KADD/SQLi/include/ | 配置加载（公开） |
+| kadd_sve.h | /opt/KADD/SQLi/include/internal/ | SVE检测（内部） |
+| kadd_cnn_engine.h | /opt/KADD/SQLi/include/internal/ | CNN原生引擎（内部） |
+| kadd_rf_engine.h | /opt/KADD/SQLi/include/internal/ | RF原生引擎（内部） |
+| kadd_inference_engine.h | /opt/KADD/SQLi/include/internal/ | ONNX推理引擎（内部） |
+
+## 修订记录
+
+| 文档版本 | 发布日期 | 修改说明 |
+| -------- | -------- | -------- |
+| 01 | 2026-09-30 | 第一次正式发布 |

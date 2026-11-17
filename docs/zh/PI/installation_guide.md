@@ -9,9 +9,9 @@
 
 1. **确认处理器型号**
 
-```bash
-lscpu   # 查看输出中的 BIOS Model name 字段，确认处理器型号
-```
+   ```bash
+   lscpu   # 查看输出中的 BIOS Model name 字段，确认处理器型号
+   ```
 
 2. **根据下表选择安装路径**
 
@@ -75,83 +75,84 @@ lscpu   # 查看输出中的 BIOS Model name 字段，确认处理器型号
 
 1. 安装编译工具链
 
-安装 1.1 节表格中"加速库20已验证版本"列要求的 cmake、make、gcc、python。安装方式不限（系统包管理器或源码编译均可），以 openEuler 为例：
+    安装 1.1 节表格中"加速库20已验证版本"列要求的 cmake、make、gcc、python。安装方式不限（系统包管理器或源码编译均可），以 openEuler 为例：
 
-```bash
-dnf install -y gcc gcc-c++ make cmake git wget unzip python3 python3-pip
-```
+    ```bash
+    dnf install -y gcc gcc-c++ make cmake git wget unzip python3 python3-pip
+    ```
 
-若安装的版本与 1.1 节表格要求不一致，可在安装时指定版本：
+    若安装的版本与 1.1 节表格要求不一致，可在安装时指定版本：
 
-```bash
-# 查看仓库中可安装的版本
-dnf list --showduplicates cmake
-# 安装指定版本（版本号以上述命令的查询结果为准）
-dnf install -y cmake-3.27.9
-```
+    ```bash
+    # 查看仓库中可安装的版本
+    dnf list --showduplicates cmake
+    # 安装指定版本（版本号以上述命令的查询结果为准）
+    dnf install -y cmake-3.27.9
+    ```
 
-若仓库中没有所需版本，请到官方发布页下载对应版本的源码，自行编译安装。
+    若仓库中没有所需版本，请到官方发布页下载对应版本的源码，自行编译安装。
 
-安装完成后，使用以下命令核对版本是否与 1.1 节表格一致：
+    安装完成后，使用以下命令核对版本是否与 1.1 节表格一致：
 
-```bash
-cmake --version    # 应为 3.27.9
-make --version     # 应为 4.3
-gcc --version      # 应为 10.3.1
-python --version   # 应为 3.9.9
-```
+    ```bash
+    cmake --version    # 应为 3.27.9
+    make --version     # 应为 4.3
+    gcc --version      # 应为 10.3.1
+    python --version   # 应为 3.9.9
+    ```
 
-安装编译所需的 python 三方库（版本与 1.1 节表格一致）：
+    安装编译所需的 python 三方库（版本与 1.1 节表格一致）：
 
-```bash
-pip install numpy==2.0.2 packaging==26.3 SCons==4.11.1 wheel==0.48.0 setuptools==59.4.0
-```
+    ```bash
+    pip install numpy==2.0.2 packaging==26.3 SCons==4.11.1 wheel==0.48.0 setuptools==59.4.0
+    ```
 
 2. 编译 Arm Compute Library
 
-在工作目录下下载源码，解压并进入文件夹：
+    在工作目录下下载源码，解压并进入文件夹：
 
-```bash
-# 注意：/path 为占位符，请先替换为实际工作目录
-cd /path
-wget -q https://github.com/ARM-software/ComputeLibrary/archive/refs/tags/v23.08.zip -O ComputeLibrary-23.08.zip
-unzip ComputeLibrary-23.08.zip && cd ComputeLibrary-23.08
-```
+    ```bash
+    # 注意：/path 为占位符，请先替换为实际工作目录
+    cd /path
+    wget -q https://github.com/ARM-software/ComputeLibrary/archive/refs/tags/v23.08.zip -O ComputeLibrary-23.08.zip
+    unzip ComputeLibrary-23.08.zip && cd ComputeLibrary-23.08
+    ```
 
-使用如下命令进行编译：
+    使用如下命令进行编译：
 
-```bash
-scons Werror=1 -j8 debug=0 neon=1 opencl=0 os=linux arch=armv8a build=native
-```
+    ```bash
+    scons Werror=1 -j8 debug=0 neon=1 opencl=0 os=linux arch=armv8a build=native
+    ```
 
-**检查点**：编译完成后，`/path/ComputeLibrary-23.08/build` 目录下应存在以下三个文件（第 2 章部署时需要配置到环境变量中）：
+    **检查点**：编译完成后，`/path/ComputeLibrary-23.08/build` 目录下应存在以下三个文件（第 2 章部署时需要配置到环境变量中）：
 
-- `libarm_compute.so`
-- `libarm_compute_core.so`
-- `libarm_compute_graph.so`
+    - `libarm_compute.so`
+    - `libarm_compute_core.so`
+    - `libarm_compute_graph.so`
+
 3. 安装 KONNX
 
-按照鲲鹏社区指引，先安装[SRA_Inference](https://www.hikunpeng.com/document/detail/zh/boostsra/srainference/SRA_Inference/kunpengsra_inference_16_0006.html)：
+    按照鲲鹏社区指引，先安装[SRA_Inference](https://www.hikunpeng.com/document/detail/zh/boostsra/srainference/SRA_Inference/kunpengsra_inference_16_0006.html)：
 
-```bash
-# 注意：/path 为占位符，请先替换为实际工作目录
-cd /path
-wget -q https://kunpeng-repo.obs.cn-north-4.myhuaweicloud.com/Kunpeng%20BoostKit/Kunpeng%20BoostKit%2026.1.RC1/BoostKit-boostsra-inference_1.2.0_RC1.zip -O sra_inference.zip
-unzip sra_inference.zip
-rpm -ivh boostsra-inference-1.2.0-RC1.aarch64.rpm
-source /etc/profile
-```
+    ```bash
+    # 注意：/path 为占位符，请先替换为实际工作目录
+    cd /path
+    wget -q https://kunpeng-repo.obs.cn-north-4.myhuaweicloud.com/Kunpeng%20BoostKit/Kunpeng%20BoostKit%2026.1.RC1/BoostKit-boostsra-inference_1.2.0_RC1.zip -O sra_inference.zip
+    unzip sra_inference.zip
+    rpm -ivh boostsra-inference-1.2.0-RC1.aarch64.rpm
+    source /etc/profile
+    ```
 
-然后安装打入KONNX补丁的onnxruntime源码，具体见[参考文档](https://www.hikunpeng.com/document/detail/zh/boostsra/srainference/SRA_Inference/kunpengsra_inference_16_0031.html)：
+    然后安装打入KONNX补丁的onnxruntime源码，具体见[SRA_Inference文档](https://www.hikunpeng.com/document/detail/zh/boostsra/srainference/SRA_Inference/kunpengsra_inference_16_0031.html)
 
-```bash
-# 注意：/path 为占位符，请先替换为实际工作目录
-cd /path
-git clone -b v1.19.2 https://github.com/microsoft/onnxruntime.git
-git clone https://gitcode.com/openeuler/sra_onnxruntime_adapter.git
-cd onnxruntime
-git apply ../sra_onnxruntime_adapter/konnx.patch
-```
+    ```bash
+    # 注意：/path 为占位符，请先替换为实际工作目录
+    cd /path
+    git clone -b v1.19.2 https://github.com/microsoft/onnxruntime.git
+    git clone https://gitcode.com/openeuler/sra_onnxruntime_adapter.git
+    cd onnxruntime
+    git apply ../sra_onnxruntime_adapter/konnx.patch
+    ```
 
 4. 编译 OnnxRuntime
 
@@ -182,37 +183,37 @@ grep -r "be8be39fdbc6e60e94fa7870b280707069b5b81a" . | cut -d: -f1 | sort -u | x
 
 1. 安装编译工具链
 
-安装 1.1 节表格中"加速库50已验证版本"列要求的 cmake、make、gcc、python。安装方式不限（系统包管理器或源码编译均可），以 openEuler 为例：
+    安装 1.1 节表格中"加速库50已验证版本"列要求的 cmake、make、gcc、python。安装方式不限（系统包管理器或源码编译均可），以 openEuler 为例：
 
-```bash
-dnf install -y gcc gcc-c++ make cmake git wget unzip python3 python3-pip
-```
+    ```bash
+    dnf install -y gcc gcc-c++ make cmake git wget unzip python3 python3-pip
+    ```
 
-若安装的版本与 1.1 节表格要求不一致，可在安装时指定版本：
+    若安装的版本与 1.1 节表格要求不一致，可在安装时指定版本：
 
-```bash
-# 查看仓库中可安装的版本
-dnf list --showduplicates cmake
-# 安装指定版本（版本号以上述命令的查询结果为准）
-dnf install -y cmake-3.28.1
-```
+    ```bash
+    # 查看仓库中可安装的版本
+    dnf list --showduplicates cmake
+    # 安装指定版本（版本号以上述命令的查询结果为准）
+    dnf install -y cmake-3.28.1
+    ```
 
-若仓库中没有所需版本（如 python 3.10.20 通常无法直接安装），请到官方发布页下载对应版本的源码，自行编译安装。
+    若仓库中没有所需版本（如 python 3.10.20 通常无法直接安装），请到官方发布页下载对应版本的源码，自行编译安装。
 
-安装完成后，使用以下命令核对版本是否与 1.1 节表格一致：
+    安装完成后，使用以下命令核对版本是否与 1.1 节表格一致：
 
-```bash
-cmake --version    # 应为 3.28.1
-make --version     # 应为 4.4.1
-gcc --version      # 应为 12.3.1
-python --version   # 应为 3.10.20
-```
+    ```bash
+    cmake --version    # 应为 3.28.1
+    make --version     # 应为 4.4.1
+    gcc --version      # 应为 12.3.1
+    python --version   # 应为 3.10.20
+    ```
 
-安装编译所需的 python 三方库（版本与 1.1 节表格一致）：
+    安装编译所需的 python 三方库（版本与 1.1 节表格一致）：
 
-```bash
-pip install numpy==2.2.6 packaging==26.2 setuptools==79.0.1
-```
+    ```bash
+    pip install numpy==2.2.6 packaging==26.2 setuptools==79.0.1
+    ```
 
 2. 编译 OnnxRuntime
 
@@ -269,59 +270,59 @@ PI 特性运行依赖以下 python 三方库（对应代码仓中的 `PI/deploy/
 
 1. 确认处理器型号
 
-```bash
-lscpu   # 查看 BIOS Model name 字段，确认处理器型号
-```
+    ```bash
+    lscpu   # 查看 BIOS Model name 字段，确认处理器型号
+    ```
 
 2. 安装 onnxruntime 库（三选一）
 
-- 若为 鲲鹏920处理器 / 鲲鹏920新型号处理器 则 安装加速库20
+    - 若为 鲲鹏920处理器 / 鲲鹏920新型号处理器 则 安装加速库20
 
-  whl 文件为 1.2 节步骤 4 的编译产物，位于编译机的 `/path/onnxruntime/build/Release/dist` 目录下。若部署机与编译机不是同一台机器，请先将 whl 文件拷贝到部署机，再执行安装：
+      whl 文件为 1.2 节步骤 4 的编译产物，位于编译机的 `/path/onnxruntime/build/Release/dist` 目录下。若部署机与编译机不是同一台机器，请先将 whl 文件拷贝到部署机，再执行安装：
 
-  ```bash
-  pip install onnxruntime_acl-xx.whl   # xx 为版本号，请替换为 dist 目录中的实际文件名
-  ```
+      ```bash
+      pip install onnxruntime_acl-xx.whl   # xx 为版本号，请替换为 dist 目录中的实际文件名
+      ```
 
-- 若为 鲲鹏950处理器 则 安装加速库50
+    - 若为 鲲鹏950处理器 则 安装加速库50
 
-  whl 文件为 1.3 节步骤 2 的编译产物，位于编译机的 `/path/onnxruntime-1.22.2/build/Release/dist` 目录下。若部署机与编译机不是同一台机器，请先将 whl 文件拷贝到部署机，再执行安装：
+      whl 文件为 1.3 节步骤 2 的编译产物，位于编译机的 `/path/onnxruntime-1.22.2/build/Release/dist` 目录下。若部署机与编译机不是同一台机器，请先将 whl 文件拷贝到部署机，再执行安装：
 
-  ```bash
-  pip install onnxruntime-xx.whl       # xx 为版本号，请替换为 dist 目录中的实际文件名
-  ```
+      ```bash
+      pip install onnxruntime-xx.whl       # xx 为版本号，请替换为 dist 目录中的实际文件名
+      ```
 
-- 若为 其他处理器 则 直接安装标准版
+    - 若为 其他处理器 则 直接安装标准版
 
-  ```bash
-  pip install onnxruntime==1.19.2
-  ```
+      ```bash
+      pip install onnxruntime==1.19.2
+      ```
 
 3. 安装 PI 特性的 python 依赖（所有处理器均需执行）
 
-鲲鹏处理器用户请注意：部署环境的 python 版本必须与第 1 章编译 whl 时所使用的 python 版本一致（鲲鹏920/鲲鹏920新型号：3.9，鲲鹏950：3.10），否则会导致 whl 安装失败或运行报错。
+    鲲鹏处理器用户请注意：部署环境的 python 版本必须与第 1 章编译 whl 时所使用的 python 版本一致（鲲鹏920/鲲鹏920新型号：3.9，鲲鹏950：3.10），否则会导致 whl 安装失败或运行报错。
 
-```bash
-# 注意：/path 为占位符，即 PI 目录的父目录，请替换为实际路径
-pip install -r /path/PI/deploy/requirements.txt
-```
+    ```bash
+    # 注意：/path 为占位符，即 PI 目录的父目录，请替换为实际路径
+    pip install -r /path/PI/deploy/requirements.txt
+    ```
 
 4. 配置环境变量（仅鲲鹏处理器需要）
 
-**使用鲲鹏920处理器 / 鲲鹏920新型号处理器（加速库20）时，需配置以下 2 项：**
+    **使用鲲鹏920处理器 / 鲲鹏920新型号处理器（加速库20）时，需配置以下 2 项：**
 
-1. 安装[SRA_Inference](https://www.hikunpeng.com/document/detail/zh/boostsra/srainference/SRA_Inference/kunpengsra_inference_16_0006.html)。若部署机与编译加速库的机器为同一台，则无需再安装。
+    1. 安装[SRA_Inference](https://www.hikunpeng.com/document/detail/zh/boostsra/srainference/SRA_Inference/kunpengsra_inference_16_0006.html)。若部署机与编译加速库的机器为同一台，则无需再安装。
 
-2. 添加ACL库路径。部署机上该目录下应存在 `libarm_compute.so`、`libarm_compute_core.so` 以及 `libarm_compute_graph.so`（若部署机与编译机不是同一台机器，请将编译机上 `/path/ComputeLibrary-23.08/build` 目录下的文件拷贝到部署机，并按实际存放路径修改下方命令）：
+    2. 添加ACL库路径。部署机上该目录下应存在 `libarm_compute.so`、`libarm_compute_core.so` 以及 `libarm_compute_graph.so`（若部署机与编译机不是同一台机器，请将编译机上 `/path/ComputeLibrary-23.08/build` 目录下的文件拷贝到部署机，并按实际存放路径修改下方命令）：
 
-   ```bash
-   # 注意：/path 为占位符，请替换为实际工作目录
-   export LD_LIBRARY_PATH=/path/ComputeLibrary-23.08/build:$LD_LIBRARY_PATH
-   ```
+      ```bash
+      # 注意：/path 为占位符，请替换为实际工作目录
+      export LD_LIBRARY_PATH=/path/ComputeLibrary-23.08/build:$LD_LIBRARY_PATH
+      ```
 
-**使用鲲鹏950处理器（加速库50）时，无需配置环境变量。**
+    **使用鲲鹏950处理器（加速库50）时，无需配置环境变量。**
 
-通过 `export` 配置的环境变量**仅在当前终端有效**，新开终端后会失效，需重新执行。若希望永久生效，可将上述 export 命令追加到 `~/.bashrc` 文件末尾，并执行 `source ~/.bashrc` 使其生效。
+    通过 `export` 配置的环境变量**仅在当前终端有效**，新开终端后会失效，需重新执行。若希望永久生效，可将上述 export 命令追加到 `~/.bashrc` 文件末尾，并执行 `source ~/.bashrc` 使其生效。
 
 ### 2.3 功能验证
 
