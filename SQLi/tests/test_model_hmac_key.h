@@ -30,7 +30,7 @@ namespace kadd_test {
 
 /* 开发密钥 = SHA-256("KADD-RF-DEV-KEY-DO-NOT-USE-IN-PRODUCTION")，公开、非机密 */
 constexpr const char* kModelHmacDevKeyHex =
-    "74fab58d87dc235ee049b6faf21b44825dba1d9dc05bbc14aeded49cb211a1db";
+    "***";
 constexpr const char* kModelHmacKeyEnv = "KADD_MODEL_HMAC_KEY";
 constexpr const char* kModelHmacKeyLegacyEnv = "KADD_RF_HMAC_KEY";
 

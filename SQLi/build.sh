@@ -147,7 +147,7 @@ export LD_LIBRARY_PATH="${PROJECT_ROOT}/${BUILD_DIR}/src:${ONNXRUNTIME_HOME}/lib
 # 注意：本脚本是子进程，export 不会保留到你的交互 shell，因此同时生成
 #       ${BUILD_DIR}/kadd_env.sh —— 运行 demo / fuzzer 前先 source 它。
 # ----------------------------------------------------------------------------
-KADD_DEV_MODEL_HMAC_KEY="74fab58d87dc235ee049b6faf21b44825dba1d9dc05bbc14aeded49cb211a1db"
+KADD_DEV_MODEL_HMAC_KEY="***"
 if [ -n "${KADD_MODEL_HMAC_KEY:-}" ] || [ -n "${KADD_RF_HMAC_KEY:-}" ]; then
     echo "沿用已配置的模型 HMAC 密钥（不覆盖）"
 else
