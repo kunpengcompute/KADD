@@ -96,7 +96,7 @@ chmod +x build.sh && ./build.sh
 ```bash
 cd /opt/KADD/SQLi/build/demo
 export LD_LIBRARY_PATH=../src:/opt/KADD/SQLi/util/onnxruntime-linux-aarch64-1.28.0/lib:$LD_LIBRARY_PATH
-export KADD_MODEL_HMAC_KEY=74fab58d87dc235ee049b6faf21b44825dba1d9dc05bbc14aeded49cb211a1db   # 开发密钥；用 build.sh 构建时可直接 source ../kadd_env.sh
+export KADD_MODEL_HMAC_KEY=***   # 开发密钥；用 build.sh 构建时可直接 source ../kadd_env.sh
 ./kadd_sqli_demo
 ```
 

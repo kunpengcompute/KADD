@@ -52,7 +52,7 @@ KADD通过 `config.json` 配置各引擎模块：
 加载原生模型（`.krf`/`.kcn`）前还需注入模型HMAC密钥：
 
 ```bash
-export KADD_MODEL_HMAC_KEY=74fab58d87dc235ee049b6faf21b44825dba1d9dc05bbc14aeded49cb211a1db
+export KADD_MODEL_HMAC_KEY=***
 ```
 
 也可以直接source `build.sh`生成的环境文件（同时包含库搜索路径）：
@@ -162,7 +162,7 @@ int main() {
     ```bash
     export LD_LIBRARY_PATH=/opt/KADD/SQLi/build/src:/opt/KADD/SQLi/util/onnxruntime-linux-aarch64-1.28.0/lib:$LD_LIBRARY_PATH
     # 开发密钥，生产环境请替换为自有密钥
-    export KADD_MODEL_HMAC_KEY=74fab58d87dc235ee049b6faf21b44825dba1d9dc05bbc14aeded49cb211a1db
+    export KADD_MODEL_HMAC_KEY=***
     ./web_detection_app
     ```
 
@@ -246,7 +246,7 @@ int main() {
     ```bash
     export LD_LIBRARY_PATH=/opt/KADD/SQLi/build/src:/opt/KADD/SQLi/util/onnxruntime-linux-aarch64-1.28.0/lib:$LD_LIBRARY_PATH
     # 开发密钥，生产环境请替换为自有密钥
-    export KADD_MODEL_HMAC_KEY=74fab58d87dc235ee049b6faf21b44825dba1d9dc05bbc14aeded49cb211a1db
+    export KADD_MODEL_HMAC_KEY=***
     ./log_analysis_app
     ```
 

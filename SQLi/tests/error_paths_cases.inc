@@ -80,7 +80,7 @@ static const char *const FzEodRel     = "assets/data/eod_table.bin";
 
 /* 开发 HMAC 密钥（公开，与 test_model_hmac_key.h 一致），仅用于恢复环境变量 */
 static const char *const FzKeyHex =
-    "74fab58d87dc235ee049b6faf21b44825dba1d9dc05bbc14aeded49cb211a1db";
+    "***";
 
 /* 返回第一个可打开（存在）的路径；都不存在时返回 a */
 static const char *FzPickPath(const char *a, const char *b) {
