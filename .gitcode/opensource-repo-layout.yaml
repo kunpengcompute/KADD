@@ -1,0 +1,81 @@
+project: boostkit/KADD
+version: "1.0"
+
+directories:
+  # 自研推理、训练、模型转换和签名代码参与版权检查。
+  - path: "./PI/algorithm/"
+    type: source
+  - path: "./PI/train/"
+    type: source
+  - path: "./SQLi/src/"
+    type: source
+  - path: "./SQLi/include/"
+    type: source
+
+  # 辅助脚本默认排除，下面三个源码子目录按最长前缀优先纳入。
+  - path: "./SQLi/tools/"
+    type: scripts
+  - path: "./SQLi/tools/model_train/"
+    type: source
+  - path: "./SQLi/tools/dfa_compile/"
+    type: source
+  - path: "./SQLi/tools/rf_sign/"
+    type: source
+
+  - path: "./SQLi/tests/"
+    type: test
+  - path: "./SQLi/assets/fuzz_corpus/"
+    type: test
+  - path: "./SQLi/demo/"
+    type: examples
+  - path: "./docs/"
+    type: docs
+  - path: "./PI/deploy/"
+    type: packaging
+  - path: "./.gitcode/"
+    type: scripts
+
+files:
+  # 不指定 copyright-template，使用检查器的 LICENSE / 内置模板回落机制。
+  - path: "./LICENSE"
+    type: license
+  - path: "./README.md"
+    type: readme
+  - path: "./README_en.md"
+    type: readme
+  - path: "./PI/README.md"
+    type: readme
+  - path: "./PI/THIRD_PARTY_LICENSES"
+    type: notice
+  - path: "./SQLi/THIRD_PARTY_LICENSES"
+    type: notice
+  - path: "./.gitcode/opensource-repo-layout.yaml"
+    type: compliance-config
+
+  - path: "./build.sh"
+    type: build-manifest
+  - path: "./SQLi/build.sh"
+    type: build-manifest
+  - path: "./SQLi/CMakeLists.txt"
+    type: build-manifest
+  - path: "./SQLi/src/CMakeLists.txt"
+    type: build-manifest
+  - path: "./SQLi/include/CMakeLists.txt"
+    type: build-manifest
+  - path: "./SQLi/demo/CMakeLists.txt"
+    type: build-manifest
+  - path: "./SQLi/tests/CMakeLists.txt"
+    type: build-manifest
+  - path: "./SQLi/tools/model_train/train_data/CMakeLists.txt"
+    type: build-manifest
+
+  - path: "./PI/algorithm/knowledge_base/model_file/clf_model.onnx"
+    type: ai-model
+  - path: "./SQLi/assets/model/model_tokens_rf.onnx"
+    type: ai-model
+  - path: "./SQLi/assets/model/model_tokens_rf.krf"
+    type: ai-model
+  - path: "./SQLi/assets/model/model_tokens_dl_cnn.onnx"
+    type: ai-model
+  - path: "./SQLi/assets/model/model_tokens_dl_cnn.kcn"
+    type: ai-model
