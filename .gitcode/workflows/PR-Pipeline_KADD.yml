@@ -1,0 +1,158 @@
+name: PR-Pipeline_KADD #流水线的名称
+
+on: # 自动触发工作流运行的触发条件
+  #workflow_dispatch: # 界面手动运行
+  pull_request_target: # MR 事件触发默认分支配置文件
+    types: ["open", "reopen", "update"]
+    branches: [ "*" ] #作用于分支上
+  pr_comment: # PR 评论触发
+    types: [ created ]
+    keyword: '^(?:\/)?compile*'
+  pull_request_comment: # 标准 PR 评论触发事件
+    types: [ created]
+    branches: [ '*' ]
+    comments: [ '^(?:\/)?compile*' , 'sca-pr-scan' ]
+
+concurrency: # 并发控制
+  enable: true             # 启用并发控制
+  max: 3                   # 最大并发运行数（范围1-5）：同一工作流最多3个运行同时执行
+  exceed-action: QUEUE     # 超出并发上限的策略：QUEUE排队等待
+  preemption:              # 抢占策略：新事件到来时取消同组正在运行的旧运行
+    enable: true           # 启用抢占（默认true）
+    events: [mr_id]        # 抢占粒度=按MR隔离：同一MR的新推送取消该MR的旧运行，不同MR互不影响
+
+permissions:
+  repository: read
+  pr: read
+
+env:
+  pr_id: ${{ atomgit.event.pull_request.number }}
+  branch: ${{ atomgit.event.pull_request.base.ref }}
+
+stages: #阶段，不超过16个阶段，不超过256个job
+  stage0: # 流水线状态管理（非项目逻辑）
+    name: 初始化阶段
+    select: selected_by_default
+    jobs:
+      associate_pr_comment:
+        name: associate_pr_comment
+        runs-on: [ self-hosted, os=euler, arch=arm64, type=pr, flavor=small ]
+        steps:
+          - name: associate_pr_comment
+            uses: associate-pr-comment
+      init_pipeline_status:
+        name: init_pipeline_status
+        runs-on: [ self-hosted, os=euler, arch=arm64, type=pr, flavor=small ]
+        steps:
+          - name: Set running label
+            uses: openlibing/pr-label-action@v1.0.0
+            with:
+              add_labels: ci-pipeline-running
+              remove_labels: ci-pipeline-passed,ci-pipeline-failed
+              token: ${{ secrets.PR_LABEL_TOKEN }}
+  stage1:
+    name: 校验阶段
+    select: selected_by_default
+    jobs:
+      Detect_file_changes:
+        name: Detect_file_changes
+        runs-on: ["ubuntu-latest", "x64", "slim"]
+        outputs:
+          need_build: ${{ steps.set-skip.outputs.need_build }}
+        steps:
+          - name: checkout
+            uses: checkout
+            with:
+              # 检出预合并引用需显式放行（pwn request 防护）
+              allow-unsafe-pr-checkout: true
+              ref: refs/merge-requests/${{ env.pr_id }}/merge
+              fetch-depth: 0
+          - name: Only_doc_commit
+            id: filter
+            uses: paths-changes-filter
+            with:
+              event-name: 'pull_request'
+              base: ${{ env.branch }}
+              repo: ${{ atomgit.repository }}
+              number: ${{ env.pr_id }}
+              list-files: json
+              predicate-quantifier: every
+              filters: |
+                changed:
+                  - '**'
+                doc-only:
+                  - '**/*.md'
+                  - '**/*.rst'
+                  - '**/*.log'
+                  - '**/*.png'
+                  - '**/*.jpg'
+                  - '**/*.doc'
+                  - '**/*.eddx'
+                  - '**/*.svg'
+          - name: set build skip flag
+            id: set-skip
+            run: |
+              echo "changed: ${{ steps.filter.outputs.changed_files }}"
+              echo "doc-only: ${{ steps.filter.outputs.doc-only }}"
+              if [ "${{ steps.filter.outputs.doc-only }}" = "true" ]; then
+                echo "need_build=no" >> "$ATOMGIT_OUTPUT"
+              else
+                echo "need_build=yes" >> "$ATOMGIT_OUTPUT"
+              fi
+      sca-pr:
+        name: sca-pr
+        runs-on: [ "ubuntu-latest", "x64", "slim"]
+        permissions:
+          id-token: write     # 仅本作业需要 OIDC 令牌
+        steps:
+          - name: Run SCA PR scan
+            uses: openlibing/sca-action/sca-pr-action@v1.0.0
+            with:
+              project-name: "boostkit" # 上游组织名（git log: See merge request boostkit/KADD!N）
+      antipoison-scan:
+        name: antipoison-scan
+        runs-on: ["ubuntu-latest", "x64", "slim"]
+        permissions:
+          id-token: write     # 仅本作业需要 OIDC 令牌
+        steps:
+          - name: Run malicious code scan
+            uses: openlibing/malicious-code-scan-action/malicious-code-pr-scan-action@v1.0.0
+            with:
+              project-name: "boostkit"
+      # pre-commit: # 仓库根目录无 .pre-commit-config.yaml，暂不启用；启用时需同步在 build 的 needs 中加回 pre-commit
+      #   runs-on: ["ubuntu-latest", "x64", "slim"]
+      #   steps:
+      #     - name: Checkout
+      #       uses: checkout
+      #       with:
+      #         allow-unsafe-pr-checkout: true
+      #         ref: refs/merge-requests/${{ env.pr_id }}/merge
+      #     - name: Setup Python
+      #       uses: setup-python
+      #       with:
+      #         python-version: "3.14"
+      #     - name: Run pre-commit
+      #       uses: openlibing/pre-commit-action@v1.0.0
+      build:
+        name: build
+        if: ${{ jobs.Detect_file_changes.outputs.need_build == 'yes' }}
+        select: selected_by_default
+        needs: [ Detect_file_changes, sca-pr, antipoison-scan]   # 阶段二：门控+扫描作业全部放开
+        uses: .gitcode/workflows/build_job.yml
+        with:
+          runs_on_flavor: "flavor=small"
+          docker_img: "swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler-24.03-lts-sp2:arm_26630_01"
+          pr_id: "${{ env.pr_id }}"
+
+post: # 流水线结束状态管理
+  jobs:
+    update_pipeline_status:
+      name: update_pipeline_status
+      runs-on: [ self-hosted, os=euler, arch=arm64, type=pr, flavor=small ]
+      steps:
+        - name: Set result label
+          uses: openlibing/pr-label-action@v1.0.0
+          with:
+            add_labels: ${{ pipeline.upstream_status == 'COMPLETED' && 'ci-pipeline-passed' || 'ci-pipeline-failed' }}
+            remove_labels: ci-pipeline-running,${{ pipeline.upstream_status == 'COMPLETED' && 'ci-pipeline-failed' || 'ci-pipeline-passed' }}
+            token: ${{secrets.PR_LABEL_TOKEN}}

@@ -1,4 +1,19 @@
-/* Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved. */
+/*
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * All rights reserved.
+ *
+ * Licensed under the License;
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://opensource.org/license/bsd-3-clause
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 /*
  * @file error_paths_cases.inc
  * @brief UT 与 FUZZ 共用的引擎错误路径用例（覆盖率导向，本地 gcov/clang 实测验证）
@@ -50,6 +65,7 @@
 #include "kadd_sqli_engine.h"
 #include "kadd_rf_engine.h"
 #include "kadd_cnn_engine.h"
+#include "test_model_hmac_key.h"   /* 运行时派生并注入开发密钥（main() 前），FzKeyHex 引用其结果 */
 
 #if defined(__GNUC__) || defined(__clang__)
 #define FZ_MAYBE_UNUSED __attribute__((unused))
@@ -78,9 +94,9 @@ static const char *const FzOutRel     = "assets/data/output_table.bin";
 static const char *const FzEodAbs     = "/opt/KADD/SQLi/assets/data/eod_table.bin";
 static const char *const FzEodRel     = "assets/data/eod_table.bin";
 
-/* 开发 HMAC 密钥（公开，与 test_model_hmac_key.h 一致），仅用于恢复环境变量 */
-static const char *const FzKeyHex =
-    "74fab58d87dc235ee049b6faf21b44825dba1d9dc05bbc14aeded49cb211a1db";
+/* 开发 HMAC 密钥（公开，test_model_hmac_key.h 运行时派生，与仓库资产签名
+ * 密钥一致），仅用于恢复环境变量 */
+static const char *const FzKeyHex = kadd_test::kModelHmacDevKeyHex;
 
 /* 返回第一个可打开（存在）的路径；都不存在时返回 a */
 static const char *FzPickPath(const char *a, const char *b) {
@@ -95,12 +111,8 @@ static const char *FzPickPath(const char *a, const char *b) {
  * 用于临时改写 ORT 线程数配置以触达「未设置 / 非法值回退默认」分支，
  * 调用方必须在用例结束时精确复原，避免污染 coverage_all.sh 导出的调优值。 */
 FZ_MAYBE_UNUSED static void FzSetEnv(const char *name, const char *value) {
-#ifdef _WIN32
-    (void)_putenv_s(name, (value != nullptr) ? value : "");   /* 空串即删除 */
-#else
     if (value != nullptr) { (void)setenv(name, value, 1); }
     else                  { (void)unsetenv(name); }
-#endif
 }
 
 /* 解析可用的 config.json（fuzz/gtest 的运行目录可能是 build/tests 或仓库根） */
@@ -740,32 +752,16 @@ FZ_MAYBE_UNUSED static void FuzzRfRealModelPaths() {
     {   /* 错误密钥 */
         const char *save = getenv("KADD_MODEL_HMAC_KEY");
         std::string saved = save ? save : "";
-#ifdef _WIN32
-        _putenv("KADD_MODEL_HMAC_KEY=0000000000000000000000000000000000000000000000000000000000000000");
-#else
         setenv("KADD_MODEL_HMAC_KEY", "0000000000000000000000000000000000000000000000000000000000000000", 1);
-#endif
         kadd_rf_model_t *x = nullptr; (void)(kadd_rf_model_load(&x, kRf));
         if (x) kadd_rf_model_free(&x);
-#ifdef _WIN32
-        std::string rs = std::string("KADD_MODEL_HMAC_KEY=") + saved; _putenv(rs.c_str());
-#else
         setenv("KADD_MODEL_HMAC_KEY", saved.c_str(), 1);
-#endif
     }
     {   /* 非法密钥格式（长度不对） */
-#ifdef _WIN32
-        _putenv("KADD_MODEL_HMAC_KEY=zz");
-#else
         setenv("KADD_MODEL_HMAC_KEY", "zz", 1);
-#endif
         kadd_rf_model_t *x = nullptr; (void)(kadd_rf_model_load(&x, kRf));
         if (x) kadd_rf_model_free(&x);
-#ifdef _WIN32
-        std::string rs = std::string("KADD_MODEL_HMAC_KEY=") + FzKeyHex; _putenv(rs.c_str());
-#else
         setenv("KADD_MODEL_HMAC_KEY", FzKeyHex, 1);
-#endif
     }
 }
 

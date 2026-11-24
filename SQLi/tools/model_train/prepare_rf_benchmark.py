@@ -1,4 +1,18 @@
 #!/usr/bin/env python3
+# Copyright (c) 2026 Huawei Technologies Co., Ltd.
+# All rights reserved.
+#
+# Licensed under the License;
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     https://opensource.org/license/bsd-3-clause
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 """Train a KADD-RF model and create its strictly held-out benchmark dataset.
 
 This utility consumes the repository's precomputed training_vectors.csv, so it

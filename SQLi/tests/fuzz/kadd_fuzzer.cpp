@@ -1,5 +1,20 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * All rights reserved.
+ *
+ * Licensed under the License;
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://opensource.org/license/bsd-3-clause
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+/*
  *
  * @file kadd_fuzzer.cpp
  * @brief KADD项目 LibFuzzer 主入口
@@ -38,11 +53,7 @@
 #include <iomanip>    // 新增：用于std::hex, std::setfill, std::setw
 #include <limits>     // 新增：用于 std::numeric_limits
 #include <chrono>     /* 吞吐自监控：稳态 exec/s 与初始化耗时 */
-#if defined(_WIN32)
-#include <process.h>  /* _getpid：状态文件名按进程区分 */
-#else
 #include <unistd.h>   /* getpid：状态文件名按进程区分（多 worker 并行互不覆盖） */
-#endif
 
 #include "kadd_sqli_engine.h"
 #include "kadd_dfa_engine.h"
@@ -3007,11 +3018,7 @@ static double FzNowSec() {
 }
 
 static int FzPid() {
-#if defined(_WIN32)
-    return _getpid();
-#else
     return (int)getpid();
-#endif
 }
 
 static uint64_t FzApiMin() {

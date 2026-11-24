@@ -1,5 +1,7 @@
 # API参考手册
 
+本文档介绍KADD PI越狱文本检测特性的Python API，涵盖检测实例初始化、越狱文本检测与黑白名单动态更新三个接口，适用于基于KADD PI进行越狱文本检测的应用开发人员。
+
 ## 概述
 
 KADD PI（Prompt Injection，越狱文本检测）特性提供以下Python API接口：

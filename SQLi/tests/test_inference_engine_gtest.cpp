@@ -1,5 +1,20 @@
 /*
- * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * All rights reserved.
+ *
+ * Licensed under the License;
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://opensource.org/license/bsd-3-clause
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+/*
  * @file test_inference_engine_gtest.cpp
  * @brief 统一推理引擎功能测试
  *
@@ -1422,15 +1437,11 @@ public:
 private:
     void Apply(const char *value)
     {
-#ifdef _WIN32
-        (void)_putenv_s(name_.c_str(), (value != nullptr) ? value : "");   /* 空串即删除 */
-#else
         if (value != nullptr) {
             (void)setenv(name_.c_str(), value, 1);
         } else {
             (void)unsetenv(name_.c_str());
         }
-#endif
     }
     std::string name_;
     std::string saved_;

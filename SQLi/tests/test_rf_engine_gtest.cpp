@@ -1,4 +1,19 @@
-// Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
+/*
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * All rights reserved.
+ *
+ * Licensed under the License;
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://opensource.org/license/bsd-3-clause
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 /**
  * @file test_rf_engine_gtest.cpp
  * @brief kadd_rf_engine 真实模型性能 + 准确率 gtest。
@@ -333,18 +348,9 @@ public:
 private:
     static void Apply(const char* value) {
         if (value != nullptr) {
-#ifdef _WIN32
-            const std::string entry = std::string(kHmacKeyEnv) + "=" + value;
-            _putenv(entry.c_str());
-#else
             setenv(kHmacKeyEnv, value, 1);
-#endif
         } else {
-#ifdef _WIN32
-            _putenv((std::string(kHmacKeyEnv) + "=").c_str());
-#else
             unsetenv(kHmacKeyEnv);
-#endif
         }
     }
     bool had_prev_ = false;

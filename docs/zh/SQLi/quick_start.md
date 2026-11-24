@@ -1,6 +1,6 @@
 # 快速入门
 
-本文给出KADD的快速入门指导。提供了工具集和demo示例，通过运行demo程序可以快速体验SQL注入检测功能，通过使用工具可以进行DFA表生成和模型训练。详细使用细节请参考《[用户指南](user_guide.md)》。
+KADD提供SQL注入检测的demo示例，以及DFA表生成与模型训练的配套工具，可快速体验SQL注入检测能力。提供了工具集和demo示例，通过运行demo程序可以快速体验SQL注入检测功能，通过使用工具可以进行DFA表生成和模型训练。详细使用细节请参考《[用户指南](user_guide.md)》。
 
 ## 前提条件
 
@@ -18,7 +18,7 @@ KADD提供了6个demo程序，分别展示各个引擎的使用方法。
 
 ```bash
 export LD_LIBRARY_PATH=/opt/KADD/SQLi/build/src:/opt/KADD/SQLi/util/onnxruntime-linux-aarch64-1.28.0/lib:$LD_LIBRARY_PATH
-export KADD_MODEL_HMAC_KEY=74fab58d87dc235ee049b6faf21b44825dba1d9dc05bbc14aeded49cb211a1db
+export KADD_MODEL_HMAC_KEY=***
 ```
 
 也可以直接source `build.sh`生成的环境文件，等价于上面两条：
@@ -474,4 +474,8 @@ python model_train.py --help
     python prepare_cnn_benchmark.py
     ```
 
----
+## 修订记录
+
+| 文档版本 | 发布日期 | 修改说明 |
+| -------- | -------- | -------- |
+| 01 | 2026-09-30 | 第一次正式发布 |

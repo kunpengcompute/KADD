@@ -74,8 +74,6 @@ The processor is a new Kunpeng 920 processor model, and the OS is openEuler 24.0
     ./kadd_config_demo
     ```
 
-
-
 ## Build Guide
 
 ### One-Click Build from the Root Directory (Recommended)
@@ -98,11 +96,9 @@ chmod +x build.sh && ./build.sh
 ```bash
 cd /opt/KADD/SQLi/build/demo
 export LD_LIBRARY_PATH=../src:/opt/KADD/SQLi/util/onnxruntime-linux-aarch64-1.28.0/lib:$LD_LIBRARY_PATH
-export KADD_MODEL_HMAC_KEY=74fab58d87dc235ee049b6faf21b44825dba1d9dc05bbc14aeded49cb211a1db   # Development key; when building with build.sh, you can directly source ../kadd_env.sh
+export KADD_MODEL_HMAC_KEY=***   # Development key; when building with build.sh, you can directly source ../kadd_env.sh
 ./kadd_sqli_demo
 ```
-
-
 
 ### Standalone SQLi Feature Build (Production Deployment)
 

@@ -1,5 +1,20 @@
+/*
+ * Copyright (c) 2026 Huawei Technologies Co., Ltd.
+ * All rights reserved.
+ *
+ * Licensed under the License;
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     https://opensource.org/license/bsd-3-clause
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 /**
- * Copyright (c) Huawei Technologies Co., Ltd. 2026-2026. All rights reserved.
  * @file kadd_config_loader.c
  * @brief Configuration loader implementation
  */
@@ -15,10 +30,12 @@
 /* 密钥长度 / 环境变量名的唯一来源：模型认证共享头（header-only，无链接依赖） */
 #include "kadd_model_auth.h"
 
-/* 结构体密钥字段必须恰好容纳 64 个十六进制字符 + NUL */
-_Static_assert(sizeof(((kadd_config_t *)0)->model_hmac_key) ==
-               (size_t)KADD_MODEL_HMAC_KEY_HEX_LEN + 1U,
-               "model_hmac_key field must fit 64 hex chars + NUL");
+/* 结构体密钥字段必须恰好容纳 64 个十六进制字符 + NUL。
+ * 用 typedef 断言而非 _Static_assert：本文件会被 gtest 的 C++ 用例直接
+ * #include 编译，typedef 写法在 C11 与 C++ 下均有效 */
+typedef char kadd_config_key_size_check[
+    (sizeof(((kadd_config_t *)0)->model_hmac_key) ==
+     (size_t)KADD_MODEL_HMAC_KEY_HEX_LEN + 1U) ? 1 : -1];
 
 typedef struct {
     const char *name;

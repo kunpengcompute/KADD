@@ -59,7 +59,7 @@ pip install onnxruntime==1.19.2
 
 **问题**
 
-使用scons命令编译Arm Compute Library时报错
+使用scons命令编译Arm Compute Library时报错。
 
 **回答**
 
