@@ -61,7 +61,11 @@ int kadd_sqli_engine_create_from_file(kadd_sqli_engine_t **engine, const char *c
  * @return 0 成功，<0 失败（错误码）
  *
  * @note 返回 SQL 注入概率值，调用方根据业务需求判断阈值
- * @note 超长输入将直接返回概率 1.0（高风险），避免昂贵的检测流程
+ * @note 超长输入（长度 > KADD_DFA_MAX_INPUT_CHARS，默认300）返回
+ *       KADD_DFA_ERROR_INVALID_LENGTH，同时将 *probability 置为 1.0（高风险），
+ *       避免昂贵的检测流程
+ * @note 任何非 KADD_SUCCESS 返回时 *probability 均为 1.0（fail-closed）；
+ *       调用方必须按"攻击/需人工审查"处理，不得因错误返回而放行
  *
  * @example
  * @code
@@ -88,7 +92,7 @@ int kadd_sqli_detect(kadd_sqli_engine_t *engine, const char *input, float *proba
  *
  * @note 使用 ML 引擎的批量推理能力，性能优于逐个检测
  * @note 批处理是"全有或全无"设计：任何失败都会立即返回错误码
- * @note 失败时已处理项的概率为实际值，未处理项保持初始化值 0.0
+ * @note 失败时已处理项的概率为实际值，未处理项为 1.0（fail-closed，按高风险处理）
  *
  * @example
  * @code

@@ -26,6 +26,7 @@
 /* ========== 常量 ========== */
 #define KADD_ALIGN_BYTES             16
 #define KADD_DL_SEQUENCE_LENGTH      300
+#define KADD_SQLI_PROB_HIGH_RISK     1.0f  /* fail-closed 默认概率：错误/超长一律按高风险 */
 
 /* ========== 内部结构体 ========== */
 
@@ -323,6 +324,11 @@ int kadd_sqli_detect(kadd_sqli_engine_t *engine, const char *input, float *proba
         return KADD_ERROR_NULL_PTR;
     }
 
+    /* fail-closed 默认值：超长/分词失败/特征失败/推理失败
+       等所有错误路径均保留 1.0，禁止依赖调用方初值（历史缺陷：调用方初值 0.0
+       被判定为"安全"，超长注入载荷可绕过检测）。成功路径在函数末尾覆盖为真实概率 */
+    *probability = KADD_SQLI_PROB_HIGH_RISK;
+
     size_t input_len = strlen(input);
     if (input_len == 0) {
         *probability = 0.0f;
@@ -491,9 +497,10 @@ static int init_batch_detect_params(int batch_size, int *out_actual_batch_size,
         *out_actual_batch_size = KADD_ML_DEFAULT_BATCH_SIZE;
     }
 
-    // 初始化所有概率为0（表示失败）
+    /* 初始化所有概率为 fail-closed 值 1.0：未处理/失败样本
+       按高风险处理。不能用 0.0 表示失败——0.0 会被调用方判定为"安全"，造成检测绕过 */
     for (int i = 0; i < count; i++) {
-        probabilities[i] = 0.0f;
+        probabilities[i] = KADD_SQLI_PROB_HIGH_RISK;
     }
 
     return KADD_SUCCESS;
@@ -563,21 +570,23 @@ int kadd_sqli_detect_batch(kadd_sqli_engine_t *engine, const char **inputs, int 
         return KADD_ERROR_INVALID_PARAM;
     }
 
-    /* DL 模式逐条推理，任意一条失败立即返回错误 */
-    if (engine->engine_mode == KADD_ENGINE_MODE_DL) {
-        for (int i = 0; i < count; i++) {
-            int ret = kadd_sqli_detect(engine, inputs[i], &probabilities[i]);
-            if (ret != KADD_SUCCESS) {
-                return ret;
-            }
-        }
-        return KADD_SUCCESS;
-    }
-
+    /*  ML/DL 两条路径统一先初始化输出概率为 fail-closed 值，
+       避免 DL 分支提前返回时未处理项保留调用方初值（甚至未初始化值） */
     int actual_batch_size = 0;
     int ret = init_batch_detect_params(batch_size, &actual_batch_size, probabilities, count);
     if (ret != KADD_SUCCESS) {
         return ret;
+    }
+
+    /* DL 模式逐条推理，任意一条失败立即返回错误 */
+    if (engine->engine_mode == KADD_ENGINE_MODE_DL) {
+        for (int i = 0; i < count; i++) {
+            int dl_ret = kadd_sqli_detect(engine, inputs[i], &probabilities[i]);
+            if (dl_ret != KADD_SUCCESS) {
+                return dl_ret;
+            }
+        }
+        return KADD_SUCCESS;
     }
 
     // 分配批处理缓冲区

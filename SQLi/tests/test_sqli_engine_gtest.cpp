@@ -1150,6 +1150,58 @@ TEST_P(SQLiEngineTest, BatchDL_MidFailure_ReturnsError)
     }
 }
 
+// ========== 回归 VULN-SEC-SQLI-003：错误路径必须写出参（fail-closed） ==========
+// 缺陷背景：错误路径不写 *probability，调用方初值 0.0 被判定为"安全"，
+// 超长注入载荷可绕过检测。用哨兵初值替代 0.0，才能真正暴露"出参未被写入"。
+
+TEST_P(SQLiEngineTest, LongInput_ErrorPathWritesFailClosedProbability)
+{
+    const float kSentinel = -12345.0f;
+    std::string long_input(KADD_DFA_MAX_INPUT_CHARS + 1, 'A');
+
+    float prob = kSentinel;
+    int ret = kadd_sqli_detect(engine, long_input.c_str(), &prob);
+
+    EXPECT_EQ(ret, KADD_DFA_ERROR_INVALID_LENGTH);
+    ASSERT_NE(prob, kSentinel) << "错误路径未写 *probability（fail-open 回归）";
+    EXPECT_FLOAT_EQ(prob, 1.0f) << "超长输入必须 fail-closed（概率 1.0）";
+}
+
+TEST_P(SQLiEngineTest, BatchLongInput_UnprocessedItemsFailClosed)
+{
+    const float kSentinel = -12345.0f;
+    std::vector<std::string> inputs_str = {
+        "id=1' OR '1'='1",
+        std::string(KADD_DFA_MAX_INPUT_CHARS + 100, 'a'),
+        "SELECT * FROM users"
+    };
+    std::vector<const char*> inputs;
+    for (const auto &s : inputs_str) {
+        inputs.push_back(s.c_str());
+    }
+
+    float probs[3] = { kSentinel, kSentinel, kSentinel };
+    int ret = kadd_sqli_detect_batch(engine, inputs.data(), 3, probs, 10);
+
+    EXPECT_NE(ret, KADD_SUCCESS) << "含超长样本的批量检测应返回错误";
+    for (int i = 0; i < 3; i++) {
+        ASSERT_NE(probs[i], kSentinel) << "样本 " << i << " 未被写入（fail-open 回归）";
+        EXPECT_GE(probs[i], 0.0f);
+        EXPECT_LE(probs[i], 1.0f);
+    }
+    // 超长样本与其后未处理样本必须为 fail-closed 值
+    EXPECT_FLOAT_EQ(probs[1], 1.0f);
+    EXPECT_FLOAT_EQ(probs[2], 1.0f);
+}
+
+TEST_P(SQLiEngineTest, EmptyInput_StillZeroProbability)
+{
+    // 防止 fail-closed 改造误伤正常语义：空输入仍应成功且概率为 0
+    float prob = -12345.0f;
+    EXPECT_EQ(kadd_sqli_detect(engine, "", &prob), KADD_SUCCESS);
+    EXPECT_FLOAT_EQ(prob, 0.0f);
+}
+
 TEST_P(SQLiEngineTest, DetectBatchWithZeroBatchSize)
 {
     // batch_size = 0 应该回退到默认批次大小
