@@ -1,0 +1,8 @@
+# Black does not auto-discover this dot-prefixed filename. Pass it explicitly:
+# black --config .pyproject.toml <paths>
+[tool.black]
+line-length = 80
+include = '\.pyi?$'
+force-exclude = '''
+^/test/gtest-parallel/
+'''
