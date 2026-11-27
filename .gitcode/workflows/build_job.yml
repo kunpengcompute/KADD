@@ -28,8 +28,19 @@ jobs:
           # pull_request_target 工作流检出 fork PR 预合并引用会被安全拦截，需显式放行
           allow-unsafe-pr-checkout: true
           ref: refs/merge-requests/${{ inputs.pr_id }}/merge
+      - name: prepare-deps
+        run: |-
+          # 第三方依赖（ONNX Runtime 1.28.0 / cJSON / gtest）已固化在镜像 /opt/kadd-deps，
+          # 同步到 SQLi/util 后 build.sh 会跳过外网下载；镜像未内置时由 build.sh 自行下载
+          if command -v kadd-deps-sync >/dev/null 2>&1; then
+            kadd-deps-sync
+          else
+            echo "[WARN] 镜像未内置 kadd-deps-sync，将由 build.sh 自行下载依赖"
+          fi
       - name: build
         run: |-
-          yum install cmake gcc gcc-c++ make wget unzip tar -y
           chmod +x build.sh
           sh build.sh
+          # 产物校验：根 build.sh 不会因 SQLi 构建失败而中断，用产物存在性兜底，避免假成功
+          test -f SQLi/build/kadd_env.sh || { echo "[ERROR] 未生成 SQLi/build/kadd_env.sh，SQLi 构建失败"; exit 1; }
+          ls -l SQLi/build/src/*.so

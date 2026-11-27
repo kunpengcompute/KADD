@@ -1,0 +1,63 @@
+name: UT Job
+
+on:
+  workflow_call:
+    inputs:
+      runs_on_flavor:
+        required: true
+        type: string
+      docker_img:
+        required: true
+        type: string
+      pr_id:
+        required: true
+        type: string
+
+jobs:
+  JOB_Compile:
+    name: UT
+    select: selected_by_default
+    runs-on: [ self-hosted, os=euler, arch=arm64, type=pr, "${{ inputs.runs_on_flavor }}" ]
+    container:
+      image: ${{ inputs.docker_img }}
+    steps:
+      - name: fast_checkout
+        identifier: fast_checkout
+        uses: checkout
+        with:
+          # pull_request_target 工作流检出 fork PR 预合并引用会被安全拦截，需显式放行
+          allow-unsafe-pr-checkout: true
+          ref: refs/merge-requests/${{ inputs.pr_id }}/merge
+      - name: prepare-deps
+        run: |-
+          set -e
+          # 仓库 SQLi/config.json 与 tests 的错误路径用例使用 /opt/KADD 绝对路径（部署布局），
+          # CI 工作区不在此路径，软链过去，避免 ctest/fuzzer 找不到 assets 与模型
+          ws="${ATOMGIT_WORKSPACE:-$PWD}"
+          if [ ! -e /opt/KADD ] && [ ! -L /opt/KADD ]; then
+            ln -s "$ws" /opt/KADD
+          fi
+          ls -l /opt/KADD/SQLi/assets/data/transition_table.bin \
+                /opt/KADD/SQLi/assets/model/model_tokens_rf.krf
+          # 第三方依赖（ONNX Runtime 1.28.0 / cJSON / gtest）已固化在镜像 /opt/kadd-deps，
+          # 同步到 SQLi/util 后 build.sh 会跳过外网下载；镜像未内置时由 build.sh 自行下载
+          if command -v kadd-deps-sync >/dev/null 2>&1; then
+            kadd-deps-sync
+          else
+            echo "[WARN] 镜像未内置 kadd-deps-sync，将由 build.sh 自行下载依赖"
+          fi
+      - name: ut
+        run: |-
+          set -e
+          chmod +x build.sh
+          # 依赖已由 prepare-deps 准备；build.sh 完成 SQLi 构建（clang/llvm 已随镜像预装）
+          sh build.sh
+          cd SQLi
+          chmod +x coverage_all.sh
+          # 不传参等价 all：SVE 与 ONNX 两套各构建 + ctest + 90s fuzz
+          ./coverage_all.sh
+          # 失败门禁：coverage_all.sh 对 ctest 失败只告警且最终 exit 0，此处重跑测试强制失败
+          for dir in build_cov_sve build_cov_onnx; do
+            echo "===== ctest gate: ${dir} ====="
+            ( cd "${dir}/tests" && ctest --output-on-failure )
+          done

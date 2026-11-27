@@ -119,29 +119,43 @@ stages: #阶段，不超过16个阶段，不超过256个job
             uses: openlibing/malicious-code-scan-action/malicious-code-pr-scan-action@v1.0.0
             with:
               project-name: "boostkit"
-      # pre-commit: # 仓库根目录无 .pre-commit-config.yaml，暂不启用；启用时需同步在 build 的 needs 中加回 pre-commit
-      #   runs-on: ["ubuntu-latest", "x64", "slim"]
-      #   steps:
-      #     - name: Checkout
-      #       uses: checkout
-      #       with:
-      #         allow-unsafe-pr-checkout: true
-      #         ref: refs/merge-requests/${{ env.pr_id }}/merge
-      #     - name: Setup Python
-      #       uses: setup-python
-      #       with:
-      #         python-version: "3.14"
-      #     - name: Run pre-commit
-      #       uses: openlibing/pre-commit-action@v1.0.0
+      pre-commit:
+        runs-on: [ self-hosted, os=euler, arch=arm64, type=pr, flavor=small ]
+        container:
+          image: swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler_24.03_lts_sp3:pre-commit_arm_01
+        steps:
+          - name: Checkout
+            uses: checkout
+            with:
+              allow-unsafe-pr-checkout: true
+              ref: refs/merge-requests/${{ env.pr_id }}/merge
+          - name: install gitleaks
+            run: |
+              cd ${ATOMGIT_WORKSPACE}
+              wget -q https://pytorch-package.obs.cn-north-4.myhuaweicloud.com/pta-codecheck/gitleaks
+              chmod +x gitleaks
+              cd -
+          - name: Run pre-commit
+            uses: openlibing/pre-commit-action@v1.0.0
       build:
         name: build
         if: ${{ jobs.Detect_file_changes.outputs.need_build == 'yes' }}
         select: selected_by_default
-        needs: [ Detect_file_changes, sca-pr, antipoison-scan]   # 阶段二：门控+扫描作业全部放开
+        needs: [ Detect_file_changes, sca-pr, antipoison-scan, pre-commit ]
         uses: .gitcode/workflows/build_job.yml
         with:
           runs_on_flavor: "flavor=small"
-          docker_img: "swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler-24.03-lts-sp2:arm_26630_01"
+          docker_img: "swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler24.03_lts_sp3:KADD_26.3.0.01"
+          pr_id: "${{ env.pr_id }}"
+      ut:
+        name: ut
+        if: ${{ jobs.Detect_file_changes.outputs.need_build == 'yes' }}
+        select: selected_by_default
+        needs: [ Detect_file_changes, sca-pr, antipoison-scan, pre-commit ]
+        uses: .gitcode/workflows/ut_job.yml
+        with:
+          runs_on_flavor: "flavor=large"
+          docker_img: "swr.cn-north-4.myhuaweicloud.com/cloud_boostkit/openeuler24.03_lts_sp3:KADD_26.3.0.01"
           pr_id: "${{ env.pr_id }}"
 
 post: # 流水线结束状态管理
