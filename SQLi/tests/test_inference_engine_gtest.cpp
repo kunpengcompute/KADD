@@ -1437,15 +1437,11 @@ public:
 private:
     void Apply(const char *value)
     {
-#ifdef _WIN32
-        (void)_putenv_s(name_.c_str(), (value != nullptr) ? value : "");   /* 空串即删除 */
-#else
         if (value != nullptr) {
             (void)setenv(name_.c_str(), value, 1);
         } else {
             (void)unsetenv(name_.c_str());
         }
-#endif
     }
     std::string name_;
     std::string saved_;

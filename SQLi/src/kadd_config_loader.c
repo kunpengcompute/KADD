@@ -27,6 +27,15 @@
 #include "cJSON.h"
 #include "kadd_config_loader.h"
 #include "kadd_errors.h"
+/* 密钥长度 / 环境变量名的唯一来源：模型认证共享头（header-only，无链接依赖） */
+#include "kadd_model_auth.h"
+
+/* 结构体密钥字段必须恰好容纳 64 个十六进制字符 + NUL。
+ * 用 typedef 断言而非 _Static_assert：本文件会被 gtest 的 C++ 用例直接
+ * #include 编译，typedef 写法在 C11 与 C++ 下均有效 */
+typedef char kadd_config_key_size_check[
+    (sizeof(((kadd_config_t *)0)->model_hmac_key) ==
+     (size_t)KADD_MODEL_HMAC_KEY_HEX_LEN + 1U) ? 1 : -1];
 
 typedef struct {
     const char *name;
@@ -90,6 +99,22 @@ static void safe_copy(char *dest, const char *src, size_t max_len)
         dest[i] = neutralize_ctrl_char(src[i]);
     }
     dest[len] = '\0';
+}
+
+/* 校验模型 HMAC 密钥：必须恰为 64 个十六进制字符（32 字节） */
+static int is_hex_key(const char *s)
+{
+    if (strlen(s) != (size_t)KADD_MODEL_HMAC_KEY_HEX_LEN) {
+        return 0;
+    }
+    for (size_t i = 0; i < (size_t)KADD_MODEL_HMAC_KEY_HEX_LEN; i++) {
+        char c = s[i];
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
+              (c >= 'A' && c <= 'F'))) {
+            return 0;
+        }
+    }
+    return 1;
 }
 
 static int read_file(const char *path, char **out_content)
@@ -211,6 +236,31 @@ int kadd_config_load(const char *config_path, kadd_config_t *config)
         }
     }
 
+    /* 可选字段：model_hmac_key（模型 HMAC-SHA256 密钥）。
+     * 优先级：环境变量 KADD_MODEL_HMAC_KEY / KADD_RF_HMAC_KEY > 本字段。
+     * 环境变量均未设置时，把配置值注入 KADD_MODEL_HMAC_KEY，供模型认证
+     * （kadd_model_auth.h）读取；已设置环境变量时绝不覆盖。
+     * 安全提示：携带密钥的 config.json 属敏感文件，部署时 chmod 600，
+     * 生产密钥不得入库；日志中绝不打印密钥内容。 */
+    cJSON *key_item = cJSON_GetObjectItem(root, "model_hmac_key");
+    if (key_item) {
+        if (!key_item->valuestring || !is_hex_key(key_item->valuestring)) {
+            fprintf(stderr,
+                    "[kadd_config] ERROR: model_hmac_key must be exactly %u hex "
+                    "characters (32 bytes)\n",
+                    (unsigned)KADD_MODEL_HMAC_KEY_HEX_LEN);
+            cJSON_Delete(root);
+            return KADD_ERROR_CONFIG;
+        }
+        memcpy(config->model_hmac_key, key_item->valuestring,
+               (size_t)KADD_MODEL_HMAC_KEY_HEX_LEN);
+        config->model_hmac_key[KADD_MODEL_HMAC_KEY_HEX_LEN] = '\0';
+        if (getenv(KADD_MODEL_HMAC_KEY_ENV) == NULL &&
+            getenv(KADD_MODEL_HMAC_KEY_LEGACY_ENV) == NULL) {
+            (void)setenv(KADD_MODEL_HMAC_KEY_ENV, key_item->valuestring, 0);
+        }
+    }
+
     switch (config->engine_mode) {
     case KADD_ENGINE_MODE_ML:
         if (strlen(config->model_rf) == 0 && strlen(config->model_rf_onnx) == 0) {
@@ -242,5 +292,11 @@ int kadd_config_load(const char *config_path, kadd_config_t *config)
 
 void kadd_config_free(kadd_config_t *config)
 {
-    (void)config;
+    if (config != NULL) {
+        /* 擦除内存中的密钥副本；volatile 防止编译器把清零写优化掉 */
+        volatile char *key = config->model_hmac_key;
+        for (size_t i = 0; i < sizeof(config->model_hmac_key); i++) {
+            key[i] = '\0';
+        }
+    }
 }

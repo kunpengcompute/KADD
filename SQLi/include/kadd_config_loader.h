@@ -24,6 +24,14 @@
  * - model_cnn, model_cnn_onnx: CNN model paths (SVE first, ONNX fallback)
  * - engine_mode: engine mode (ml/dl)
  *
+ * Optional fields:
+ * - model_hmac_key: 64 hex chars (32 bytes), the HMAC-SHA256 model key.
+ *   Priority: env KADD_MODEL_HMAC_KEY / KADD_RF_HMAC_KEY > this field.
+ *   When no env key is set, the loader materializes this value into
+ *   KADD_MODEL_HMAC_KEY so the model auth code (kadd_model_auth.h) picks it up.
+ *   SECURITY: a config carrying the key is sensitive material - chmod 600 it,
+ *   never commit production keys; prefer env injection in production.
+ *
  * config_path must be non-empty and shorter than KADD_CONFIG_PATH_MAX_LEN.
  */
 
@@ -53,6 +61,9 @@ typedef struct {
     char model_rf_onnx[KADD_CONFIG_PATH_MAX_LEN];
     char model_cnn[KADD_CONFIG_PATH_MAX_LEN];
     char model_cnn_onnx[KADD_CONFIG_PATH_MAX_LEN];
+    /* 64 个十六进制字符 + NUL；长度以 kadd_model_auth.h 的
+     * KADD_MODEL_HMAC_KEY_HEX_LEN 为准（.c 中有编译期断言），空 = 未配置 */
+    char model_hmac_key[65];
 } kadd_config_t;
 
 int kadd_config_load(const char *config_path, kadd_config_t *config);

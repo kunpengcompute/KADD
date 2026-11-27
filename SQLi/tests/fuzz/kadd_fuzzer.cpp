@@ -53,11 +53,7 @@
 #include <iomanip>    // 新增：用于std::hex, std::setfill, std::setw
 #include <limits>     // 新增：用于 std::numeric_limits
 #include <chrono>     /* 吞吐自监控：稳态 exec/s 与初始化耗时 */
-#if defined(_WIN32)
-#include <process.h>  /* _getpid：状态文件名按进程区分 */
-#else
 #include <unistd.h>   /* getpid：状态文件名按进程区分（多 worker 并行互不覆盖） */
-#endif
 
 #include "kadd_sqli_engine.h"
 #include "kadd_dfa_engine.h"
@@ -3022,11 +3018,7 @@ static double FzNowSec() {
 }
 
 static int FzPid() {
-#if defined(_WIN32)
-    return _getpid();
-#else
     return (int)getpid();
-#endif
 }
 
 static uint64_t FzApiMin() {

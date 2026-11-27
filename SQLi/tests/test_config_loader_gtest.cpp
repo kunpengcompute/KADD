@@ -747,3 +747,160 @@ TEST(ConfigLoaderTest, EngineMode_ML_MissingModelRf)
     EXPECT_EQ(ret, KADD_ERROR_CONFIG) << "ML 模式缺少 model_rf 应返回 KADD_ERROR_CONFIG";
     DeleteTestFile(config_path);
 }
+
+// ========== 可选字段：model_hmac_key ==========
+
+namespace {
+
+/* 保存/恢复两个密钥环境变量，避免用例之间互相污染 */
+class OptFieldEnvGuard {
+public:
+    OptFieldEnvGuard() {
+        const char *c = getenv("KADD_MODEL_HMAC_KEY");
+        const char *l = getenv("KADD_RF_HMAC_KEY");
+        had_canonical_ = (c != nullptr);
+        had_legacy_ = (l != nullptr);
+        if (c) canonical_prev_ = c;
+        if (l) legacy_prev_ = l;
+        unsetenv("KADD_MODEL_HMAC_KEY");
+        unsetenv("KADD_RF_HMAC_KEY");
+    }
+    ~OptFieldEnvGuard() {
+        if (had_canonical_) setenv("KADD_MODEL_HMAC_KEY", canonical_prev_.c_str(), 1);
+        else unsetenv("KADD_MODEL_HMAC_KEY");
+        if (had_legacy_) setenv("KADD_RF_HMAC_KEY", legacy_prev_.c_str(), 1);
+        else unsetenv("KADD_RF_HMAC_KEY");
+    }
+private:
+    bool had_canonical_ = false;
+    bool had_legacy_ = false;
+    std::string canonical_prev_;
+    std::string legacy_prev_;
+};
+
+/* 在默认模板末尾追加可选字段，生成测试配置 */
+std::string ConfigWithExtraField(const std::string &extra)
+{
+    std::string t = GetDefaultConfigTemplate();
+    size_t pos = t.rfind('}');
+    return t.substr(0, pos) + ",\n        " + extra + "\n    " + t.substr(pos);
+}
+
+constexpr const char *kOptTestKeyHex =
+    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+constexpr const char *kOptOtherKeyHex =
+    "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210";
+
+} // namespace
+
+TEST(ConfigLoaderOptionalFields, DefaultsWhenUnset)
+{
+    std::string config_path = CreateTestConfigFile(GetDefaultConfigTemplate().c_str());
+    kadd_config_t config;
+    ASSERT_EQ(kadd_config_load(config_path.c_str(), &config), KADD_SUCCESS);
+    EXPECT_EQ(config.model_hmac_key[0], '\0') << "未配置时密钥字段应为空";
+    kadd_config_free(&config);
+    DeleteTestFile(config_path);
+}
+
+TEST(ConfigLoaderOptionalFields, HmacKeyValidInjectsEnvWhenUnset)
+{
+    OptFieldEnvGuard guard;
+    std::string content =
+        ConfigWithExtraField(std::string("\"model_hmac_key\": \"") + kOptTestKeyHex + "\"");
+    std::string config_path = CreateTestConfigFile(content.c_str());
+    kadd_config_t config;
+    ASSERT_EQ(kadd_config_load(config_path.c_str(), &config), KADD_SUCCESS);
+    EXPECT_STREQ(config.model_hmac_key, kOptTestKeyHex);
+    const char *env = getenv("KADD_MODEL_HMAC_KEY");
+    ASSERT_NE(env, nullptr) << "环境变量未设置时应把配置密钥注入环境变量";
+    EXPECT_STREQ(env, kOptTestKeyHex);
+    kadd_config_free(&config);
+    DeleteTestFile(config_path);
+}
+
+TEST(ConfigLoaderOptionalFields, HmacKeyEnvTakesPriority)
+{
+    OptFieldEnvGuard guard;
+    setenv("KADD_MODEL_HMAC_KEY", kOptOtherKeyHex, 1);
+    std::string content =
+        ConfigWithExtraField(std::string("\"model_hmac_key\": \"") + kOptTestKeyHex + "\"");
+    std::string config_path = CreateTestConfigFile(content.c_str());
+    kadd_config_t config;
+    ASSERT_EQ(kadd_config_load(config_path.c_str(), &config), KADD_SUCCESS);
+    EXPECT_STREQ(getenv("KADD_MODEL_HMAC_KEY"), kOptOtherKeyHex)
+        << "已有环境变量密钥时 config 不得覆盖";
+    kadd_config_free(&config);
+    DeleteTestFile(config_path);
+}
+
+TEST(ConfigLoaderOptionalFields, HmacKeyLegacyEnvTakesPriority)
+{
+    OptFieldEnvGuard guard;
+    setenv("KADD_RF_HMAC_KEY", kOptOtherKeyHex, 1);
+    std::string content =
+        ConfigWithExtraField(std::string("\"model_hmac_key\": \"") + kOptTestKeyHex + "\"");
+    std::string config_path = CreateTestConfigFile(content.c_str());
+    kadd_config_t config;
+    ASSERT_EQ(kadd_config_load(config_path.c_str(), &config), KADD_SUCCESS);
+    EXPECT_EQ(getenv("KADD_MODEL_HMAC_KEY"), nullptr)
+        << "旧名环境变量已设置时不应注入新名（旧名优先于 config）";
+    EXPECT_STREQ(getenv("KADD_RF_HMAC_KEY"), kOptOtherKeyHex);
+    kadd_config_free(&config);
+    DeleteTestFile(config_path);
+}
+
+TEST(ConfigLoaderOptionalFields, HmacKeyInvalidRejected)
+{
+    OptFieldEnvGuard guard;
+    const std::string bad_keys[] = {
+        "zz",
+        std::string(63, 'a'),
+        std::string(65, 'a'),
+        std::string("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdeg"),
+    };
+    for (const std::string &k : bad_keys) {
+        std::string content =
+            ConfigWithExtraField("\"model_hmac_key\": \"" + k + "\"");
+        std::string config_path = CreateTestConfigFile(content.c_str());
+        kadd_config_t config;
+        EXPECT_EQ(kadd_config_load(config_path.c_str(), &config), KADD_ERROR_CONFIG)
+            << "非法密钥应被拒绝（长度/字符集）";
+        DeleteTestFile(config_path);
+    }
+    /* 非字符串类型同样拒绝 */
+    std::string content = ConfigWithExtraField("\"model_hmac_key\": 123");
+    std::string config_path = CreateTestConfigFile(content.c_str());
+    kadd_config_t config;
+    EXPECT_EQ(kadd_config_load(config_path.c_str(), &config), KADD_ERROR_CONFIG);
+    DeleteTestFile(config_path);
+}
+
+TEST(ConfigLoaderOptionalFields, HmacKeyUppercaseAccepted)
+{
+    OptFieldEnvGuard guard;
+    std::string upper_key = "ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789";
+    std::string content =
+        ConfigWithExtraField("\"model_hmac_key\": \"" + upper_key + "\"");
+    std::string config_path = CreateTestConfigFile(content.c_str());
+    kadd_config_t config;
+    ASSERT_EQ(kadd_config_load(config_path.c_str(), &config), KADD_SUCCESS);
+    EXPECT_STREQ(config.model_hmac_key, upper_key.c_str());
+    kadd_config_free(&config);
+    DeleteTestFile(config_path);
+}
+
+TEST(ConfigLoaderOptionalFields, FreeWipesKey)
+{
+    OptFieldEnvGuard guard;
+    std::string content =
+        ConfigWithExtraField(std::string("\"model_hmac_key\": \"") + kOptTestKeyHex + "\"");
+    std::string config_path = CreateTestConfigFile(content.c_str());
+    kadd_config_t config;
+    ASSERT_EQ(kadd_config_load(config_path.c_str(), &config), KADD_SUCCESS);
+    kadd_config_free(&config);
+    for (size_t i = 0; i < sizeof(config.model_hmac_key); i++) {
+        EXPECT_EQ(config.model_hmac_key[i], '\0') << "free 后密钥内存应被擦除";
+    }
+    DeleteTestFile(config_path);
+}

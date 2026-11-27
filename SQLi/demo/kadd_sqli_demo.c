@@ -61,6 +61,10 @@ int main()
                 printf(" ✅ 安全\n");
             }
             printf("\n");
+        } else {
+            /* 检测失败（含超长输入）按最高风险处理，不得静默放行 */
+            printf("输入: %s\n", inputs[i]);
+            printf("概率: %.2f%% (检测失败，fail-closed 按危险处理)\n\n", probability * 100);
         }
     }
 

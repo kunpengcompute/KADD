@@ -46,24 +46,10 @@ static OrtEnv *g_ort_env = NULL;
 static const OrtApi *g_ort_api = NULL;
 static int g_ort_env_ref_count = 0;
 
-/* [FIX REPORT-2026-0000008] Cross-platform mutex for thread-safe init/free */
-#ifdef _WIN32
-#include <windows.h>
-static CRITICAL_SECTION g_ort_mutex;
-static volatile LONG g_ort_mutex_init_done = 0;
-static void ensure_mutex_init(void) {
-    if (InterlockedCompareExchange(&g_ort_mutex_init_done, 1, 0) == 0) {
-        InitializeCriticalSection(&g_ort_mutex);
-    }
-}
-#define LOCK_ORT()   do { ensure_mutex_init(); EnterCriticalSection(&g_ort_mutex); } while(0)
-#define UNLOCK_ORT() LeaveCriticalSection(&g_ort_mutex)
-#else
 #include <pthread.h>
 static pthread_mutex_t g_ort_mutex = PTHREAD_MUTEX_INITIALIZER;
 #define LOCK_ORT()   pthread_mutex_lock(&g_ort_mutex)
 #define UNLOCK_ORT() pthread_mutex_unlock(&g_ort_mutex)
-#endif
 
 /* ONNX Runtime 最小 API 版本（v28 对应 ONNX Runtime 1.28.0+） */
 #define ORT_MIN_API_VERSION 28

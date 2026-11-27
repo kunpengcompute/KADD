@@ -854,18 +854,9 @@ public:
 private:
     static void Apply(const char *value) {
         if (value != nullptr) {
-#ifdef _WIN32
-            const std::string entry = std::string("KADD_MODEL_HMAC_KEY=") + value;
-            _putenv(entry.c_str());
-#else
             setenv("KADD_MODEL_HMAC_KEY", value, 1);
-#endif
         } else {
-#ifdef _WIN32
-            _putenv("KADD_MODEL_HMAC_KEY=");
-#else
             unsetenv("KADD_MODEL_HMAC_KEY");
-#endif
         }
     }
     bool had_prev_ = false;

@@ -58,6 +58,9 @@ CRC32 只能检测意外损坏，无法抵抗蓄意篡改：持有模型文件�
     # 原地签名
     python rf_sign.py --in-place model_tokens_rf.krf
 
+    # 换密钥重签（先剥离旧 HMAC 尾部，再用当前密钥签名；旧签名不做校验）
+    python rf_sign.py --in-place --resign model_tokens_rf.krf
+
     # 校验已签名模型
     python rf_sign.py --verify model_tokens_dl_cnn.kcn
 """
@@ -349,10 +352,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--verify", action="store_true", help="only verify, do not write anything"
     )
+    parser.add_argument(
+        "--resign", action="store_true",
+        help="strip an existing HMAC trailer and re-sign with the current key "
+             "(key rotation; the old signature is NOT verified)",
+    )
     args = parser.parse_args(argv)
 
-    if args.verify and (args.output or args.in_place):
-        parser.error("--verify cannot be combined with an output path or --in-place")
+    if args.verify and (args.output or args.in_place or args.resign):
+        parser.error(
+            "--verify cannot be combined with an output path, --in-place or --resign"
+        )
     if not args.verify and not args.in_place and not args.output:
         parser.error("an output path is required unless --in-place or --verify is given")
 
@@ -377,6 +387,21 @@ def main(argv: list[str] | None = None) -> int:
                 f"[model_sign]   signed_region={meta['signed_region']} bytes"
             )
             return 0
+
+        if args.resign:
+            meta0 = parse_header(blob)
+            if meta0["flags"] & FLAG_HMAC_SHA256:
+                body = bytearray(strip_trailer(blob, meta0))
+                # 清掉已签名标志位，sign() 才接受；旧尾部直接丢弃（不校验）
+                struct.pack_into(
+                    "<I", body, meta0["flags_offset"],
+                    meta0["flags"] & ~FLAG_HMAC_SHA256,
+                )
+                blob = bytes(body)
+                print(
+                    "[model_sign] note: stripped existing HMAC trailer "
+                    "(--resign, old signature NOT verified)"
+                )
 
         signed = sign(blob, key)
         target = Path(args.input) if args.in_place else Path(args.output)

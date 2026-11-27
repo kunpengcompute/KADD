@@ -348,18 +348,9 @@ public:
 private:
     static void Apply(const char* value) {
         if (value != nullptr) {
-#ifdef _WIN32
-            const std::string entry = std::string(kHmacKeyEnv) + "=" + value;
-            _putenv(entry.c_str());
-#else
             setenv(kHmacKeyEnv, value, 1);
-#endif
         } else {
-#ifdef _WIN32
-            _putenv((std::string(kHmacKeyEnv) + "=").c_str());
-#else
             unsetenv(kHmacKeyEnv);
-#endif
         }
     }
     bool had_prev_ = false;

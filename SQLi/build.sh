@@ -92,16 +92,31 @@ if [ ! -f "${UTIL_DIR}/cJSON/cJSON.c" ]; then
 fi
 
 # ----------------------------------------------------------------------------
-# ONNX Runtime（ML 推理必需）
+# ONNX Runtime（ML 推理必需）：先 GitHub release，失败自动回退 NuGet 官方发行包
+# （均为发行包，不做源码编译；ONNXRT_URL 可覆盖 GitHub 地址，供内网镜像使用）
 # ----------------------------------------------------------------------------
 ONNXRT_VERSION="1.28.0"
 ONNXRT_DIR="${UTIL_DIR}/onnxruntime-linux-aarch64-${ONNXRT_VERSION}"
 if [ ! -d "${ONNXRT_DIR}" ]; then
-    echo "[2/3] 准备 ONNX Runtime..."
+    echo "[2/3] 准备 ONNX Runtime ${ONNXRT_VERSION}..."
     cd "${UTIL_DIR}"
-    wget --no-check-certificate "https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRT_VERSION}/onnxruntime-linux-aarch64-${ONNXRT_VERSION}.tgz"
-    tar xzf "onnxruntime-linux-aarch64-${ONNXRT_VERSION}.tgz"
-    rm -f "onnxruntime-linux-aarch64-${ONNXRT_VERSION}.tgz"
+    TGZ="onnxruntime-linux-aarch64-${ONNXRT_VERSION}.tgz"
+    URL="${ONNXRT_URL:-https://github.com/microsoft/onnxruntime/releases/download/v${ONNXRT_VERSION}/${TGZ}}"
+    if wget --no-check-certificate "${URL}" -O "${TGZ}" && tar xzf "${TGZ}" 2>/dev/null; then
+        rm -f "${TGZ}"
+    else
+        echo "[WARN] GitHub 通道不可用，改用 NuGet 官方发行包..."
+        rm -f "${TGZ}"
+        NUPKG="microsoft.ml.onnxruntime.${ONNXRT_VERSION}.nupkg"
+        wget --no-check-certificate "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/${ONNXRT_VERSION}/${NUPKG}" -O "${NUPKG}"
+        unzip -q "${NUPKG}" -d ort_tmp
+        mkdir -p "${ONNXRT_DIR}/include" "${ONNXRT_DIR}/lib"
+        cp ort_tmp/build/native/include/* "${ONNXRT_DIR}/include/"
+        cp ort_tmp/runtimes/linux-arm64/native/*.so "${ONNXRT_DIR}/lib/"
+        # 包内 .so 的 SONAME 带版本号，补软链接
+        (cd "${ONNXRT_DIR}/lib" && ln -sf libonnxruntime.so libonnxruntime.so.1 && ln -sf libonnxruntime.so "libonnxruntime.so.${ONNXRT_VERSION}")
+        rm -rf ort_tmp "${NUPKG}"
+    fi
 fi
 export ONNXRUNTIME_HOME="${ONNXRT_DIR}"
 
@@ -155,37 +170,59 @@ fi
 export LD_LIBRARY_PATH="${PROJECT_ROOT}/${BUILD_DIR}/src:${ONNXRUNTIME_HOME}/lib:${LD_LIBRARY_PATH}"
 
 # ----------------------------------------------------------------------------
-# 模型 HMAC 密钥（原生 .krf/.kcn 强制 HMAC-SHA256 认证，未配置密钥将拒绝加载）
-# 仓库自带模型用公开的开发密钥签名，仅用于构建与测试；若已注入自有密钥
-# （KADD_MODEL_HMAC_KEY 或旧名 KADD_RF_HMAC_KEY）则沿用，不覆盖。
-# 注意：本脚本是子进程，export 不会保留到你的交互 shell，因此同时生成
-#       ${BUILD_DIR}/kadd_env.sh —— 运行 demo / fuzzer 前先 source 它。
+# 模型 HMAC 密钥（.krf/.kcn 强制 HMAC-SHA256 认证，密钥缺失/不匹配拒绝加载）
+# 优先级：环境变量 KADD_MODEL_HMAC_KEY（或旧名 KADD_RF_HMAC_KEY）> config.json model_hmac_key
+# 仓库不落明文密钥：未配置环境变量时每次构建随机生成密钥，用它重签 build/ 下
+# 模型副本（rf_sign.py --resign，仓库 assets 不动），并写入 build/config.json
+# （chmod 600，勿入库），构建完即可直接 demo。测试自带密钥与资产，不受影响。
+# 生产：export KADD_MODEL_HMAC_KEY=$(openssl rand -hex 32) && ./build.sh
+# 手动签名/校验：python3 tools/rf_sign/rf_sign.py --help
 # ----------------------------------------------------------------------------
-KADD_DEV_MODEL_HMAC_KEY="***"
-if [ -n "${KADD_MODEL_HMAC_KEY:-}" ] || [ -n "${KADD_RF_HMAC_KEY:-}" ]; then
-    echo "沿用已配置的模型 HMAC 密钥（不覆盖）"
-else
-    export KADD_MODEL_HMAC_KEY="${KADD_DEV_MODEL_HMAC_KEY}"
-    echo "已注入开发用模型 HMAC 密钥（仅供构建/测试，生产请用自有密钥重签模型）"
+command -v python3 >/dev/null 2>&1 || { echo "❌ 需要 python3（模型签名 / 写入 config）"; exit 1; }
+KADD_EFFECTIVE_KEY="${KADD_MODEL_HMAC_KEY:-${KADD_RF_HMAC_KEY:-}}"
+if [ -z "${KADD_EFFECTIVE_KEY}" ]; then
+    KADD_EFFECTIVE_KEY="$(python3 -c 'import secrets; print(secrets.token_hex(32))')"
+    echo "未配置密钥，已为本次构建随机生成（仅供构建/测试）"
+fi
+export KADD_MODEL_HMAC_KEY="${KADD_EFFECTIVE_KEY}"
+
+# 用生效密钥重签 build/ 模型副本（demo 从 build/assets 读取）
+for M in "${PROJECT_ROOT}/${BUILD_DIR}/assets/model/"*.krf \
+         "${PROJECT_ROOT}/${BUILD_DIR}/assets/model/"*.kcn; do
+    [ -f "${M}" ] || continue
+    python3 "${PROJECT_ROOT}/tools/rf_sign/rf_sign.py" --in-place --resign "${M}" || exit 1
+done
+
+# 密钥写入构建配置，原生模型指向 build/ 副本（demo 直接读取，无需手动 export）
+CFG="${PROJECT_ROOT}/${BUILD_DIR}/config.json"
+if [ -f "${CFG}" ]; then
+    KADD_CFG="${CFG}" KADD_KEY="${KADD_EFFECTIVE_KEY}" python3 -c '
+import json, os
+p = os.environ["KADD_CFG"]
+with open(p, encoding="utf-8") as f:
+    cfg = json.load(f)
+cfg["model_hmac_key"] = os.environ["KADD_KEY"]
+base = os.path.join(os.path.dirname(p), "assets", "model")
+cfg["model_rf"] = os.path.join(base, "model_tokens_rf.krf")
+cfg["model_cnn"] = os.path.join(base, "model_tokens_dl_cnn.kcn")
+with open(p, "w", encoding="utf-8") as f:
+    json.dump(cfg, f, ensure_ascii=False, indent=2)
+    f.write("\n")
+'
+    chmod 600 "${CFG}"
 fi
 
-# 生成可 source 的运行环境文件（库搜索路径 + 模型 HMAC 密钥）
-KADD_ENV_FILE="${PROJECT_ROOT}/${BUILD_DIR}/kadd_env.sh"
+# 运行环境文件：仅库搜索路径（密钥已在 config.json）
 {
-    echo "# 由 build.sh 生成：运行 demo / 自研程序前先 source 本文件"
-    if [ -n "${KADD_MODEL_HMAC_KEY:-}" ]; then
-        echo "export KADD_MODEL_HMAC_KEY=\"${KADD_MODEL_HMAC_KEY}\""
-    elif [ -n "${KADD_RF_HMAC_KEY:-}" ]; then
-        echo "export KADD_RF_HMAC_KEY=\"${KADD_RF_HMAC_KEY}\""
-    fi
+    echo "# 由 build.sh 生成：运行 demo 前先 source（仅库搜索路径；模型密钥在 config.json）"
     echo "export LD_LIBRARY_PATH=\"${PROJECT_ROOT}/${BUILD_DIR}/src:${ONNXRUNTIME_HOME}/lib:\${LD_LIBRARY_PATH:-}\""
-} > "${KADD_ENV_FILE}"
-chmod 600 "${KADD_ENV_FILE}"
+} > "${PROJECT_ROOT}/${BUILD_DIR}/kadd_env.sh"
+echo "   模型密钥 : 已写入 ${BUILD_DIR}/config.json（chmod 600，勿入库；生产请 export KADD_MODEL_HMAC_KEY）"
 
 echo ""
 if [ "$MODE" = "fuzz" ]; then
     echo "✅ fuzz 构建完成（SVE=$SVE → ${BUILD_DIR}，覆盖率插桩=$FUZZ_PROFILE_FLAG）"
-    echo "   运行环境  : source ${BUILD_DIR}/kadd_env.sh   # 库搜索路径 + 模型 HMAC 密钥"
+    echo "   运行环境  : source ${BUILD_DIR}/kadd_env.sh   # 仅库搜索路径（模型密钥已在 config.json）"
     echo "   交互验证  : cd ${BUILD_DIR}/tests && KADD_FUZZ_KEEP_STDOUT=1 ./kadd_fuzzer -max_total_time=90"
     echo "                 看 kadd_fuzz_stat 行的 win_exec_s（稳态吞吐）"
     echo "   长稳运行  : 不加 KADD_FUZZ_KEEP_STDOUT —— 初始化后 stdout/stderr 静音，"
@@ -198,8 +235,8 @@ if [ "$MODE" = "fuzz" ]; then
     echo "                 覆盖率HTML点开函数所在行可见21个等频接口~3000万次运行计数"
 else
     echo "✅ 构建完成"
-    echo "   运行环境 : source ${BUILD_DIR}/kadd_env.sh   # 库搜索路径 + 模型 HMAC 密钥"
+    echo "   运行环境 : source ${BUILD_DIR}/kadd_env.sh   # 仅库搜索路径（模型密钥已在 config.json）"
     echo "   运行 demo : cd ${BUILD_DIR}/demo && ./kadd_sqli_demo"
-    echo "   运行测试 : cd ${BUILD_DIR} && ctest --verbose"
+    echo "   运行测试 : cd ${BUILD_DIR} && ctest --verbose   # ctest 自动注入库路径，密钥从 config 读取"
     echo "   构建 fuzz : ./build.sh fuzz   # kadd_fuzzer 需 clang，默认编译器下不会产出"
 fi
